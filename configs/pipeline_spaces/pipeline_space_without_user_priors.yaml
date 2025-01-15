@@ -1,0 +1,14 @@
+learning_rate:
+  type: float
+  log: true
+  lower: 1e-5
+  upper: 1e-1
+batch_size:
+  type: int
+  lower: 16
+  upper: 128
+number_of_epochs:  # for multifidelity
+  type: int
+  lower: 1
+  upper: 10
+  is_fidelity: true  # explicitly marked as fidelity parameter

@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "medquicktune"
+version = "0.1.0"
+description = "This project is dedicated to training multiple models on diverse medical datasets, exploring relevant configuration spaces, and integrating multifidelity optimization techniques. It features functionalities such as saving learning curves in CSV format along with their corresponding configuration IDs. The goal is to advance hyperparameter optimization and model tuning workflows in the medical domain."
+authors = ["diane-wagner <wagnerd@informatik.uni-freiburg.de>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+hydra-core = "^1.3.2"
+neural-pipeline-search = "^0.12.2"
+nibabel = "<5.0.0"
+black = "^24.10.0"
+isort = "^5.13.2"
+pylint = "^3.3.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
