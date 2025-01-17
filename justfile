@@ -40,4 +40,4 @@ run-local-test EXPERIMENT_NAME SEED:
 run-cluster-test EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
-  sbatch --exclude=dlcgpu05 --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} cluster/desmoid_test.sh
+  sbatch --exclude=dlcgpu05 --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} cluster_scripts/desmoid_test.sh
