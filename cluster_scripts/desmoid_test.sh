@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -J medquicktune
 ##SBATCH -t 23:59:59
-##SBATCH --array 0-5%3
+#SBATCH --array 0-19%5
 
 source activate medquicktune
 
