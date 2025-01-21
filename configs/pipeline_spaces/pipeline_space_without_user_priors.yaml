@@ -3,12 +3,47 @@ learning_rate:
   log: true
   lower: 1e-5
   upper: 1e-1
+
 batch_size:
   type: int
   lower: 16
   upper: 128
+
+optimizer_type:
+  type: categorical
+  choices: ["adam", "adamw", "sgd"]
+
+weight_decay:
+  type: float
+  log: true
+  lower: 1e-6
+  upper: 1e-2
+
+dropout_rate:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.5
+
+warmup_epochs:
+  type: int
+  lower: 0
+  upper: 10
+
+label_smoothing:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.2
+
+mixup_alpha:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 1.0
+
 number_of_epochs:  # for multifidelity
   type: int
-  lower: 1
-  upper: 10
+  lower: 10
+  upper: 100
   is_fidelity: true  # explicitly marked as fidelity parameter

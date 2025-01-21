@@ -15,7 +15,8 @@ import yaml
 from src.data import get_data_loaders
 from src.util_functions import (evaluate_model, get_model, set_seed,
                               yaml_to_neps_pipeline_space, CheckpointManager,
-                              train_epoch)
+                              train_epoch, set_dropout, get_warmup_scheduler,
+                              adjust_learning_rate, Mixup)
 
 
 def run_pipeline(
@@ -41,7 +42,13 @@ def run_pipeline(
             - learning_rate (float): Learning rate for optimizer
             - batch_size (int): Batch size for training
             - number_of_epochs (int): Number of training epochs
-            - TODO: Add other hyperparameters
+            - label_smoothing (float): Label smoothing factor
+            - optimizer_type (str): Optimizer type
+            - weight_decay (float): Weight decay for optimizer
+            - dropout_rate (float): Dropout rate for model
+            - mixup_alpha (float): Mixup alpha for mixup function
+            - warmup_epochs (int): Warmup epochs for warmup scheduler
+            - TODO: Add other hyperparameters?
 
     Returns:
         dict: Dictionary containing the negative validation accuracy as loss for NePS
@@ -75,8 +82,41 @@ def run_pipeline(
     print(f"Model initialized: {config.model.type}\n")
 
     # Define loss and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=hyperparameters["learning_rate"])
+    criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
+    
+    # Create optimizer based on type
+    if hyperparameters["optimizer_type"] == "adam":
+        optimizer = optim.Adam(
+            model.parameters(), 
+            lr=hyperparameters["learning_rate"],
+            weight_decay=hyperparameters["weight_decay"]
+        )
+    elif hyperparameters["optimizer_type"] == "adamw":
+        optimizer = optim.AdamW(
+            model.parameters(), 
+            lr=hyperparameters["learning_rate"],
+            weight_decay=hyperparameters["weight_decay"]
+        )
+    elif hyperparameters["optimizer_type"] == "sgd":
+        optimizer = optim.SGD(
+            model.parameters(), 
+            lr=hyperparameters["learning_rate"],
+            weight_decay=hyperparameters["weight_decay"],
+            momentum=0.9
+        )
+
+    # Apply dropout to model
+    model.apply(lambda m: set_dropout(m, hyperparameters["dropout_rate"]))
+
+    # Initialize mixup if alpha > 0
+    mixup_fn = None
+    if hyperparameters["mixup_alpha"] > 0:
+        mixup_fn = Mixup(mixup_alpha=hyperparameters["mixup_alpha"])
+
+    # Warmup scheduler
+    warmup_epochs = hyperparameters["warmup_epochs"]
+    if warmup_epochs > 0:
+        scheduler = get_warmup_scheduler(optimizer, warmup_epochs, len(train_loader))
 
     # Initialize training metrics
     metrics = {
@@ -108,9 +148,20 @@ def run_pipeline(
         print(f"\nEpoch {epoch+1}/{epochs}")
         print("-" * 30)
 
+        # Apply warmup scheduler if configured
+        if epoch < warmup_epochs:
+            adjust_learning_rate(scheduler, epoch)
+
         # Training phase
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, 
-                                  scaler, device)
+        train_metrics = train_epoch(
+            model, 
+            train_loader, 
+            criterion, 
+            optimizer, 
+            scaler, 
+            device,
+            mixup_fn=mixup_fn
+        )
         metrics['train_losses'].append(train_metrics['loss'])
         metrics['train_accuracies'].append(train_metrics['accuracy'])
         print(f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.2f}%")

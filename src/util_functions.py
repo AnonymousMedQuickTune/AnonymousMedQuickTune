@@ -113,7 +113,8 @@ def get_model(model_config):
 
     Args:
         model_config (dict): Model configuration containing:
-            - type (str): Type of model ('resnet', 'efficientnet', 'densenet')
+            - type (str): Type of model ('resnet', 'efficientnet', 'vit',
+                         'convnext', 'swin', 'densenet', 'efficientnetv2', 'densenet201')
             - task (str): Type of task ('classification', etc.)
             - num_classes (int): Number of output classes
 
@@ -123,14 +124,30 @@ def get_model(model_config):
     model_type = model_config["type"]
     num_classes = model_config["num_classes"]
 
-    if model_type == "resnet":
+    # Modern, widely used architectures
+    if model_type == "vit":  # Vision Transformer - State of the art
+        model = models.vit_b_16(pretrained=True)
+        model.heads = nn.Linear(model.hidden_dim, num_classes)
+    elif model_type == "convnext":  # Modern CNN architecture
+        model = models.convnext_base(pretrained=True)
+        model.classifier[2] = nn.Linear(model.classifier[2].in_features, num_classes)
+    elif model_type == "resnet":  # Classic, reliable architecture
         model = models.resnet18(pretrained=True)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
-    elif model_type == "efficientnet":
+    elif model_type == "swin":  # Modern hierarchical ViT
+        model = models.swin_v2_b(pretrained=True)
+        model.head = nn.Linear(model.head.in_features, num_classes)
+    elif model_type == "efficientnet":  # Efficient modern CNN
         model = models.efficientnet_b0(pretrained=True)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
-    elif model_type == "densenet":
+    elif model_type == "efficientnetv2":  # Updated EfficientNet
+        model = models.efficientnet_v2_s(pretrained=True)
+        model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+    elif model_type == "densenet":  # Older architecture
         model = models.densenet121(pretrained=True)
+        model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+    elif model_type == "densenet201":  # Larger DenseNet variant
+        model = models.densenet201(pretrained=True)
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
     else:
         raise ValueError("Unknown model type: " + model_type)
@@ -272,7 +289,74 @@ class CheckpointManager:
             torch.save(checkpoint, periodic_path)
 
 
-def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
+def set_dropout(module, dropout_rate):
+    """
+    Recursively sets dropout rate for all dropout layers in the model.
+    
+    Args:
+        module (nn.Module): PyTorch module
+        dropout_rate (float): Dropout rate to set
+    """
+    if isinstance(module, nn.Dropout):
+        module.p = dropout_rate
+    for child in module.children():
+        set_dropout(child, dropout_rate)
+
+
+class Mixup:
+    """
+    Mixup augmentation class.
+    """
+    def __init__(self, mixup_alpha=1.0):
+        self.mixup_alpha = mixup_alpha
+    
+    def __call__(self, x, target):
+        if self.mixup_alpha > 0:
+            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
+        else:
+            lam = 1
+
+        batch_size = x.size()[0]
+        index = torch.randperm(batch_size).to(x.device)
+
+        mixed_x = lam * x + (1 - lam) * x[index, :]
+        y_a, y_b = target, target[index]
+        return mixed_x, y_a, y_b, lam
+
+
+def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
+    """
+    Creates a learning rate scheduler with linear warmup.
+    
+    Args:
+        optimizer: PyTorch optimizer
+        warmup_epochs (int): Number of warmup epochs
+        steps_per_epoch (int): Number of steps per epoch
+    
+    Returns:
+        scheduler: Learning rate scheduler
+    """
+    def lr_lambda(step):
+        current_step = step / steps_per_epoch
+        if current_step < warmup_epochs:
+            return current_step / warmup_epochs
+        return 1.0
+    
+    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+
+def adjust_learning_rate(scheduler, epoch):
+    """
+    Adjusts learning rate according to scheduler.
+    
+    Args:
+        scheduler: Learning rate scheduler
+        epoch (int): Current epoch
+    """
+    scheduler.step()
+
+
+def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup_fn=None):
     """
     Train model for one epoch and return training metrics.
 
@@ -283,6 +367,7 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
         optimizer: Optimizer
         scaler: Gradient scaler for mixed precision
         device: Device to train on
+        mixup_fn (Mixup, optional): Mixup augmentation function
 
     Returns:
         dict: Dictionary containing loss and accuracy for the epoch
@@ -296,10 +381,19 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
         # Move data to device
         inputs, targets = inputs.to(device), targets.to(device)
 
-        # Forward pass with mixed precision
-        with torch.cuda.amp.autocast():
-            outputs = model(inputs)
-            loss = criterion(outputs, targets)
+        # Apply mixup if configured
+        if mixup_fn is not None:
+            inputs, targets_a, targets_b, lam = mixup_fn(inputs, targets)
+            
+            # Forward pass with mixed precision
+            with torch.cuda.amp.autocast():
+                outputs = model(inputs)
+                loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+        else:
+            # Forward pass with mixed precision
+            with torch.cuda.amp.autocast():
+                outputs = model(inputs)
+                loss = criterion(outputs, targets)
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
@@ -311,11 +405,12 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device):
         with torch.no_grad():
             _, predicted = outputs.max(1)
             epoch_total += targets.size(0)
-            epoch_correct += predicted.eq(targets).sum().item()
+            if mixup_fn is None:  # Only count accuracy for non-mixup batches
+                epoch_correct += predicted.eq(targets).sum().item()
             epoch_loss += loss.item()
 
     # Calculate and return epoch metrics
     return {
         'loss': epoch_loss / len(train_loader),
-        'accuracy': 100.0 * epoch_correct / epoch_total
+        'accuracy': 100.0 * epoch_correct / epoch_total if mixup_fn is None else 0.0
     }

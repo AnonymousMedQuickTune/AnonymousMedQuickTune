@@ -5,15 +5,62 @@ learning_rate:
   upper: 1e-1
   default: 1e-3
   default_confidence: "medium"
+
 batch_size:
   type: int
   lower: 16
   upper: 128
   default: 32
   default_confidence: "medium"
+
+optimizer_type:
+  type: categorical
+  choices: ["adam", "adamw", "sgd"]
+  default: "adamw"
+  default_confidence: "medium"
+
+weight_decay:
+  type: float
+  log: true
+  lower: 1e-6
+  upper: 1e-2
+  default: 1e-4
+  default_confidence: "medium"
+
+dropout_rate:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.5
+  default: 0.2
+  default_confidence: "low"
+
+warmup_epochs:
+  type: int
+  lower: 0
+  upper: 10
+  default: 2
+  default_confidence: "low"
+
+label_smoothing:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.2
+  default: 0.1
+  default_confidence: "medium"
+
+mixup_alpha:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 1.0
+  default: 0.2
+  default_confidence: "low"
+
 number_of_epochs:  # for multifidelity
   type: int
-  lower: 1
-  upper: 10
+  lower: 10
+  upper: 100
   is_fidelity: true  # explicitly marked as fidelity parameter
   # no default/default_confidence needed for fidelity parameters
