@@ -30,6 +30,18 @@ download-mini-datasets:
 preprocess-labels:
   python utils/preprocess_data.py
 
+# Convert NePS output to QuickTune format (local machine)
+neps2qt-local EXPERIMENT_NAME SEED:
+  python src/analysis/neps_quicktune_output_adapter.py \
+         experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt \
+         --output-dir experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/quicktune_input
+
+# Convert NePS output to QuickTune format (cluster)
+neps2qt-cluster EXPERIMENT_NAME SEED:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  sbatch --exclude=dlcgpu05 --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} cluster_scripts/neps2qt.sh
+
 # EXPERIMENTS --------------------------------------------------------------------------------------
 
 # Run a test experiment on the local machine
