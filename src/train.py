@@ -231,6 +231,7 @@ def main(config: DictConfig) -> None:
         max_evaluations_per_run=1,
         overwrite_working_directory=False,
         # for debugging:
+        ignore_errors=True,
         # overwrite_working_directory=True if "test" in config.experiment_name else False,
     )
 
