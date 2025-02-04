@@ -407,6 +407,7 @@ def train_epoch(
     scaler,
     device,
     metrics_dict,
+    epoch,
     mixup_alpha=None,
 ):
     """
@@ -420,6 +421,7 @@ def train_epoch(
         scaler: Gradient scaler for mixed precision
         device: Device to train on
         metrics_dict (dict): Dictionary containing all metrics history
+        epoch (int): Current epoch number
         mixup_alpha (float, optional): Mixup alpha parameter
 
     Returns:
@@ -450,6 +452,12 @@ def train_epoch(
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
+        
+        # Log gradients before optimizer step if the method exists
+        if hasattr(model, 'log_gradients'):
+            model.log_gradients(epoch)
+        
+        # Optimizer step with gradient scaling
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
@@ -503,3 +511,20 @@ def evaluate_and_log_metrics(
     print(f"      - Mean F1: {float(np.mean(current_metrics['f1'])):.4f}")
 
     return current_metrics
+
+
+def log_gradients(model, epoch, gradients_file):
+    """
+    Log gradients for each parameter of the model.
+    
+    Args:
+        model (nn.Module): The model whose gradients should be logged
+        epoch (int): Current epoch number
+        gradients_file (str): Path to the gradients log file
+    """
+    with open(gradients_file, 'a', encoding='utf-8') as f:
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                avg_grad = torch.mean(torch.abs(param.grad)).item()
+                max_grad = torch.max(torch.abs(param.grad)).item()
+                f.write(f"{epoch+1},{name},{avg_grad:.6f},{max_grad:.6f}\n")

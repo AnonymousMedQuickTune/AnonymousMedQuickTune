@@ -17,7 +17,8 @@ from src.data import get_data_loaders
 from src.util_functions import (CheckpointManager, adjust_learning_rate,
                                 evaluate_and_log_metrics, get_model,
                                 get_warmup_scheduler, set_dropout, set_seed,
-                                train_epoch, yaml_to_neps_pipeline_space)
+                                train_epoch, yaml_to_neps_pipeline_space,
+                                log_gradients)
 
 
 def run_pipeline(
@@ -56,6 +57,23 @@ def run_pipeline(
     """
     # Set seed for pipeline reproducibility
     set_seed(config.seed)
+
+    # Create metrics directory
+    metrics_dir = os.path.join(pipeline_directory, "metrics")
+    os.makedirs(metrics_dir, exist_ok=True)
+
+    # Create metrics and gradient logging files
+    metrics_file = os.path.join(metrics_dir, "metrics.csv")
+    gradients_file = os.path.join(metrics_dir, "gradients.csv")
+    
+    # Create CSV headers if files don't exist
+    if not os.path.exists(metrics_file):
+        with open(metrics_file, 'w', encoding='utf-8') as f:
+            f.write("epoch,phase,loss,accuracy,precision,recall,f1\n")
+            
+    if not os.path.exists(gradients_file):
+        with open(gradients_file, 'w', encoding='utf-8') as f:
+            f.write("epoch,layer_name,avg_grad,max_grad\n")
 
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -155,15 +173,8 @@ def run_pipeline(
     # Setup mixed precision training
     scaler = torch.cuda.amp.GradScaler()
 
-    # Create metrics logging directory and file
-    # logging_dir = os.path.join(pipeline_directory, "logging")
-    # os.makedirs(logging_dir, exist_ok=True)
-    logging_file = os.path.join(pipeline_directory, "logging.csv")
-    
-    # Create CSV header if file doesn't exist
-    if not os.path.exists(logging_file):
-        with open(logging_file, 'w', encoding='utf-8') as f:
-            f.write("epoch,phase,loss,accuracy,precision,recall,f1\n")
+    # Add log_gradients method to model
+    model.log_gradients = lambda epoch: log_gradients(model, epoch, gradients_file)
 
     # Main training loop
     for epoch in range(start_epoch, epochs):
@@ -183,15 +194,16 @@ def run_pipeline(
             scaler,
             device,
             metrics,
+            epoch,
             mixup_alpha,
         )
         
-        # Log training metrics
-        with open(logging_file, 'a', encoding='utf-8') as f:
+        # Log training metrics and gradients
+        with open(metrics_file, 'a', encoding='utf-8') as f:
             f.write(f"{epoch+1},train,{train_metrics['loss']:.4f},{train_metrics['accuracy']:.4f},"
                    f"{np.mean(train_metrics['precision']):.4f},{np.mean(train_metrics['recall']):.4f},"
                    f"{np.mean(train_metrics['f1']):.4f}\n")
-
+        
         # Validation phase (based on eval_every or last epoch)
         val_metrics = None
         if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
@@ -200,7 +212,7 @@ def run_pipeline(
             )
             
             # Log validation metrics
-            with open(logging_file, 'a', encoding='utf-8') as f:
+            with open(metrics_file, 'a', encoding='utf-8') as f:
                 f.write(f"{epoch+1},val,{val_metrics['loss']:.4f},{val_metrics['accuracy']:.4f},"
                        f"{np.mean(val_metrics['precision']):.4f},{np.mean(val_metrics['recall']):.4f},"
                        f"{np.mean(val_metrics['f1']):.4f}\n")
