@@ -155,6 +155,16 @@ def run_pipeline(
     # Setup mixed precision training
     scaler = torch.cuda.amp.GradScaler()
 
+    # Create metrics logging directory and file
+    # logging_dir = os.path.join(pipeline_directory, "logging")
+    # os.makedirs(logging_dir, exist_ok=True)
+    logging_file = os.path.join(pipeline_directory, "logging.csv")
+    
+    # Create CSV header if file doesn't exist
+    if not os.path.exists(logging_file):
+        with open(logging_file, 'w', encoding='utf-8') as f:
+            f.write("epoch,phase,loss,accuracy,precision,recall,f1\n")
+
     # Main training loop
     for epoch in range(start_epoch, epochs):
         print(f"\nEpoch {epoch+1}/{epochs}")
@@ -175,6 +185,12 @@ def run_pipeline(
             metrics,
             mixup_alpha,
         )
+        
+        # Log training metrics
+        with open(logging_file, 'a', encoding='utf-8') as f:
+            f.write(f"{epoch+1},train,{train_metrics['loss']:.4f},{train_metrics['accuracy']:.4f},"
+                   f"{np.mean(train_metrics['precision']):.4f},{np.mean(train_metrics['recall']):.4f},"
+                   f"{np.mean(train_metrics['f1']):.4f}\n")
 
         # Validation phase (based on eval_every or last epoch)
         val_metrics = None
@@ -182,6 +198,12 @@ def run_pipeline(
             val_metrics = evaluate_and_log_metrics(
                 model, val_loader, criterion, device, metrics, phase="val"
             )
+            
+            # Log validation metrics
+            with open(logging_file, 'a', encoding='utf-8') as f:
+                f.write(f"{epoch+1},val,{val_metrics['loss']:.4f},{val_metrics['accuracy']:.4f},"
+                       f"{np.mean(val_metrics['precision']):.4f},{np.mean(val_metrics['recall']):.4f},"
+                       f"{np.mean(val_metrics['f1']):.4f}\n")
 
         # Save progress
         checkpoint_manager.save(
