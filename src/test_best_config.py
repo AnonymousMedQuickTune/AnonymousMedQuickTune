@@ -4,8 +4,10 @@ Test script to train model with optimal hyperparameters found by NePS.
 
 import argparse
 import ast
+from contextlib import redirect_stdout
 from pathlib import Path
 
+import numpy as np
 import torch
 from omegaconf import OmegaConf
 from torch import nn
@@ -78,7 +80,7 @@ def test_run_pipeline(
     print(f"\nUsing device: {device}")
 
     # Load test dataset and create data loader
-    test_loader, _, num_classes = get_data_loaders(
+    test_loader, num_classes = get_data_loaders(
         config.data.dataset,
         config.data.num_workers,
         hyperparameters["batch_size"],
@@ -118,12 +120,55 @@ def test_run_pipeline(
 
     criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
 
-    # Use evaluate_model from util_functions instead of local implementation
-    test_loss, test_accuracy = evaluate_model(model, test_loader, criterion, device)
+    # Test evaluation
+    test_metrics = evaluate_model(model, test_loader, criterion, device)
 
-    print(f"\nTest metrics - Loss: {test_loss:.4f}, Acc: {test_accuracy:.2f}%")
+    print("\nTest Results:")
+    print(f"Loss: {test_metrics['loss']:.4f}")
+    print(f"Accuracy: {test_metrics['accuracy']:.2f}%")
+    print(f"Precision: {np.mean(test_metrics['precision']):.4f}")
+    print(f"Recall: {np.mean(test_metrics['recall']):.4f}")
+    print(f"F1-Score: {np.mean(test_metrics['f1']):.4f}")
 
-    return {"loss": test_accuracy}
+    print("\nPer-class metrics:")
+    for i, (p, r, f1) in enumerate(
+        zip(test_metrics["precision"], test_metrics["recall"], test_metrics["f1"])
+    ):
+        print(f"Class {i}:")
+        print(f"  Precision: {p:.4f}")
+        print(f"  Recall: {r:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
+
+    # Detailed output of the confusion matrix
+    conf_matrix = np.array(test_metrics["confusion_matrix"])
+    total_samples = np.sum(conf_matrix)
+    print(f"\nConfusion Matrix (Total samples: {total_samples}):")
+    print("Predicted →      Class 0    Class 1")
+    print("Actual ↓")
+    class0_total = conf_matrix[0, 0] + conf_matrix[0, 1]
+    class1_total = conf_matrix[1, 0] + conf_matrix[1, 1]
+    print(
+        f"Class 0      {conf_matrix[0,0]:>10d} {conf_matrix[0,1]:>10d}    | "
+        f"{class0_total:>3d} total"
+    )
+    print(
+        f"Class 1      {conf_matrix[1,0]:>10d} {conf_matrix[1,1]:>10d}    | "
+        f"{class1_total:>3d} total"
+    )
+    print("            ----------------------")
+    print(f"Total        {conf_matrix[:,0].sum():>10d} {conf_matrix[:,1].sum():>10d}")
+
+    print("\nDetailed Interpretation:")
+    print(f"True Negatives (TN)  : {conf_matrix[0,0]} (Correctly predicted Class 0)")
+    print(
+        f"False Positives (FP) : {conf_matrix[0,1]} (Class 0 wrongly predicted as Class 1)"
+    )
+    print(
+        f"False Negatives (FN) : {conf_matrix[1,0]} (Class 1 wrongly predicted as Class 0)"
+    )
+    print(f"True Positives (TP)  : {conf_matrix[1,1]} (Correctly predicted Class 1)")
+
+    # return {"loss": -test_metrics["accuracy"]}  # NePS minimizes negative accuracy
 
 
 def main():
@@ -165,23 +210,22 @@ def main():
     neps_output_dir = Path(args.config_path).parent
 
     # Run testing with best hyperparameters on test set
-    result = test_run_pipeline(
-        _pipeline_directory=str(test_dir),
-        _previous_pipeline_directory=None,
-        config=config,
-        neps_output_dir=neps_output_dir,
-        config_id=config_id,
-        **best_hyperparameters,
-    )
-
-    # Calculate final accuracy
-    final_accuracy = result["loss"]
-    print(f"\nTest run completed with final accuracy: {final_accuracy:.2f}%")
-
-    # Save test performance to file
     results_dir = Path(neps_output_dir) / "results" / f"config_{config_id}"
     performance_file = results_dir / "test_set_performance.txt"
-    performance_file.write_text(f"{final_accuracy:.2f}%")
+
+    # Capture all output in the file while also printing to console
+    with performance_file.open("w") as f:
+        with redirect_stdout(f):
+            test_run_pipeline(
+                _pipeline_directory=str(test_dir),
+                _previous_pipeline_directory=None,
+                config=config,
+                neps_output_dir=neps_output_dir,
+                config_id=config_id,
+                **best_hyperparameters,
+            )
+
+    print(f"\nResults saved to: {performance_file}")
 
 
 if __name__ == "__main__":

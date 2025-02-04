@@ -6,6 +6,7 @@ import logging
 import os
 
 import hydra
+import numpy as np
 import torch
 import yaml
 from neps import run
@@ -14,7 +15,7 @@ from torch import nn, optim
 
 from src.data import get_data_loaders
 from src.util_functions import (CheckpointManager, adjust_learning_rate,
-                                evaluate_model, get_model,
+                                evaluate_and_log_metrics, get_model,
                                 get_warmup_scheduler, set_dropout, set_seed,
                                 train_epoch, yaml_to_neps_pipeline_space)
 
@@ -124,8 +125,15 @@ def run_pipeline(
     metrics = {
         "train_losses": [],
         "train_accuracies": [],
+        "train_precision": [],
+        "train_recall": [],
+        "train_f1": [],
         "val_losses": [],
         "val_accuracies": [],
+        "val_precision": [],
+        "val_recall": [],
+        "val_f1": [],
+        "val_confusion_matrices": [],
     }
 
     # Configure training hyperparameters and directories
@@ -164,32 +172,44 @@ def run_pipeline(
             optimizer,
             scaler,
             device,
-            mixup_alpha=mixup_alpha,
-        )
-        metrics["train_losses"].append(train_metrics["loss"])
-        metrics["train_accuracies"].append(train_metrics["accuracy"])
-        print(
-            f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.2f}%"
+            metrics,
+            mixup_alpha,
         )
 
-        # Validation phase
-        val_acc = None
+        # Validation phase (based on eval_every or last epoch)
+        val_metrics = None
         if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
-            val_loss, val_acc = evaluate_model(model, val_loader, criterion, device)
-            metrics["val_losses"].append(val_loss)
-            metrics["val_accuracies"].append(val_acc)
-            print(f"Val   - Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%")
+            val_metrics = evaluate_and_log_metrics(
+                model, val_loader, criterion, device, metrics, phase="val"
+            )
 
         # Save progress
         checkpoint_manager.save(
-            model, val_acc, config, num_classes, hyperparameters, device, epoch, metrics
+            model,
+            val_metrics["accuracy"],
+            config,
+            num_classes,
+            hyperparameters,
+            device,
+            epoch,
+            metrics,
         )
 
     print("\nTraining completed!")
-    final_val_acc = metrics["val_accuracies"][-1] if metrics["val_accuracies"] else 0
-    print(f"Final validation accuracy: {final_val_acc:.2f}%\n")
+    # Get final metrics
+    final_metrics = {
+        "accuracy": metrics["val_accuracies"][-1] if metrics["val_accuracies"] else 0,
+        "precision": (
+            np.mean(metrics["val_precision"][-1]) if metrics["val_precision"] else 0
+        ),
+        "recall": np.mean(metrics["val_recall"][-1]) if metrics["val_recall"] else 0,
+        "f1": np.mean(metrics["val_f1"][-1]) if metrics["val_f1"] else 0,
+    }
 
-    return {"loss": -final_val_acc}  # NePS minimizes negative accuracy
+    selected_metric = final_metrics[config.metric]
+    print(f"Final {config.metric}: {selected_metric:.2f}%\n")
+
+    return {"loss": -selected_metric}  # NePS minimizes negative metric
 
 
 @hydra.main(

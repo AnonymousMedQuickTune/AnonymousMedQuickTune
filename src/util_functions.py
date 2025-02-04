@@ -10,6 +10,7 @@ import neps
 import numpy as np
 import torch
 import yaml
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from torch import nn
 from torchvision import models
 
@@ -166,9 +167,13 @@ def evaluate_model(model, data_loader, criterion, device):
         device (torch.device): Device to run the evaluation on (CPU/GPU)
 
     Returns:
-        tuple: (average_loss, accuracy)
-            - average_loss (float): Mean loss across all batches
+        dict: Dictionary containing various evaluation metrics:
+            - loss (float): Mean loss across all batches
             - accuracy (float): Classification accuracy in percentage
+            - precision (list): Precision for each class
+            - recall (list): Recall for each class
+            - f1 (list): F1 score for each class
+            - confusion_matrix (np.array): Confusion matrix
     """
     model.eval()
     total_loss = 0.0
@@ -191,10 +196,32 @@ def evaluate_model(model, data_loader, criterion, device):
     all_predictions = np.array(all_predictions)
     all_targets = np.array(all_targets)
 
+    # Calculate basic metrics
     accuracy = 100.0 * np.mean(all_predictions == all_targets)
     avg_loss = total_loss / len(data_loader)
 
-    return avg_loss, accuracy
+    # Calculate additional metrics
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_targets,
+        all_predictions,
+        average=None,  # Calculate metrics for each class
+        zero_division=0,  # Handle division by zero
+    )
+
+    # Calculate confusion matrix
+    conf_matrix = confusion_matrix(all_targets, all_predictions)
+
+    # Create metrics dictionary
+    metrics = {
+        "loss": avg_loss,
+        "accuracy": accuracy,
+        "precision": precision.tolist(),
+        "recall": recall.tolist(),
+        "f1": f1.tolist(),
+        "confusion_matrix": conf_matrix.tolist(),
+    }
+
+    return metrics
 
 
 class CheckpointManager:
@@ -373,7 +400,14 @@ def adjust_learning_rate(scheduler):
 
 
 def train_epoch(
-    model, train_loader, criterion, optimizer, scaler, device, mixup_alpha=None
+    model,
+    train_loader,
+    criterion,
+    optimizer,
+    scaler,
+    device,
+    metrics_dict,
+    mixup_alpha=None,
 ):
     """
     Train model for one epoch and return training metrics.
@@ -385,16 +419,15 @@ def train_epoch(
         optimizer: Optimizer
         scaler: Gradient scaler for mixed precision
         device: Device to train on
+        metrics_dict (dict): Dictionary containing all metrics history
         mixup_alpha (float, optional): Mixup alpha parameter
 
     Returns:
         dict: Dictionary containing loss and accuracy for the epoch
     """
     model.train()
-    epoch_loss = 0.0
-    epoch_correct = 0
-    epoch_total = 0
 
+    # Training loop
     for inputs, targets in train_loader:
         # Move data to device
         inputs, targets = inputs.to(device), targets.to(device)
@@ -421,22 +454,52 @@ def train_epoch(
         scaler.update()
         optimizer.zero_grad()
 
-        # Update statistics
-        with torch.no_grad():
-            _, predicted = outputs.max(1)
-            epoch_total += targets.size(0)
-            if (
-                mixup_alpha is None or mixup_alpha <= 0
-            ):  # Only count accuracy for non-mixup batches
-                epoch_correct += predicted.eq(targets).sum().item()
-            epoch_loss += loss.item()
+    # Evaluate and log metrics after training
+    return evaluate_and_log_metrics(
+        model, train_loader, criterion, device, metrics_dict, phase="train"
+    )
 
-    # Calculate and return epoch metrics
-    return {
-        "loss": epoch_loss / len(train_loader),
-        "accuracy": (
-            100.0 * epoch_correct / epoch_total
-            if mixup_alpha is None or mixup_alpha <= 0
-            else 0.0
-        ),
-    }
+
+def evaluate_and_log_metrics(
+    model, data_loader, criterion, device, metrics_dict, phase="train"
+):
+    """
+    Evaluates the model and logs metrics for either training or validation phase.
+
+    Args:
+        model (nn.Module): The model to evaluate
+        data_loader (DataLoader): DataLoader for either training or validation data
+        criterion (nn.Module): Loss function
+        device (torch.device): Device to run evaluation on
+        metrics_dict (dict): Dictionary containing all metrics history
+        phase (str): Either "train" or "val"
+
+    Returns:
+        dict: Current evaluation metrics
+    """
+    # Evaluate model
+    current_metrics = evaluate_model(model, data_loader, criterion, device)
+
+    # Update metrics history
+    metrics_dict[f"{phase}_losses"].append(current_metrics["loss"])
+    metrics_dict[f"{phase}_accuracies"].append(current_metrics["accuracy"])
+    metrics_dict[f"{phase}_precision"].append(current_metrics["precision"])
+    metrics_dict[f"{phase}_recall"].append(current_metrics["recall"])
+    metrics_dict[f"{phase}_f1"].append(current_metrics["f1"])
+
+    if phase == "val":
+        metrics_dict["val_confusion_matrices"].append(
+            current_metrics["confusion_matrix"]
+        )
+
+    # Print metrics
+    phase_name = "Train" if phase == "train" else "Val  "
+    print(
+        f"{phase_name} - Loss: {current_metrics['loss']:.4f}, "
+        f"Acc: {current_metrics['accuracy']:.2f}%"
+    )
+    print(f"      - Mean Precision: {float(np.mean(current_metrics['precision'])):.4f}")
+    print(f"      - Mean Recall: {float(np.mean(current_metrics['recall'])):.4f}")
+    print(f"      - Mean F1: {float(np.mean(current_metrics['f1'])):.4f}")
+
+    return current_metrics
