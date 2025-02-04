@@ -153,7 +153,9 @@ def load_dataset(name, data_path="datasets"):
     }
 
 
-def get_data_loaders(dataset_name, num_workers, batch_size, split="train", data_path="datasets"):
+def get_data_loaders(
+    dataset_name, num_workers, batch_size, split="train", data_path="datasets"
+):
     """
     Create data loaders for the specified dataset split.
 

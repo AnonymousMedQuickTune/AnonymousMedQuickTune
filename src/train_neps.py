@@ -5,18 +5,18 @@ Training module for automated hyperparameter optimization of medical image analy
 import logging
 import os
 
-from torch import nn, optim
+import hydra
 import torch
+import yaml
 from neps import run
 from omegaconf import DictConfig, OmegaConf
-import hydra
-import yaml
+from torch import nn, optim
 
 from src.data import get_data_loaders
-from src.util_functions import (evaluate_model, get_model, set_seed,
-                              yaml_to_neps_pipeline_space, CheckpointManager,
-                              train_epoch, set_dropout, get_warmup_scheduler,
-                              adjust_learning_rate, Mixup)
+from src.util_functions import (CheckpointManager, Mixup, adjust_learning_rate,
+                                evaluate_model, get_model,
+                                get_warmup_scheduler, set_dropout, set_seed,
+                                train_epoch, yaml_to_neps_pipeline_space)
 
 
 def run_pipeline(
@@ -24,13 +24,13 @@ def run_pipeline(
 ):
     """
     Main training pipeline for model optimization using NePS.
-    
+
     IMPORTANT: The argument order and parameter names must be exactly as shown for NePS compatibility:
     1. pipeline_directory
     2. previous_pipeline_directory
     3. config
     4. **hyperparameters
-    
+
     NePS requires these specific positional arguments in this order to manage
     the optimization process and handle checkpointing correctly.
 
@@ -59,7 +59,7 @@ def run_pipeline(
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
-    
+
     # Load dataset and create data loaders
     train_loader, val_loader, num_classes = get_data_loaders(
         config.data.dataset,
@@ -83,26 +83,26 @@ def run_pipeline(
 
     # Define loss and optimizer
     criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
-    
+
     # Create optimizer based on type
     if hyperparameters["optimizer_type"] == "adam":
         optimizer = optim.Adam(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
-            weight_decay=hyperparameters["weight_decay"]
+            weight_decay=hyperparameters["weight_decay"],
         )
     elif hyperparameters["optimizer_type"] == "adamw":
         optimizer = optim.AdamW(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
-            weight_decay=hyperparameters["weight_decay"]
+            weight_decay=hyperparameters["weight_decay"],
         )
     elif hyperparameters["optimizer_type"] == "sgd":
         optimizer = optim.SGD(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
             weight_decay=hyperparameters["weight_decay"],
-            momentum=0.9
+            momentum=0.9,
         )
 
     # Apply dropout to model
@@ -120,12 +120,12 @@ def run_pipeline(
 
     # Initialize training metrics
     metrics = {
-        'train_losses': [],
-        'train_accuracies': [],
-        'val_losses': [],
-        'val_accuracies': []
+        "train_losses": [],
+        "train_accuracies": [],
+        "val_losses": [],
+        "val_accuracies": [],
     }
-    
+
     # Configure training hyperparameters and directories
     # The number_of_epochs is a fidelity parameter that controls the training duration
     # and is automatically adjusted by NePS during the optimization process
@@ -135,8 +135,10 @@ def run_pipeline(
     print(f"Previous pipeline directory: {previous_pipeline_directory}\n")
 
     # Initialize checkpoint manager
-    checkpoint_manager = CheckpointManager(pipeline_directory, previous_pipeline_directory)
-    
+    checkpoint_manager = CheckpointManager(
+        pipeline_directory, previous_pipeline_directory
+    )
+
     # Load previous checkpoint if available
     start_epoch = checkpoint_manager.initialize_training(model, metrics)
 
@@ -154,46 +156,43 @@ def run_pipeline(
 
         # Training phase
         train_metrics = train_epoch(
-            model, 
-            train_loader, 
-            criterion, 
-            optimizer, 
-            scaler, 
-            device,
-            mixup_fn=mixup_fn
+            model, train_loader, criterion, optimizer, scaler, device, mixup_fn=mixup_fn
         )
-        metrics['train_losses'].append(train_metrics['loss'])
-        metrics['train_accuracies'].append(train_metrics['accuracy'])
-        print(f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.2f}%")
+        metrics["train_losses"].append(train_metrics["loss"])
+        metrics["train_accuracies"].append(train_metrics["accuracy"])
+        print(
+            f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.2f}%"
+        )
 
         # Validation phase
         val_acc = None
         if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
             val_loss, val_acc = evaluate_model(model, val_loader, criterion, device)
-            metrics['val_losses'].append(val_loss)
-            metrics['val_accuracies'].append(val_acc)
+            metrics["val_losses"].append(val_loss)
+            metrics["val_accuracies"].append(val_acc)
             print(f"Val   - Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%")
 
         # Save progress
-        checkpoint_manager.save(model, val_acc, config, num_classes, hyperparameters,
-                              device, epoch, metrics)
+        checkpoint_manager.save(
+            model, val_acc, config, num_classes, hyperparameters, device, epoch, metrics
+        )
 
     print("\nTraining completed!")
-    final_val_acc = metrics['val_accuracies'][-1] if metrics['val_accuracies'] else 0
+    final_val_acc = metrics["val_accuracies"][-1] if metrics["val_accuracies"] else 0
     print(f"Final validation accuracy: {final_val_acc:.2f}%\n")
 
     return {"loss": -final_val_acc}  # NePS minimizes negative accuracy
 
 
 @hydra.main(
-    version_base=None, 
+    version_base=None,
     config_path="../configs/experiments",
-    config_name="desmoid_config.yaml"
+    config_name="desmoid_config.yaml",
 )
 def main(config: DictConfig) -> None:
     """
     Main entry point for the training script.
-    
+
     Args:
         config (DictConfig): Hydra configuration object
     """
@@ -206,13 +205,15 @@ def main(config: DictConfig) -> None:
 
     # Print configurations
     print("\nconfig: ", config, "\npipeline space: ", pipeline_space, "\n")
-    
+
     # Save configurations to files
     output_dir = os.path.join(config.experiment_base_dir, "hydra_output")
     os.makedirs(output_dir, exist_ok=True)
-    
-    for filename, data in [("config.yaml", OmegaConf.to_yaml(config)), 
-                         ("pipeline_space.yaml", yaml.dump(pipeline_space))]:
+
+    for filename, data in [
+        ("config.yaml", OmegaConf.to_yaml(config)),
+        ("pipeline_space.yaml", yaml.dump(pipeline_space)),
+    ]:
         with open(os.path.join(output_dir, filename), "w") as f:
             f.write(data)
 

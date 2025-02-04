@@ -201,7 +201,7 @@ class CheckpointManager:
     """
     Manages model checkpoints including loading, saving and resuming training.
     """
-    
+
     def __init__(self, pipeline_directory, previous_pipeline_directory):
         """
         Initialize CheckpointManager.
@@ -229,8 +229,7 @@ class CheckpointManager:
 
         if self.previous_pipeline_directory is not None:
             checkpoint_path = os.path.join(
-                self.previous_pipeline_directory, 
-                self.checkpoint_name
+                self.previous_pipeline_directory, self.checkpoint_name
             )
             if os.path.exists(checkpoint_path):
                 start_epoch = self._load_checkpoint(checkpoint_path, model, metrics)
@@ -250,8 +249,17 @@ class CheckpointManager:
         metrics.update(checkpoint["metrics"])
         return checkpoint["epoch"]
 
-    def save(self, model, val_acc, config, num_classes, hyperparameters, 
-             device, epoch, metrics):
+    def save(
+        self,
+        model,
+        val_acc,
+        config,
+        num_classes,
+        hyperparameters,
+        device,
+        epoch,
+        metrics,
+    ):
         """
         Save model checkpoint.
 
@@ -273,7 +281,7 @@ class CheckpointManager:
             "hyperparameters": hyperparameters,
             "device": str(device),
             "epoch": epoch + 1,
-            "metrics": metrics
+            "metrics": metrics,
         }
 
         # Save latest checkpoint (overwrite)
@@ -283,8 +291,7 @@ class CheckpointManager:
         # Save periodic checkpoint
         if (epoch + 1) % config.logging.save_every == 0:
             periodic_path = os.path.join(
-                self.pipeline_directory, 
-                f"model_checkpoint_after_{epoch+1}epochs.pth"
+                self.pipeline_directory, f"model_checkpoint_after_{epoch+1}epochs.pth"
             )
             torch.save(checkpoint, periodic_path)
 
@@ -292,7 +299,7 @@ class CheckpointManager:
 def set_dropout(module, dropout_rate):
     """
     Recursively sets dropout rate for all dropout layers in the model.
-    
+
     Args:
         module (nn.Module): PyTorch module
         dropout_rate (float): Dropout rate to set
@@ -307,9 +314,10 @@ class Mixup:
     """
     Mixup augmentation class.
     """
+
     def __init__(self, mixup_alpha=1.0):
         self.mixup_alpha = mixup_alpha
-    
+
     def __call__(self, x, target):
         if self.mixup_alpha > 0:
             lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
@@ -327,28 +335,29 @@ class Mixup:
 def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
     """
     Creates a learning rate scheduler with linear warmup.
-    
+
     Args:
         optimizer: PyTorch optimizer
         warmup_epochs (int): Number of warmup epochs
         steps_per_epoch (int): Number of steps per epoch
-    
+
     Returns:
         scheduler: Learning rate scheduler
     """
+
     def lr_lambda(step):
         current_step = step / steps_per_epoch
         if current_step < warmup_epochs:
             return current_step / warmup_epochs
         return 1.0
-    
+
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
 def adjust_learning_rate(scheduler, epoch):
     """
     Adjusts learning rate according to scheduler.
-    
+
     Args:
         scheduler: Learning rate scheduler
         epoch (int): Current epoch
@@ -356,7 +365,9 @@ def adjust_learning_rate(scheduler, epoch):
     scheduler.step()
 
 
-def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup_fn=None):
+def train_epoch(
+    model, train_loader, criterion, optimizer, scaler, device, mixup_fn=None
+):
     """
     Train model for one epoch and return training metrics.
 
@@ -384,11 +395,13 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup
         # Apply mixup if configured
         if mixup_fn is not None:
             inputs, targets_a, targets_b, lam = mixup_fn(inputs, targets)
-            
+
             # Forward pass with mixed precision
             with torch.cuda.amp.autocast():
                 outputs = model(inputs)
-                loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+                loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(
+                    outputs, targets_b
+                )
         else:
             # Forward pass with mixed precision
             with torch.cuda.amp.autocast():
@@ -411,6 +424,6 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup
 
     # Calculate and return epoch metrics
     return {
-        'loss': epoch_loss / len(train_loader),
-        'accuracy': 100.0 * epoch_correct / epoch_total if mixup_fn is None else 0.0
+        "loss": epoch_loss / len(train_loader),
+        "accuracy": 100.0 * epoch_correct / epoch_total if mixup_fn is None else 0.0,
     }
