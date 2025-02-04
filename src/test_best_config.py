@@ -3,11 +3,12 @@ Test script to train model with optimal hyperparameters found by NePS.
 """
 
 import argparse
+import ast
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 from omegaconf import OmegaConf
+from torch import nn
 
 from src.data import get_data_loaders
 from src.util_functions import evaluate_model, get_model, set_seed
@@ -27,14 +28,14 @@ def parse_best_config(config_file_path):
     Raises:
         ValueError: If no Config ID or Config was found in the file
     """
-    with open(config_file_path, "r") as f:
+    with open(config_file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     last_config = None
     last_config_id = None
 
-    for i in range(len(lines)):
-        line = lines[i].strip()
+    for i, line in enumerate(lines):
+        line = line.strip()
         if line.startswith("Config ID:"):
             last_config_id = line.replace("Config ID:", "").strip()
             # Get the config from the next line
@@ -45,12 +46,12 @@ def parse_best_config(config_file_path):
         raise ValueError("Could not find Config ID or Config in file")
 
     print("\n\nEvaluating best NePS config on the test set:\n", last_config, "\n\n")
-    return eval(last_config), last_config_id
+    return ast.literal_eval(last_config), last_config_id
 
 
 def test_run_pipeline(
-    pipeline_directory,
-    previous_pipeline_directory,
+    _pipeline_directory,  # Unused but required by pipeline interface
+    _previous_pipeline_directory,  # Unused but required by pipeline interface
     config,
     neps_output_dir,
     config_id,
@@ -60,8 +61,8 @@ def test_run_pipeline(
     Runs a test evaluation with the best hyperparameters on the test set.
 
     Args:
-        pipeline_directory (str): Directory for the test run
-        previous_pipeline_directory (str): Not used, kept for compatibility
+        _pipeline_directory (str): Required by pipeline interface but not used
+        _previous_pipeline_directory (str): Required by pipeline interface but not used
         config (OmegaConf): Configuration object with model and data settings
         neps_output_dir (str): Directory containing the NePS output files
         config_id (str): ID of the configuration to test
@@ -77,7 +78,7 @@ def test_run_pipeline(
     print(f"\nUsing device: {device}")
 
     # Load test dataset and create data loader
-    test_loader, num_classes = get_data_loaders(
+    test_loader, _, num_classes = get_data_loaders(
         config.data.dataset,
         config.data.num_workers,
         hyperparameters["batch_size"],
@@ -165,8 +166,8 @@ def main():
 
     # Run testing with best hyperparameters on test set
     result = test_run_pipeline(
-        pipeline_directory=str(test_dir),
-        previous_pipeline_directory=None,
+        _pipeline_directory=str(test_dir),
+        _previous_pipeline_directory=None,
         config=config,
         neps_output_dir=neps_output_dir,
         config_id=config_id,

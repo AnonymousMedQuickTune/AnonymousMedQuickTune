@@ -13,6 +13,7 @@ Date: [Current Date]
 """
 
 import argparse
+import ast
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -21,6 +22,19 @@ import pandas as pd
 
 
 class NePSQuickTuneAdapter:
+    """
+    Adapter class to convert NePS optimization results into QuickTune format.
+
+    This class handles the conversion of NePS output files into three CSV files
+    required by QuickTune:
+    - config.csv: Contains hyperparameter configurations
+    - curve.csv: Contains learning curves data
+    - cost.csv: Contains runtime costs
+
+    The adapter parses the NePS output, transforms the data into appropriate
+    formats, and saves the results as CSV files in the specified output directory.
+    """
+
     def __init__(self, input_path: str, output_dir: str):
         """
         Initialize the adapter with input and output paths.
@@ -49,7 +63,7 @@ class NePSQuickTuneAdapter:
         """
         results = []
         try:
-            with open(self.input_path, "r") as file:
+            with open(self.input_path, "r", encoding="utf-8") as file:
                 current_entry = {}
                 for line in file:
                     line = line.strip()
@@ -61,21 +75,19 @@ class NePSQuickTuneAdapter:
                     elif line.startswith("Config:"):
                         config_str = line[line.index("{") :].strip()
                         try:
-                            config_dict = eval(
-                                config_str
-                            )  # Safe since we know the format
+                            config_dict = ast.literal_eval(config_str)
                             current_entry.update(config_dict)
                             results.append(current_entry.copy())
                             current_entry = {}
                         except (SyntaxError, ValueError) as e:
-                            logging.error(f"Failed to parse config: {config_str}")
-                            logging.error(f"Error: {str(e)}")
+                            logging.error("Failed to parse config: %s", config_str)
+                            logging.error("Error: %s", str(e))
 
         except FileNotFoundError:
-            logging.error(f"Input file not found: {self.input_path}")
+            logging.error("Input file not found: %s", self.input_path)
             raise
 
-        logging.info(f"Successfully parsed {len(results)} configurations")
+        logging.info("Successfully parsed %d configurations", len(results))
         return results
 
     def create_dataframes(
@@ -129,14 +141,14 @@ class NePSQuickTuneAdapter:
             config_df.to_csv(self.output_dir / "config.csv")
             curves_df.to_csv(self.output_dir / "curve.csv")
             cost_df.to_csv(self.output_dir / "cost.csv")
-            logging.info(f"Successfully saved CSV files to {self.output_dir}")
+            logging.info("Successfully saved CSV files to %s", self.output_dir)
         except Exception as e:
-            logging.error(f"Failed to save CSV files: {str(e)}")
+            logging.error("Failed to save CSV files: %s", str(e))
             raise
 
     def convert(self) -> None:
         """Execute the complete conversion process."""
-        logging.info(f"Starting conversion from {self.input_path}")
+        logging.info("Starting conversion from %s", self.input_path)
         results = self.parse_neps_output()
         config_df, curves_df, cost_df = self.create_dataframes(results)
         self.save_dataframes(config_df, curves_df, cost_df)
@@ -161,7 +173,7 @@ def main():
         adapter = NePSQuickTuneAdapter(args.input_path, args.output_dir)
         adapter.convert()
     except Exception as e:
-        logging.error(f"Conversion failed: {str(e)}")
+        logging.error("Conversion failed: %s", str(e))
         raise
 
 

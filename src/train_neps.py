@@ -13,7 +13,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch import nn, optim
 
 from src.data import get_data_loaders
-from src.util_functions import (CheckpointManager, Mixup, adjust_learning_rate,
+from src.util_functions import (CheckpointManager, adjust_learning_rate,
                                 evaluate_model, get_model,
                                 get_warmup_scheduler, set_dropout, set_seed,
                                 train_epoch, yaml_to_neps_pipeline_space)
@@ -25,7 +25,7 @@ def run_pipeline(
     """
     Main training pipeline for model optimization using NePS.
 
-    IMPORTANT: The argument order and parameter names must be exactly as shown for NePS compatibility:
+    IMPORTANT: The argument order and parameter names must be as shown for NePS compatibility:
     1. pipeline_directory
     2. previous_pipeline_directory
     3. config
@@ -104,19 +104,21 @@ def run_pipeline(
             weight_decay=hyperparameters["weight_decay"],
             momentum=0.9,
         )
+    else:
+        raise ValueError(f"Invalid optimizer type: {hyperparameters['optimizer_type']}")
 
     # Apply dropout to model
     model.apply(lambda m: set_dropout(m, hyperparameters["dropout_rate"]))
 
     # Initialize mixup if alpha > 0
-    mixup_fn = None
-    if hyperparameters["mixup_alpha"] > 0:
-        mixup_fn = Mixup(mixup_alpha=hyperparameters["mixup_alpha"])
+    mixup_alpha = hyperparameters["mixup_alpha"]
 
     # Warmup scheduler
     warmup_epochs = hyperparameters["warmup_epochs"]
     if warmup_epochs > 0:
         scheduler = get_warmup_scheduler(optimizer, warmup_epochs, len(train_loader))
+    else:
+        raise ValueError("Warmup epochs must be greater than 0")
 
     # Initialize training metrics
     metrics = {
@@ -152,11 +154,17 @@ def run_pipeline(
 
         # Apply warmup scheduler if configured
         if epoch < warmup_epochs:
-            adjust_learning_rate(scheduler, epoch)
+            adjust_learning_rate(scheduler)
 
         # Training phase
         train_metrics = train_epoch(
-            model, train_loader, criterion, optimizer, scaler, device, mixup_fn=mixup_fn
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            scaler,
+            device,
+            mixup_alpha=mixup_alpha,
         )
         metrics["train_losses"].append(train_metrics["loss"])
         metrics["train_accuracies"].append(train_metrics["accuracy"])
@@ -214,7 +222,7 @@ def main(config: DictConfig) -> None:
         ("config.yaml", OmegaConf.to_yaml(config)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space)),
     ]:
-        with open(os.path.join(output_dir, filename), "w") as f:
+        with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
 
     # Run NePS optimization
@@ -238,4 +246,5 @@ def main(config: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
     main()

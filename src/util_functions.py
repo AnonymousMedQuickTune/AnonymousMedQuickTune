@@ -310,26 +310,33 @@ def set_dropout(module, dropout_rate):
         set_dropout(child, dropout_rate)
 
 
-class Mixup:
+def mixup_data(x, target, mixup_alpha=1.0):
     """
-    Mixup augmentation class.
+    Performs Mixup augmentation on the input data.
+
+    Args:
+        x: Input tensor
+        target: Target tensor
+        mixup_alpha (float): Mixup alpha parameter for beta distribution
+
+    Returns:
+        tuple: (mixed_x, y_a, y_b, lam)
+            - mixed_x: Mixed input
+            - y_a: First target
+            - y_b: Second target
+            - lam: Lambda value used for mixing
     """
+    if mixup_alpha > 0:
+        lam = np.random.beta(mixup_alpha, mixup_alpha)
+    else:
+        lam = 1
 
-    def __init__(self, mixup_alpha=1.0):
-        self.mixup_alpha = mixup_alpha
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(x.device)
 
-    def __call__(self, x, target):
-        if self.mixup_alpha > 0:
-            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-        else:
-            lam = 1
-
-        batch_size = x.size()[0]
-        index = torch.randperm(batch_size).to(x.device)
-
-        mixed_x = lam * x + (1 - lam) * x[index, :]
-        y_a, y_b = target, target[index]
-        return mixed_x, y_a, y_b, lam
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = target, target[index]
+    return mixed_x, y_a, y_b, lam
 
 
 def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
@@ -354,19 +361,19 @@ def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-def adjust_learning_rate(scheduler, epoch):
+def adjust_learning_rate(scheduler):
     """
     Adjusts learning rate according to scheduler.
 
     Args:
-        scheduler: Learning rate scheduler
-        epoch (int): Current epoch
+        scheduler: Learning rate scheduler or None
     """
-    scheduler.step()
+    if scheduler is not None:
+        scheduler.step()
 
 
 def train_epoch(
-    model, train_loader, criterion, optimizer, scaler, device, mixup_fn=None
+    model, train_loader, criterion, optimizer, scaler, device, mixup_alpha=None
 ):
     """
     Train model for one epoch and return training metrics.
@@ -378,7 +385,7 @@ def train_epoch(
         optimizer: Optimizer
         scaler: Gradient scaler for mixed precision
         device: Device to train on
-        mixup_fn (Mixup, optional): Mixup augmentation function
+        mixup_alpha (float, optional): Mixup alpha parameter
 
     Returns:
         dict: Dictionary containing loss and accuracy for the epoch
@@ -393,8 +400,8 @@ def train_epoch(
         inputs, targets = inputs.to(device), targets.to(device)
 
         # Apply mixup if configured
-        if mixup_fn is not None:
-            inputs, targets_a, targets_b, lam = mixup_fn(inputs, targets)
+        if mixup_alpha is not None and mixup_alpha > 0:
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
 
             # Forward pass with mixed precision
             with torch.cuda.amp.autocast():
@@ -418,12 +425,18 @@ def train_epoch(
         with torch.no_grad():
             _, predicted = outputs.max(1)
             epoch_total += targets.size(0)
-            if mixup_fn is None:  # Only count accuracy for non-mixup batches
+            if (
+                mixup_alpha is None or mixup_alpha <= 0
+            ):  # Only count accuracy for non-mixup batches
                 epoch_correct += predicted.eq(targets).sum().item()
             epoch_loss += loss.item()
 
     # Calculate and return epoch metrics
     return {
         "loss": epoch_loss / len(train_loader),
-        "accuracy": 100.0 * epoch_correct / epoch_total if mixup_fn is None else 0.0,
+        "accuracy": (
+            100.0 * epoch_correct / epoch_total
+            if mixup_alpha is None or mixup_alpha <= 0
+            else 0.0
+        ),
     }
