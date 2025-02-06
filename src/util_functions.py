@@ -5,6 +5,7 @@ configuration parsing, and evaluation metrics calculation.
 
 import os
 import random
+import time
 
 import neps
 import numpy as np
@@ -230,23 +231,19 @@ class CheckpointManager:
     """
 
     def __init__(self, pipeline_directory, previous_pipeline_directory):
-        """
-        Initialize CheckpointManager.
-
-        Args:
-            pipeline_directory (str): Directory for saving new checkpoints
-            previous_pipeline_directory (str): Directory containing previous checkpoints
-        """
+        """Initialize CheckpointManager."""
         self.pipeline_directory = pipeline_directory
         self.previous_pipeline_directory = previous_pipeline_directory
         self.checkpoint_name = "model_latest_checkpoint.pth"
 
-    def initialize_training(self, model, metrics):
+    def initialize_training(self, model, optimizer, scheduler, metrics):
         """
         Initialize training by loading previous checkpoint if available.
 
         Args:
             model (nn.Module): Model to load weights into
+            optimizer: Optimizer to load state into
+            scheduler: Learning rate scheduler to load state into
             metrics (dict): Dictionary to store training metrics
 
         Returns:
@@ -259,7 +256,7 @@ class CheckpointManager:
                 self.previous_pipeline_directory, self.checkpoint_name
             )
             if os.path.exists(checkpoint_path):
-                start_epoch = self._load_checkpoint(checkpoint_path, model, metrics)
+                start_epoch = self._load_checkpoint(checkpoint_path, model, optimizer, scheduler, metrics)
                 print(f"\nResuming training from epoch {start_epoch}")
             else:
                 print("\nNo checkpoint found, starting from epoch 1")
@@ -268,17 +265,39 @@ class CheckpointManager:
 
         return start_epoch
 
-    def _load_checkpoint(self, checkpoint_path, model, metrics):
-        """Internal method to load checkpoint file."""
+    def _load_checkpoint(self, checkpoint_path, model, optimizer, scheduler, metrics):
+        """
+        Internal method to load checkpoint file.
+        
+        Args:
+            checkpoint_path (str): Path to checkpoint file
+            model (nn.Module): Model to load weights into
+            optimizer: Optimizer to load state into
+            scheduler: Learning rate scheduler to load state into
+            metrics (dict): Dictionary to store training metrics
+            
+        Returns:
+            int: Next epoch number
+        """
         print(f"\nLoading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path)
+        
+        # Load model and training states
         model.load_state_dict(checkpoint["model_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        if scheduler is not None and "scheduler_state_dict" in checkpoint:
+            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            
+        # Load metrics
         metrics.update(checkpoint["metrics"])
+        
         return checkpoint["epoch"]
 
     def save(
         self,
         model,
+        optimizer,
+        scheduler,
         val_acc,
         config,
         num_classes,
@@ -292,6 +311,8 @@ class CheckpointManager:
 
         Args:
             model (nn.Module): Model to save
+            optimizer: Optimizer to save state
+            scheduler: Learning rate scheduler to save state
             val_acc (float): Current validation accuracy
             config (DictConfig): Configuration object
             num_classes (int): Number of classes
@@ -302,6 +323,7 @@ class CheckpointManager:
         """
         checkpoint = {
             "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
             "val_acc": val_acc,
             "model_type": config.model.type,
             "num_classes": num_classes,
@@ -310,6 +332,10 @@ class CheckpointManager:
             "epoch": epoch + 1,
             "metrics": metrics,
         }
+        
+        # Save scheduler state if it exists
+        if scheduler is not None:
+            checkpoint["scheduler_state_dict"] = scheduler.state_dict()
 
         # Save latest checkpoint (overwrite)
         latest_path = os.path.join(self.pipeline_directory, self.checkpoint_name)
@@ -366,23 +392,23 @@ def mixup_data(x, target, mixup_alpha=1.0):
     return mixed_x, y_a, y_b, lam
 
 
-def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
+def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch, base_lr):
     """
-    Creates a learning rate scheduler with linear warmup.
+    Create a learning rate scheduler with linear warmup.
 
     Args:
-        optimizer: PyTorch optimizer
-        warmup_epochs (int): Number of warmup epochs
+        optimizer: The optimizer whose learning rate should be scheduled
+        warmup_epochs (int): Number of epochs to warm up for
         steps_per_epoch (int): Number of steps per epoch
+        base_lr (float): Target learning rate after warmup
 
     Returns:
-        scheduler: Learning rate scheduler
+        LambdaLR scheduler
     """
-
-    def lr_lambda(step):
-        current_step = step / steps_per_epoch
-        if current_step < warmup_epochs:
-            return current_step / warmup_epochs
+    def lr_lambda(epoch):
+        """Calculate lr_lambda for LambdaLR scheduler."""
+        if epoch <= warmup_epochs:
+            return float(epoch + 1) / float(warmup_epochs)
         return 1.0
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
@@ -393,7 +419,7 @@ def adjust_learning_rate(scheduler):
     Adjusts learning rate according to scheduler.
 
     Args:
-        scheduler: Learning rate scheduler or None
+        scheduler: Learning rate scheduler
     """
     if scheduler is not None:
         scheduler.step()
@@ -489,14 +515,14 @@ def evaluate_and_log_metrics(
     current_metrics = evaluate_model(model, data_loader, criterion, device)
 
     # Update metrics history
-    metrics_dict[f"{phase}_losses"].append(current_metrics["loss"])
-    metrics_dict[f"{phase}_accuracies"].append(current_metrics["accuracy"])
-    metrics_dict[f"{phase}_precision"].append(current_metrics["precision"])
-    metrics_dict[f"{phase}_recall"].append(current_metrics["recall"])
-    metrics_dict[f"{phase}_f1"].append(current_metrics["f1"])
+    metrics_dict[phase]["loss"].append(current_metrics["loss"])
+    metrics_dict[phase]["accuracy"].append(current_metrics["accuracy"])
+    metrics_dict[phase]["precision"].append(current_metrics["precision"])
+    metrics_dict[phase]["recall"].append(current_metrics["recall"])
+    metrics_dict[phase]["f1"].append(current_metrics["f1"])
 
     if phase == "val":
-        metrics_dict["val_confusion_matrices"].append(
+        metrics_dict[phase]["confusion_matrices"].append(
             current_metrics["confusion_matrix"]
         )
 
@@ -528,3 +554,186 @@ def log_gradients(model, epoch, gradients_file):
                 avg_grad = torch.mean(torch.abs(param.grad)).item()
                 max_grad = torch.max(torch.abs(param.grad)).item()
                 f.write(f"{epoch+1},{name},{avg_grad:.6f},{max_grad:.6f}\n")
+
+
+def log_learning_rate(lr_file, epoch, optimizer):
+    """Log learning rates for each parameter group."""
+    with open(lr_file, 'a', encoding='utf-8') as f:
+        for param_group in optimizer.param_groups:
+            f.write(f"{epoch+1},{param_group['lr']:.8f}\n")
+
+
+def log_resources(resource_file, epoch):
+    """Log GPU memory usage and other resource metrics."""
+    if torch.cuda.is_available():
+        with open(resource_file, 'a', encoding='utf-8') as f:
+            allocated = torch.cuda.memory_allocated() / 1024**2  # MB
+            cached = torch.cuda.memory_reserved() / 1024**2      # MB
+            f.write(f"{epoch+1},{allocated:.2f},{cached:.2f}\n")
+
+
+def log_timing(timing_file, epoch, train_time, eval_time, epoch_time):
+    """
+    Log timing information for training and evaluation.
+    
+    Args:
+        timing_file (str): Path to the timing log file
+        epoch (int): Current epoch number
+        train_time (float): Time spent in training
+        eval_time (float): Time spent in evaluation
+        epoch_time (float): Total time spent in the epoch
+    """
+    with open(timing_file, 'a', encoding='utf-8') as f:
+        f.write(f"{epoch+1},{train_time:.2f},{eval_time:.2f},{epoch_time:.2f}\n")
+
+
+def log_model_info(model_info_file, model, config, hyperparameters):
+    """Log model architecture and parameter statistics."""
+    def count_parameters(model):
+        return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    
+    model_info = {
+        'model_type': config.model.type,
+        'trainable_parameters': count_parameters(model),
+        'layer_sizes': {name: list(param.size()) for name, param in model.named_parameters()},
+        'optimizer_type': hyperparameters['optimizer_type'],
+        'loss_function': 'CrossEntropyLoss'
+    }
+    
+    with open(model_info_file, 'w', encoding='utf-8') as f:
+        yaml.dump(model_info, f)
+
+
+def get_optimizer(model, optimizer_type, learning_rate, weight_decay):
+    """
+    Create optimizer based on configuration.
+
+    Args:
+        model (nn.Module): Model whose parameters to optimize
+        optimizer_type (str): Type of optimizer ('adam', 'adamw', 'sgd')
+        learning_rate (float): Learning rate
+        weight_decay (float): Weight decay factor
+
+    Returns:
+        torch.optim.Optimizer: Configured optimizer
+
+    Raises:
+        ValueError: If unknown optimizer type is specified
+    """
+    if optimizer_type.lower() == "adam":
+        return torch.optim.Adam(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
+    elif optimizer_type.lower() == "adamw":
+        return torch.optim.AdamW(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
+    elif optimizer_type.lower() == "sgd":
+        return torch.optim.SGD(
+            model.parameters(),
+            lr=learning_rate,
+            momentum=0.9,
+            weight_decay=weight_decay
+        )
+    else:
+        raise ValueError(f"Unknown optimizer type: {optimizer_type}")
+
+
+def initialize_logging_files(logging_dir):
+    """
+    Initialize logging directory and create log files with headers.
+    
+    Args:
+        logging_dir (str): Directory path where log files should be created
+        
+    Returns:
+        dict: Dictionary containing paths to all log files
+    """
+    # Create logging directory
+    os.makedirs(logging_dir, exist_ok=True)
+    
+    # Define log file paths
+    log_files = {
+        'metrics': os.path.join(logging_dir, "metrics.csv"),
+        'gradients': os.path.join(logging_dir, "gradients.csv"),
+        'hyperparameters': os.path.join(logging_dir, "hyperparameters.yaml"),
+        'lr': os.path.join(logging_dir, "learning_rates.csv"),
+        'resource': os.path.join(logging_dir, "resources.csv"),
+        'timing': os.path.join(logging_dir, "timing.csv"),
+        'model_info': os.path.join(logging_dir, "model_info.yaml")
+    }
+    
+    # Create CSV headers if files don't exist
+    headers = {
+        'metrics': "epoch,phase,loss,accuracy,precision,recall,f1",
+        'gradients': "epoch,layer_name,avg_grad,max_grad",
+        'lr': "epoch,learning_rate",
+        'resource': "epoch,gpu_memory_allocated,gpu_memory_cached",
+        'timing': "epoch,train_time,eval_time,total_time"
+    }
+    
+    for file_key, header in headers.items():
+        if not os.path.exists(log_files[file_key]):
+            with open(log_files[file_key], 'w', encoding='utf-8') as f:
+                f.write(f"{header}\n")
+    
+    return log_files
+
+def log_initial_state(log_files, hyperparameters, config, model, epochs, pipeline_dir, prev_pipeline_dir):
+    """
+    Log model architecture information and print basic run configuration.
+
+    Args:
+        log_files (dict): Dictionary containing paths to log files for metrics, gradients,
+                         hyperparameters, learning rates, resources, timing, and model info
+        hyperparameters (dict): Dictionary of training hyperparameters including optimizer
+                               settings, learning rates, and other training parameters
+        config: Configuration object containing model architecture and training settings
+        model (nn.Module): The initialized PyTorch model to be trained
+        epochs (int): Total number of training epochs to run
+        pipeline_dir (str): Path to the current pipeline's output directory where
+                          checkpoints and logs will be saved
+        prev_pipeline_dir (str): Path to previous pipeline directory for resuming
+                                training, or None if starting fresh
+
+    Note:
+        This function logs the model architecture and hyperparameters to YAML files
+        and prints the epoch fidelity and directory paths to the console.
+    """
+    # Log model architecture info
+    log_model_info(log_files['model_info'], model, config, hyperparameters)
+    
+    # Print configuration for convenience
+    print(f"Epoch fidelity: {epochs}")
+    print(f"Pipeline directory: {pipeline_dir}")
+    print(f"Previous pipeline directory: {prev_pipeline_dir}\n")
+
+def log_metrics(log_file, epoch, phase, metrics):
+    """
+    Log training or validation metrics to a CSV file.
+    
+    Args:
+        log_file (str): Path to the metrics log file
+        epoch (int): Current epoch number
+        phase (str): Either 'train' or 'val'
+        metrics (dict): Dictionary containing the metrics to log:
+            - loss (float): Loss value
+            - accuracy (float): Accuracy value
+            - precision (list): Precision values
+            - recall (list): Recall values
+            - f1 (list): F1 values
+    """
+    metrics_line = (f"{epoch+1},"
+                   f"{phase},"
+                   f"{metrics['loss']:.4f},"
+                   f"{metrics['accuracy']:.4f},"
+                   f"{np.mean(metrics['precision']):.4f},"
+                   f"{np.mean(metrics['recall']):.4f},"
+                   f"{np.mean(metrics['f1']):.4f}\n")
+    
+    with open(log_file, 'a', encoding='utf-8') as f:
+        f.write(metrics_line)
