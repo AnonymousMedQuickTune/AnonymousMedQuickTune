@@ -17,11 +17,12 @@ from torch import nn, optim
 from src.data import get_data_loaders
 from src.util_functions import (CheckpointManager, adjust_learning_rate,
                                 evaluate_and_log_metrics, get_model,
-                                get_warmup_scheduler, set_dropout, set_seed,
-                                train_epoch, yaml_to_neps_pipeline_space,
-                                log_gradients, log_learning_rate,
-                                log_resources, log_timing, get_optimizer,
-                                initialize_logging_files, log_initial_state, log_metrics)
+                                get_optimizer, get_warmup_scheduler,
+                                initialize_logging_files, log_gradients,
+                                log_initial_state, log_learning_rate,
+                                log_metrics, log_resources, log_timing,
+                                set_dropout, set_seed, train_epoch,
+                                yaml_to_neps_pipeline_space)
 
 
 def run_pipeline(
@@ -94,41 +95,45 @@ def run_pipeline(
     criterion = nn.CrossEntropyLoss(
         label_smoothing=hyperparameters.get("label_smoothing", 0.0)
     )
-    
+
     # Initialize optimizer with specified parameters
     optimizer = get_optimizer(
         model=model,
         optimizer_type=hyperparameters.get("optimizer_type", "adam"),
         learning_rate=hyperparameters.get("learning_rate", 1e-3),
-        weight_decay=hyperparameters.get("weight_decay", 0.0)
+        weight_decay=hyperparameters.get("weight_decay", 0.0),
     )
 
     # Setup warmup scheduler if warmup epochs > 0
     warmup_epochs = hyperparameters.get("warmup_epochs", 0)
-    scheduler = get_warmup_scheduler(
-        optimizer, 
-        warmup_epochs, 
-        len(train_loader),
-        hyperparameters.get("learning_rate", 1e-3)
-    ) if warmup_epochs > 0 else None
+    scheduler = (
+        get_warmup_scheduler(
+            optimizer,
+            warmup_epochs,
+            len(train_loader),
+            hyperparameters.get("learning_rate", 1e-3),
+        )
+        if warmup_epochs > 0
+        else None
+    )
 
     # Initialize metrics
     metrics = {
-        'train': {
-            'loss': [],
-            'accuracy': [],
-            'precision': [],
-            'recall': [],
-            'f1': [],
+        "train": {
+            "loss": [],
+            "accuracy": [],
+            "precision": [],
+            "recall": [],
+            "f1": [],
         },
-        'val': {
-            'loss': [],
-            'accuracy': [],
-            'precision': [],
-            'recall': [],
-            'f1': [],
-            'confusion_matrices': [],
-        }
+        "val": {
+            "loss": [],
+            "accuracy": [],
+            "precision": [],
+            "recall": [],
+            "f1": [],
+            "confusion_matrices": [],
+        },
     }
 
     # Training setup
@@ -136,19 +141,25 @@ def run_pipeline(
     # Early optimization runs use fewer epochs for rapid exploration,
     # while promising hyperparameter configurations get more epochs later.
     epochs = hyperparameters["number_of_epochs"]
-    
+
     # Select GPU if available, otherwise fall back to CPU
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # Initialize training components
-    checkpoint_manager = CheckpointManager(pipeline_directory, previous_pipeline_directory)
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == 'cuda')
-    
+    checkpoint_manager = CheckpointManager(
+        pipeline_directory, previous_pipeline_directory
+    )
+    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+
     # Load checkpoint and initialize training state
-    start_epoch = checkpoint_manager.initialize_training(model, optimizer, scheduler, metrics)
+    start_epoch = checkpoint_manager.initialize_training(
+        model, optimizer, scheduler, metrics
+    )
 
     # Setup logging
-    model.log_gradients = lambda epoch: log_gradients(model, epoch, log_files['gradients'])
+    model.log_gradients = lambda epoch: log_gradients(
+        model, epoch, log_files["gradients"]
+    )
     log_initial_state(
         log_files=log_files,
         hyperparameters=hyperparameters,
@@ -156,16 +167,16 @@ def run_pipeline(
         model=model,
         epochs=epochs,
         pipeline_dir=pipeline_directory,
-        prev_pipeline_dir=previous_pipeline_directory
+        prev_pipeline_dir=previous_pipeline_directory,
     )
 
     # Main training loop
     for epoch in range(start_epoch, epochs):
         epoch_start_time = time.time()
-        
+
         # Apply warmup scheduler at the beginning of each epoch
         adjust_learning_rate(scheduler)
-        
+
         # Training phase
         train_start_time = time.time()
         train_metrics = train_epoch(
@@ -180,7 +191,7 @@ def run_pipeline(
             hyperparameters["mixup_alpha"],
         )
         train_time = time.time() - train_start_time
-        
+
         # Validation phase
         eval_start_time = time.time()
         val_metrics = None  # Initialize val_metrics as None
@@ -189,28 +200,30 @@ def run_pipeline(
                 model, val_loader, criterion, device, metrics, phase="val"
             )
         eval_time = time.time() - eval_start_time
-        
+
         # Calculate total epoch time
         epoch_time = time.time() - epoch_start_time
-        
+
         # Log all metrics and information at the end of the epoch
-        log_timing(log_files['timing'], epoch, train_time, eval_time, epoch_time)
-        log_learning_rate(log_files['lr'], epoch, optimizer)
-        log_resources(log_files['resource'], epoch)
-        
+        log_timing(log_files["timing"], epoch, train_time, eval_time, epoch_time)
+        log_learning_rate(log_files["lr"], epoch, optimizer)
+        log_resources(log_files["resource"], epoch)
+
         # Log training metrics
-        log_metrics(log_files['metrics'], epoch, "train", train_metrics)
-        
+        log_metrics(log_files["metrics"], epoch, "train", train_metrics)
+
         # Log validation metrics if available
         if val_metrics is not None:
-            log_metrics(log_files['metrics'], epoch, "val", val_metrics)
+            log_metrics(log_files["metrics"], epoch, "val", val_metrics)
 
         # Save progress
         checkpoint_manager.save(
             model,
             optimizer,
             scheduler,
-            val_metrics["accuracy"] if val_metrics is not None else 0.0,  # Default to 0.0 if no validation
+            (
+                val_metrics["accuracy"] if val_metrics is not None else 0.0
+            ),  # Default to 0.0 if no validation
             config,
             num_classes,
             hyperparameters,
@@ -220,14 +233,18 @@ def run_pipeline(
         )
 
     print("\nTraining completed!")
-    
+
     # Get final metrics
     final_metrics = {
         "accuracy": metrics["val"]["accuracy"][-1] if metrics["val"]["accuracy"] else 0,
         "precision": (
-            np.mean(metrics["val"]["precision"][-1]) if metrics["val"]["precision"] else 0
+            np.mean(metrics["val"]["precision"][-1])
+            if metrics["val"]["precision"]
+            else 0
         ),
-        "recall": np.mean(metrics["val"]["recall"][-1]) if metrics["val"]["recall"] else 0,
+        "recall": (
+            np.mean(metrics["val"]["recall"][-1]) if metrics["val"]["recall"] else 0
+        ),
         "f1": np.mean(metrics["val"]["f1"][-1]) if metrics["val"]["f1"] else 0,
     }
 
@@ -267,13 +284,16 @@ def main(config: DictConfig) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     # Load the original pipeline space YAML for compact logging
-    with open(config.pipeline_space, 'r') as f:
+    with open(config.pipeline_space, "r") as f:
         original_pipeline_space = yaml.safe_load(f)
 
     for filename, data in [
         ("config.yaml", OmegaConf.to_yaml(config)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space)),  # NePS format
-        ("pipeline_space_compact.yaml", yaml.dump(original_pipeline_space)),  # Original compact format
+        (
+            "pipeline_space_compact.yaml",
+            yaml.dump(original_pipeline_space),
+        ),  # Original compact format
     ]:
         with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
