@@ -9,7 +9,7 @@
 source activate medquicktune
 
 BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
-EXP_DIR="$BASE_DIR/experiments/desmoid/$EXPERIMENT_NAME/seed_$SEED"
+EXP_DIR="$BASE_DIR/experiments/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
 DATA_DIR="$BASE_DIR/datasets/"
 
 python -m src.test_best_config \

@@ -192,7 +192,7 @@ def main():
         "--hydra_config",
         type=str,
         required=True,
-        help="Path to hydra config file (e.g., desmoid_config.yaml)",
+        help="Path to hydra config file (e.g., main_experiment_config.yaml)",
     )
     args = parser.parse_args()
 
