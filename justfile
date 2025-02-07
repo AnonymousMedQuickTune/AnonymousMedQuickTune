@@ -84,7 +84,7 @@ run-cluster-test DATASET EXPERIMENT_NAME SEED:
 test-local DATASET EXPERIMENT_NAME SEED:
   python -m src.test_best_config \
     --config_path experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
-    --hydra_config configs/experiments/main_experiment_config.yaml
+    --hydra_config configs/main_experiment_config.yaml
 
 # Run test with best hyperparameters on cluster
 test-cluster DATASET EXPERIMENT_NAME SEED:
@@ -93,5 +93,5 @@ test-cluster DATASET EXPERIMENT_NAME SEED:
   sbatch --exclude=dlcgpu05 \
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experiments/main_experiment_config.yaml" \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/main_experiment_config.yaml" \
     cluster_scripts/test_best_config.sh

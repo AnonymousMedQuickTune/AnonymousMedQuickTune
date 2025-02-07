@@ -259,7 +259,7 @@ def run_pipeline(
 
 @hydra.main(
     version_base=None,
-    config_path="../configs/experiments",
+    config_path="../configs",
     config_name="main_experiment_config.yaml",
 )
 def main(config: DictConfig) -> None:

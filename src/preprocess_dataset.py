@@ -15,7 +15,7 @@ from src.util_functions import yaml_to_neps_pipeline_space
 
 @hydra.main(
     version_base=None,
-    config_path="../configs/experiments",
+    config_path="../configs",
     config_name="main_experiment_config.yaml",
 )
 def main(config: DictConfig) -> None:
