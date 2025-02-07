@@ -46,6 +46,18 @@ neps2qt-cluster EXPERIMENT_NAME SEED:
     --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/neps2qt.sh
 
+# Preprocess datasets locally for faster experiment initialization
+preprocess-datasets:
+    python -m src.preprocess_dataset
+
+# Preprocess datasets on cluster for faster experiment initialization
+preprocess-datasets-cluster:
+    #!/usr/bin/env bash
+    sbatch --exclude=dlcgpu05 \
+        --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+        --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+        --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+        cluster_scripts/desmoid_preprocess_dataset.sh
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run a test experiment on the local machine

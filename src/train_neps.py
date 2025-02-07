@@ -5,6 +5,8 @@ Training module for automated hyperparameter optimization of medical image analy
 import logging
 import os
 import time
+import pickle
+from pathlib import Path
 
 import hydra
 import numpy as np
@@ -296,17 +298,28 @@ def main(config: DictConfig) -> None:
         with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
     
-    # Initialize data loaders once for all config runs within a NePS run execution to save time
-    print("\nInitializing data loaders...")
-    train_loader, val_loader, num_classes = get_data_loaders(
-        config.data.dataset,
-        config.data.num_workers,
-        batch_size=pipeline_space["batch_size"].upper,  # Use maximum batch size from NePS pipeline space
-        split="train",
-        data_path=config.data.path,
-    )
+    # Try to load from cache first
+    data_path = Path(config.data.path)
+    cache_file = data_path / "cache" / f"{config.data.dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+    if cache_file.exists():
+        print("\nLoading data from cache...")
+        with open(cache_file, "rb") as f:
+            cached_data = pickle.load(f)
+            train_loader = cached_data["train_loader"]
+            val_loader = cached_data["val_loader"]
+            num_classes = cached_data["num_classes"]
+    else:
+        print("\nNo cache found. Run 'python -m src.preprocess_dataset' first to create cache.")
+        print("Falling back to regular data loading...")
+        train_loader, val_loader, num_classes = get_data_loaders(
+            config.data.dataset,
+            config.data.num_workers,
+            batch_size=pipeline_space["batch_size"].upper,
+            split="train",
+            data_path=config.data.path,
+        )
 
-    print(f"\n\n\nDataset '{config.data.dataset}' loaded with {num_classes} classes\n\n\n")
+    print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
     print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}\n")
 
     # Run NePS optimization with pre-loaded data
