@@ -39,4 +39,4 @@ data:
 #------------------------------------------------------------------------------
 logging:
   eval_every: 1           # Evaluate model every N epochs
-  save_every: 5           # Save model checkpoint every N epochs
+  save_every: 100         # Save model checkpoint every N epochs
