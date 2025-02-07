@@ -69,16 +69,31 @@ def load_dataset(name, data_path="datasets"):
         raise ValueError(f"Unknown dataset: {name}")
 
     dataset_path = os.path.join(data_path, name)
+    
+    # Check if dataset directory exists
+    if not os.path.exists(dataset_path):
+        raise ValueError(f"Dataset directory not found: {dataset_path}")
+    
     images = []
     labels = []
 
-    # Get all patient folders and sort them for reproducibility
-    patient_folders = sorted(
-        glob.glob(os.path.join(dataset_path, f"{name.capitalize()}-*"))
-    )
+    # Try different folder patterns
+    patterns = [
+        f"{name.capitalize()}-*",  # e.g., "Lipo-001"
+        f"{name.upper()}-*",      # e.g., "GIST-001"
+        f"{name}-*",              # e.g., "gist-001"
+        "*",                      # any folder in the dataset directory
+    ]
+
+    patient_folders = []
+    for pattern in patterns:
+        folders = sorted(glob.glob(os.path.join(dataset_path, pattern)))
+        if folders:
+            patient_folders = folders
+            break
 
     if not patient_folders:
-        raise ValueError("No patient folders found in " + dataset_path)
+        raise ValueError(f"No patient folders found in {dataset_path} using patterns: {patterns}")
 
     print(f"Found {len(patient_folders)} patients in {name} dataset")
 
@@ -124,9 +139,18 @@ def load_dataset(name, data_path="datasets"):
     # Convert labels to numpy array
     labels = np.array(labels)
 
-    # Check class distribution
+    # Remove classes with too few samples (less than 2)
     unique_labels, counts = np.unique(labels, return_counts=True)
-    print(f"Class distribution: {dict(zip(unique_labels, counts))}")
+    valid_labels = unique_labels[counts >= 2]
+    
+    # Filter out samples with invalid labels
+    valid_mask = np.isin(labels, valid_labels)
+    images = [img for i, img in enumerate(images) if valid_mask[i]]
+    labels = labels[valid_mask]
+    
+    # Recheck class distribution after filtering
+    unique_labels, counts = np.unique(labels, return_counts=True)
+    print(f"Class distribution after filtering: {dict(zip(unique_labels, counts))}")
 
     # First split into train and temp (80-20)
     train_data, temp_data, train_labels, temp_labels = train_test_split(
