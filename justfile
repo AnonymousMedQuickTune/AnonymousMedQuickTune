@@ -80,5 +80,5 @@ test-cluster EXPERIMENT_NAME SEED:
   sbatch --exclude=dlcgpu05 \
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experiments/desmoid_config.yaml" \
+    --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experiments/desmoid_config.yaml" \
     cluster_scripts/desmoid_test_best_config.sh
