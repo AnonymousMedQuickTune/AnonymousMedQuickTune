@@ -337,7 +337,7 @@ def main(config: DictConfig) -> None:
         pipeline_space=pipeline_space,
         root_directory=config.root_directory,
         max_evaluations_total=config.max_evaluations,
-        max_evaluations_per_run=1,
+        # max_evaluations_per_run=1,
         overwrite_working_directory=False,
         # for debugging:
         ignore_errors=True,

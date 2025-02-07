@@ -31,66 +31,67 @@ preprocess-labels:
   python utils/preprocess_data.py
 
 # Convert NePS output to QuickTune format (local machine)
-neps2qt-local EXPERIMENT_NAME SEED:
+neps2qt-local DATASET EXPERIMENT_NAME SEED:
   python src/analysis/neps_quicktune_output_adapter.py \
-    experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt \
-    --output-dir experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/quicktune_input
+    experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt \
+    --output-dir experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/quicktune_input
 
 # Convert NePS output to QuickTune format (cluster)
-neps2qt-cluster EXPERIMENT_NAME SEED:
+neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/neps2qt.sh
 
 # Preprocess datasets locally for faster experiment initialization
-preprocess-datasets:
-    python -m src.preprocess_dataset
+preprocess-datasets DATASET:
+    python -m src.preprocess_dataset data.dataset={{DATASET}}
 
 # Preprocess datasets on cluster for faster experiment initialization
-preprocess-datasets-cluster:
+preprocess-datasets-cluster DATASET:
     #!/usr/bin/env bash
     sbatch --exclude=dlcgpu05 \
         --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
         --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-        --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+        --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets",DATASET={{DATASET}} \
         cluster_scripts/desmoid_preprocess_dataset.sh
+
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run a test experiment on the local machine
-run-local-test EXPERIMENT_NAME SEED:
+run-local-test DATASET EXPERIMENT_NAME SEED:
   python -m src.train_neps \
-    data.dataset=desmoid \
+    data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}}
 
 # Submit a test experiment to the cluster
-run-cluster-test EXPERIMENT_NAME SEED:
+run-cluster-test DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/desmoid_train_neps.sh
 
 # TEST EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run test with best hyperparameters locally
-test-local EXPERIMENT_NAME SEED:
+test-local DATASET EXPERIMENT_NAME SEED:
   python -m src.test_best_config \
-    --config_path experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
+    --config_path experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
     --hydra_config configs/experiments/desmoid_config.yaml
 
 # Run test with best hyperparameters on cluster
-test-cluster EXPERIMENT_NAME SEED:
+test-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/desmoid/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experiments/desmoid_config.yaml" \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experiments/desmoid_config.yaml" \
     cluster_scripts/desmoid_test_best_config.sh

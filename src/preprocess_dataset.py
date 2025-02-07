@@ -27,6 +27,10 @@ def main(config: DictConfig) -> None:
     """
     print("\nPreprocessing datasets...")
     
+    # Get dataset name from config
+    dataset = config.data.dataset
+    print(f"Processing dataset: {dataset}")
+    
     # Convert YAML pipeline space configuration into NePS-compatible format
     pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
     
@@ -36,7 +40,7 @@ def main(config: DictConfig) -> None:
     cache_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate cache filename based on dataset and batch size
-    cache_file = cache_dir / f"{config.data.dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+    cache_file = cache_dir / f"{dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
     
     if cache_file.exists():
         print(f"Cache file already exists at {cache_file}")

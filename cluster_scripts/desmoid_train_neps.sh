@@ -10,12 +10,12 @@
 source activate medquicktune
 
 BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
-EXP_DIR="$BASE_DIR/experiments/desmoid/$EXPERIMENT_NAME/seed_$SEED"
+EXP_DIR="$BASE_DIR/experiments/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
 DATA_DIR="$BASE_DIR/datasets/"
 PIPELINE_SPACE="configs/pipeline_spaces/pipeline_space_with_user_priors.yaml"
 
 python -m src.train_neps \
-    data.dataset=desmoid \
+    data.dataset=$DATASET \
     experiment_name=$EXPERIMENT_NAME \
     seed=$SEED \
     experiment_base_dir=$EXP_DIR \
