@@ -69,20 +69,20 @@ def load_dataset(name, data_path="datasets"):
         raise ValueError(f"Unknown dataset: {name}")
 
     dataset_path = os.path.join(data_path, name)
-    
+
     # Check if dataset directory exists
     if not os.path.exists(dataset_path):
         raise ValueError(f"Dataset directory not found: {dataset_path}")
-    
+
     images = []
     labels = []
 
     # Try different folder patterns
     patterns = [
         f"{name.capitalize()}-*",  # e.g., "Lipo-001"
-        f"{name.upper()}-*",      # e.g., "GIST-001"
-        f"{name}-*",              # e.g., "gist-001"
-        "*",                      # any folder in the dataset directory
+        f"{name.upper()}-*",  # e.g., "GIST-001"
+        f"{name}-*",  # e.g., "gist-001"
+        "*",  # any folder in the dataset directory
     ]
 
     patient_folders = []
@@ -93,7 +93,9 @@ def load_dataset(name, data_path="datasets"):
             break
 
     if not patient_folders:
-        raise ValueError(f"No patient folders found in {dataset_path} using patterns: {patterns}")
+        raise ValueError(
+            f"No patient folders found in {dataset_path} using patterns: {patterns}"
+        )
 
     print(f"Found {len(patient_folders)} patients in {name} dataset")
 
@@ -142,12 +144,12 @@ def load_dataset(name, data_path="datasets"):
     # Remove classes with too few samples (less than 2)
     unique_labels, counts = np.unique(labels, return_counts=True)
     valid_labels = unique_labels[counts >= 2]
-    
+
     # Filter out samples with invalid labels
     valid_mask = np.isin(labels, valid_labels)
     images = [img for i, img in enumerate(images) if valid_mask[i]]
     labels = labels[valid_mask]
-    
+
     # Recheck class distribution after filtering
     unique_labels, counts = np.unique(labels, return_counts=True)
     print(f"Class distribution after filtering: {dict(zip(unique_labels, counts))}")

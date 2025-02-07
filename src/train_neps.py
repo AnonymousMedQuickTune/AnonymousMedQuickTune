@@ -4,8 +4,8 @@ Training module for automated hyperparameter optimization of medical image analy
 
 import logging
 import os
-import time
 import pickle
+import time
 from pathlib import Path
 
 import hydra
@@ -28,13 +28,13 @@ from src.util_functions import (CheckpointManager, adjust_learning_rate,
 
 
 def run_pipeline(
-    pipeline_directory, 
-    previous_pipeline_directory, 
-    config, 
+    pipeline_directory,
+    previous_pipeline_directory,
+    config,
     train_loader,
     val_loader,
     num_classes,
-    **hyperparameters
+    **hyperparameters,
 ):
     """
     Main training pipeline for model optimization using NePS.
@@ -297,10 +297,14 @@ def main(config: DictConfig) -> None:
     ]:
         with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
-    
+
     # Try to load from cache first
     data_path = Path(config.data.path)
-    cache_file = data_path / "cache" / f"{config.data.dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+    cache_file = (
+        data_path
+        / "cache"
+        / f"{config.data.dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+    )
     if cache_file.exists():
         print("\nLoading data from cache...")
         with open(cache_file, "rb") as f:
@@ -309,7 +313,9 @@ def main(config: DictConfig) -> None:
             val_loader = cached_data["val_loader"]
             num_classes = cached_data["num_classes"]
     else:
-        print("\nNo cache found. Run 'python -m src.preprocess_dataset' first to create cache.")
+        print(
+            "\nNo cache found. Run 'python -m src.preprocess_dataset' first to create cache."
+        )
         print("Falling back to regular data loading...")
         train_loader, val_loader, num_classes = get_data_loaders(
             config.data.dataset,
