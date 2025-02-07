@@ -209,9 +209,8 @@ def main():
     # Get NePS output directory from config_path
     neps_output_dir = Path(args.config_path).parent
 
-    # Run testing with best hyperparameters on test set
-    results_dir = Path(neps_output_dir) / "results" / f"config_{config_id}"
-    performance_file = results_dir / "test_set_performance.txt"
+    # Änderung: Speichere die Performance-Datei eine Ebene höher als NePS_output
+    performance_file = neps_output_dir.parent / "test_performance.txt"
 
     # Capture all output in the file while also printing to console
     with performance_file.open("w") as f:
