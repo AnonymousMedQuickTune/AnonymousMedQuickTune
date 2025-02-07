@@ -26,7 +26,13 @@ from src.util_functions import (CheckpointManager, adjust_learning_rate,
 
 
 def run_pipeline(
-    pipeline_directory, previous_pipeline_directory, config, **hyperparameters
+    pipeline_directory, 
+    previous_pipeline_directory, 
+    config, 
+    train_loader,
+    val_loader,
+    num_classes,
+    **hyperparameters
 ):
     """
     Main training pipeline for model optimization using NePS.
@@ -44,6 +50,9 @@ def run_pipeline(
         pipeline_directory (str): Directory where current pipeline results will be saved
         previous_pipeline_directory (str): Directory containing previous pipeline runs
         config (DictConfig): Hydra configuration object
+        train_loader (DataLoader): Training data loader
+        val_loader (DataLoader): Validation data loader
+        num_classes (int): Number of classes in the dataset
         **hyperparameters: Configuration dictionary containing hyperparameters:
             - learning_rate (float): Learning rate for optimizer
             - batch_size (int): Batch size for training
@@ -69,17 +78,6 @@ def run_pipeline(
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
-
-    # Load dataset and create data loaders
-    train_loader, val_loader, num_classes = get_data_loaders(
-        config.data.dataset,
-        config.data.num_workers,
-        hyperparameters["batch_size"],
-        split="train",
-        data_path=config.data.path,
-    )
-    print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
-    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}\n")
 
     # Setup model
     model_config = {
@@ -297,14 +295,30 @@ def main(config: DictConfig) -> None:
     ]:
         with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
+    
+    # Initialize data loaders once for all config runs within a NePS run execution to save time
+    print("\nInitializing data loaders...")
+    train_loader, val_loader, num_classes = get_data_loaders(
+        config.data.dataset,
+        config.data.num_workers,
+        batch_size=pipeline_space["batch_size"].upper,  # Use maximum batch size from NePS pipeline space
+        split="train",
+        data_path=config.data.path,
+    )
 
-    # Run NePS optimization
+    print(f"\n\n\nDataset '{config.data.dataset}' loaded with {num_classes} classes\n\n\n")
+    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}\n")
+
+    # Run NePS optimization with pre-loaded data
     logging.basicConfig(level=logging.INFO)
     run(
         run_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
             config=config,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            num_classes=num_classes,
             **kwargs,
         ),
         pipeline_space=pipeline_space,
