@@ -86,7 +86,7 @@ def load_dataset(name, data_path="datasets"):
     for folder in patient_folders:
         try:
             # Load label
-            label_file = glob.glob(os.path.join(folder, f"*_label.csv"))[0]
+            label_file = glob.glob(os.path.join(folder, "*_label.csv"))[0]
             label = pd.read_csv(label_file)["Diagnosis_binary"].iloc[0]
 
             # Load and process image
@@ -153,7 +153,9 @@ def load_dataset(name, data_path="datasets"):
     }
 
 
-def get_data_loaders(dataset_name, num_workers, batch_size, split="train", data_path="datasets"):
+def get_data_loaders(
+    dataset_name, num_workers, batch_size, split="train", data_path="datasets"
+):
     """
     Create data loaders for the specified dataset split.
 
@@ -200,7 +202,7 @@ def get_data_loaders(dataset_name, num_workers, batch_size, split="train", data_
 
         return train_loader, val_loader, dataset["num_classes"]
 
-    elif split == "test":
+    if split == "test":
         # Create test dataset
         test_dataset = WORCDataset(
             dataset["test_data"], dataset["test_labels"], transform=transform
@@ -216,5 +218,4 @@ def get_data_loaders(dataset_name, num_workers, batch_size, split="train", data_
 
         return test_loader, dataset["num_classes"]
 
-    else:
-        raise ValueError(f"Unknown split: {split}")
+    raise ValueError(f"Unknown split: {split}")

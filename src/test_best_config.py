@@ -3,13 +3,17 @@ Test script to train model with optimal hyperparameters found by NePS.
 """
 
 import argparse
-import torch
+import ast
+from contextlib import redirect_stdout
 from pathlib import Path
+
+import numpy as np
+import torch
 from omegaconf import OmegaConf
-import torch.nn as nn
+from torch import nn
 
 from src.data import get_data_loaders
-from src.util_functions import get_model, set_seed, evaluate_model
+from src.util_functions import evaluate_model, get_model, set_seed
 
 
 def parse_best_config(config_file_path):
@@ -26,34 +30,41 @@ def parse_best_config(config_file_path):
     Raises:
         ValueError: If no Config ID or Config was found in the file
     """
-    with open(config_file_path, 'r') as f:
+    with open(config_file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    
+
     last_config = None
     last_config_id = None
-    
-    for i in range(len(lines)):
-        line = lines[i].strip()
-        if line.startswith('Config ID:'):
-            last_config_id = line.replace('Config ID:', '').strip()
+
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith("Config ID:"):
+            last_config_id = line.replace("Config ID:", "").strip()
             # Get the config from the next line
-            if i + 1 < len(lines) and lines[i + 1].strip().startswith('Config:'):
-                last_config = lines[i + 1].replace('Config:', '').strip()
-    
+            if i + 1 < len(lines) and lines[i + 1].strip().startswith("Config:"):
+                last_config = lines[i + 1].replace("Config:", "").strip()
+
     if last_config is None or last_config_id is None:
         raise ValueError("Could not find Config ID or Config in file")
-            
+
     print("\n\nEvaluating best NePS config on the test set:\n", last_config, "\n\n")
-    return eval(last_config), last_config_id
+    return ast.literal_eval(last_config), last_config_id
 
 
-def test_run_pipeline(pipeline_directory, previous_pipeline_directory, config, neps_output_dir, config_id, **hyperparameters):
+def test_run_pipeline(
+    _pipeline_directory,  # Unused but required by pipeline interface
+    _previous_pipeline_directory,  # Unused but required by pipeline interface
+    config,
+    neps_output_dir,
+    config_id,
+    **hyperparameters,
+):
     """
     Runs a test evaluation with the best hyperparameters on the test set.
 
     Args:
-        pipeline_directory (str): Directory for the test run
-        previous_pipeline_directory (str): Not used, kept for compatibility
+        _pipeline_directory (str): Required by pipeline interface but not used
+        _previous_pipeline_directory (str): Required by pipeline interface but not used
         config (OmegaConf): Configuration object with model and data settings
         neps_output_dir (str): Directory containing the NePS output files
         config_id (str): ID of the configuration to test
@@ -67,7 +78,7 @@ def test_run_pipeline(pipeline_directory, previous_pipeline_directory, config, n
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
-    
+
     # Load test dataset and create data loader
     test_loader, num_classes = get_data_loaders(
         config.data.dataset,
@@ -80,20 +91,27 @@ def test_run_pipeline(pipeline_directory, previous_pipeline_directory, config, n
     print(f"Test batches: {len(test_loader)}\n")
 
     # Initialize the model
-    model = get_model({
-        "type": config.model.type,
-        "task": config.model.task,
-        "num_classes": num_classes,
-    })
-    
+    model = get_model(
+        {
+            "type": config.model.type,
+            "task": config.model.task,
+            "num_classes": num_classes,
+        }
+    )
+
     # Load the trained model checkpoint
-    checkpoint_path = Path(neps_output_dir) / "results" / f"config_{config_id}" / "model_latest_checkpoint.pth"
+    checkpoint_path = (
+        Path(neps_output_dir)
+        / "results"
+        / f"config_{config_id}"
+        / "model_latest_checkpoint.pth"
+    )
     print(f"\n\nCheckpoint path: {checkpoint_path}")
     print(f"Loading checkpoint from: {checkpoint_path}")
-    
+
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}")
-        
+
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
@@ -101,66 +119,113 @@ def test_run_pipeline(pipeline_directory, previous_pipeline_directory, config, n
     print(f"Model loaded: {config.model.type}\n")
 
     criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
-    
-    # Use evaluate_model from util_functions instead of local implementation
-    test_loss, test_accuracy = evaluate_model(
-        model, 
-        test_loader, 
-        criterion, 
-        device
-    )
-    
-    print(f"\nTest metrics - Loss: {test_loss:.4f}, Acc: {test_accuracy:.2f}%")
 
-    return {"loss": test_accuracy}
+    # Test evaluation
+    test_metrics = evaluate_model(model, test_loader, criterion, device)
+
+    print("\nTest Results:")
+    print(f"Loss: {test_metrics['loss']:.4f}")
+    print(f"Accuracy: {test_metrics['accuracy']:.2f}%")
+    print(f"Precision: {np.mean(test_metrics['precision']):.4f}")
+    print(f"Recall: {np.mean(test_metrics['recall']):.4f}")
+    print(f"F1-Score: {np.mean(test_metrics['f1']):.4f}")
+
+    print("\nPer-class metrics:")
+    for i, (p, r, f1) in enumerate(
+        zip(test_metrics["precision"], test_metrics["recall"], test_metrics["f1"])
+    ):
+        print(f"Class {i}:")
+        print(f"  Precision: {p:.4f}")
+        print(f"  Recall: {r:.4f}")
+        print(f"  F1-Score: {f1:.4f}")
+
+    # Detailed output of the confusion matrix
+    conf_matrix = np.array(test_metrics["confusion_matrix"])
+    total_samples = np.sum(conf_matrix)
+    print(f"\nConfusion Matrix (Total samples: {total_samples}):")
+    print("Predicted →      Class 0    Class 1")
+    print("Actual ↓")
+    class0_total = conf_matrix[0, 0] + conf_matrix[0, 1]
+    class1_total = conf_matrix[1, 0] + conf_matrix[1, 1]
+    print(
+        f"Class 0      {conf_matrix[0,0]:>10d} {conf_matrix[0,1]:>10d}    | "
+        f"{class0_total:>3d} total"
+    )
+    print(
+        f"Class 1      {conf_matrix[1,0]:>10d} {conf_matrix[1,1]:>10d}    | "
+        f"{class1_total:>3d} total"
+    )
+    print("            ----------------------")
+    print(f"Total        {conf_matrix[:,0].sum():>10d} {conf_matrix[:,1].sum():>10d}")
+
+    print("\nDetailed Interpretation:")
+    print(f"True Negatives (TN)  : {conf_matrix[0,0]} (Correctly predicted Class 0)")
+    print(
+        f"False Positives (FP) : {conf_matrix[0,1]} (Class 0 wrongly predicted as Class 1)"
+    )
+    print(
+        f"False Negatives (FN) : {conf_matrix[1,0]} (Class 1 wrongly predicted as Class 0)"
+    )
+    print(f"True Positives (TP)  : {conf_matrix[1,1]} (Correctly predicted Class 1)")
+
+    # return {"loss": -test_metrics["accuracy"]}  # NePS minimizes negative accuracy
 
 
 def main():
     """
     Main function to run the test evaluation pipeline.
-    
+
     Loads the best configuration from NePS output, initializes the model with the best
     hyperparameters, and evaluates it on the test set. Saves the test performance
     to a file in the same directory as the model checkpoint.
     """
-    parser = argparse.ArgumentParser(description='Train model with optimal hyperparameters')
-    parser.add_argument('--config_path', type=str, required=True,
-                      help='Path to best_loss_with_config_trajectory.txt')
-    parser.add_argument('--hydra_config', type=str, required=True,
-                      help='Path to hydra config file (e.g., desmoid_config.yaml)')
+    parser = argparse.ArgumentParser(
+        description="Train model with optimal hyperparameters"
+    )
+    parser.add_argument(
+        "--config_path",
+        type=str,
+        required=True,
+        help="Path to best_loss_with_config_trajectory.txt",
+    )
+    parser.add_argument(
+        "--hydra_config",
+        type=str,
+        required=True,
+        help="Path to hydra config file (e.g., desmoid_config.yaml)",
+    )
     args = parser.parse_args()
 
     # Load the hydra config
     config = OmegaConf.load(args.hydra_config)
-    
+
     # Get the best hyperparameters and config ID
     best_hyperparameters, config_id = parse_best_config(args.config_path)
-    
+
     # Create test directory
     test_dir = Path(config.experiment_base_dir) / "test_run"
     test_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Get NePS output directory from config_path
     neps_output_dir = Path(args.config_path).parent
-    
+
     # Run testing with best hyperparameters on test set
-    result = test_run_pipeline(
-        pipeline_directory=str(test_dir),
-        previous_pipeline_directory=None,
-        config=config,
-        neps_output_dir=neps_output_dir,
-        config_id=config_id,
-        **best_hyperparameters
-    )
-    
-    # Calculate final accuracy
-    final_accuracy = result['loss']
-    print(f"\nTest run completed with final accuracy: {final_accuracy:.2f}%")
-    
-    # Save test performance to file
     results_dir = Path(neps_output_dir) / "results" / f"config_{config_id}"
     performance_file = results_dir / "test_set_performance.txt"
-    performance_file.write_text(f"{final_accuracy:.2f}%")
+
+    # Capture all output in the file while also printing to console
+    with performance_file.open("w") as f:
+        with redirect_stdout(f):
+            test_run_pipeline(
+                _pipeline_directory=str(test_dir),
+                _previous_pipeline_directory=None,
+                config=config,
+                neps_output_dir=neps_output_dir,
+                config_id=config_id,
+                **best_hyperparameters,
+            )
+
+    print(f"\nResults saved to: {performance_file}")
 
 
 if __name__ == "__main__":

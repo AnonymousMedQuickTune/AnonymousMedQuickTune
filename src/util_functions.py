@@ -10,6 +10,7 @@ import neps
 import numpy as np
 import torch
 import yaml
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from torch import nn
 from torchvision import models
 
@@ -166,9 +167,13 @@ def evaluate_model(model, data_loader, criterion, device):
         device (torch.device): Device to run the evaluation on (CPU/GPU)
 
     Returns:
-        tuple: (average_loss, accuracy)
-            - average_loss (float): Mean loss across all batches
+        dict: Dictionary containing various evaluation metrics:
+            - loss (float): Mean loss across all batches
             - accuracy (float): Classification accuracy in percentage
+            - precision (list): Precision for each class
+            - recall (list): Recall for each class
+            - f1 (list): F1 score for each class
+            - confusion_matrix (np.array): Confusion matrix
     """
     model.eval()
     total_loss = 0.0
@@ -191,17 +196,39 @@ def evaluate_model(model, data_loader, criterion, device):
     all_predictions = np.array(all_predictions)
     all_targets = np.array(all_targets)
 
+    # Calculate basic metrics
     accuracy = 100.0 * np.mean(all_predictions == all_targets)
     avg_loss = total_loss / len(data_loader)
 
-    return avg_loss, accuracy
+    # Calculate additional metrics
+    precision, recall, f1, _ = precision_recall_fscore_support(
+        all_targets,
+        all_predictions,
+        average=None,  # Calculate metrics for each class
+        zero_division=0,  # Handle division by zero
+    )
+
+    # Calculate confusion matrix
+    conf_matrix = confusion_matrix(all_targets, all_predictions)
+
+    # Create metrics dictionary
+    metrics = {
+        "loss": avg_loss,
+        "accuracy": accuracy,
+        "precision": precision.tolist(),
+        "recall": recall.tolist(),
+        "f1": f1.tolist(),
+        "confusion_matrix": conf_matrix.tolist(),
+    }
+
+    return metrics
 
 
 class CheckpointManager:
     """
     Manages model checkpoints including loading, saving and resuming training.
     """
-    
+
     def __init__(self, pipeline_directory, previous_pipeline_directory):
         """
         Initialize CheckpointManager.
@@ -229,8 +256,7 @@ class CheckpointManager:
 
         if self.previous_pipeline_directory is not None:
             checkpoint_path = os.path.join(
-                self.previous_pipeline_directory, 
-                self.checkpoint_name
+                self.previous_pipeline_directory, self.checkpoint_name
             )
             if os.path.exists(checkpoint_path):
                 start_epoch = self._load_checkpoint(checkpoint_path, model, metrics)
@@ -250,8 +276,17 @@ class CheckpointManager:
         metrics.update(checkpoint["metrics"])
         return checkpoint["epoch"]
 
-    def save(self, model, val_acc, config, num_classes, hyperparameters, 
-             device, epoch, metrics):
+    def save(
+        self,
+        model,
+        val_acc,
+        config,
+        num_classes,
+        hyperparameters,
+        device,
+        epoch,
+        metrics,
+    ):
         """
         Save model checkpoint.
 
@@ -273,7 +308,7 @@ class CheckpointManager:
             "hyperparameters": hyperparameters,
             "device": str(device),
             "epoch": epoch + 1,
-            "metrics": metrics
+            "metrics": metrics,
         }
 
         # Save latest checkpoint (overwrite)
@@ -283,8 +318,7 @@ class CheckpointManager:
         # Save periodic checkpoint
         if (epoch + 1) % config.logging.save_every == 0:
             periodic_path = os.path.join(
-                self.pipeline_directory, 
-                f"model_checkpoint_after_{epoch+1}epochs.pth"
+                self.pipeline_directory, f"model_checkpoint_after_{epoch+1}epochs.pth"
             )
             torch.save(checkpoint, periodic_path)
 
@@ -292,7 +326,7 @@ class CheckpointManager:
 def set_dropout(module, dropout_rate):
     """
     Recursively sets dropout rate for all dropout layers in the model.
-    
+
     Args:
         module (nn.Module): PyTorch module
         dropout_rate (float): Dropout rate to set
@@ -303,60 +337,79 @@ def set_dropout(module, dropout_rate):
         set_dropout(child, dropout_rate)
 
 
-class Mixup:
+def mixup_data(x, target, mixup_alpha=1.0):
     """
-    Mixup augmentation class.
+    Performs Mixup augmentation on the input data.
+
+    Args:
+        x: Input tensor
+        target: Target tensor
+        mixup_alpha (float): Mixup alpha parameter for beta distribution
+
+    Returns:
+        tuple: (mixed_x, y_a, y_b, lam)
+            - mixed_x: Mixed input
+            - y_a: First target
+            - y_b: Second target
+            - lam: Lambda value used for mixing
     """
-    def __init__(self, mixup_alpha=1.0):
-        self.mixup_alpha = mixup_alpha
-    
-    def __call__(self, x, target):
-        if self.mixup_alpha > 0:
-            lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-        else:
-            lam = 1
+    if mixup_alpha > 0:
+        lam = np.random.beta(mixup_alpha, mixup_alpha)
+    else:
+        lam = 1
 
-        batch_size = x.size()[0]
-        index = torch.randperm(batch_size).to(x.device)
+    batch_size = x.size()[0]
+    index = torch.randperm(batch_size).to(x.device)
 
-        mixed_x = lam * x + (1 - lam) * x[index, :]
-        y_a, y_b = target, target[index]
-        return mixed_x, y_a, y_b, lam
+    mixed_x = lam * x + (1 - lam) * x[index, :]
+    y_a, y_b = target, target[index]
+    return mixed_x, y_a, y_b, lam
 
 
 def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch):
     """
     Creates a learning rate scheduler with linear warmup.
-    
+
     Args:
         optimizer: PyTorch optimizer
         warmup_epochs (int): Number of warmup epochs
         steps_per_epoch (int): Number of steps per epoch
-    
+
     Returns:
         scheduler: Learning rate scheduler
     """
+
     def lr_lambda(step):
         current_step = step / steps_per_epoch
         if current_step < warmup_epochs:
             return current_step / warmup_epochs
         return 1.0
-    
+
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
 
-def adjust_learning_rate(scheduler, epoch):
+def adjust_learning_rate(scheduler):
     """
     Adjusts learning rate according to scheduler.
-    
+
     Args:
-        scheduler: Learning rate scheduler
-        epoch (int): Current epoch
+        scheduler: Learning rate scheduler or None
     """
-    scheduler.step()
+    if scheduler is not None:
+        scheduler.step()
 
 
-def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup_fn=None):
+def train_epoch(
+    model,
+    train_loader,
+    criterion,
+    optimizer,
+    scaler,
+    device,
+    metrics_dict,
+    epoch,
+    mixup_alpha=None,
+):
     """
     Train model for one epoch and return training metrics.
 
@@ -367,28 +420,30 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup
         optimizer: Optimizer
         scaler: Gradient scaler for mixed precision
         device: Device to train on
-        mixup_fn (Mixup, optional): Mixup augmentation function
+        metrics_dict (dict): Dictionary containing all metrics history
+        epoch (int): Current epoch number
+        mixup_alpha (float, optional): Mixup alpha parameter
 
     Returns:
         dict: Dictionary containing loss and accuracy for the epoch
     """
     model.train()
-    epoch_loss = 0.0
-    epoch_correct = 0
-    epoch_total = 0
 
+    # Training loop
     for inputs, targets in train_loader:
         # Move data to device
         inputs, targets = inputs.to(device), targets.to(device)
 
         # Apply mixup if configured
-        if mixup_fn is not None:
-            inputs, targets_a, targets_b, lam = mixup_fn(inputs, targets)
-            
+        if mixup_alpha is not None and mixup_alpha > 0:
+            inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
+
             # Forward pass with mixed precision
             with torch.cuda.amp.autocast():
                 outputs = model(inputs)
-                loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(outputs, targets_b)
+                loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(
+                    outputs, targets_b
+                )
         else:
             # Forward pass with mixed precision
             with torch.cuda.amp.autocast():
@@ -397,20 +452,79 @@ def train_epoch(model, train_loader, criterion, optimizer, scaler, device, mixup
 
         # Backward pass with gradient scaling
         scaler.scale(loss).backward()
+        
+        # Log gradients before optimizer step if the method exists
+        if hasattr(model, 'log_gradients'):
+            model.log_gradients(epoch)
+        
+        # Optimizer step with gradient scaling
         scaler.step(optimizer)
         scaler.update()
         optimizer.zero_grad()
 
-        # Update statistics
-        with torch.no_grad():
-            _, predicted = outputs.max(1)
-            epoch_total += targets.size(0)
-            if mixup_fn is None:  # Only count accuracy for non-mixup batches
-                epoch_correct += predicted.eq(targets).sum().item()
-            epoch_loss += loss.item()
+    # Evaluate and log metrics after training
+    return evaluate_and_log_metrics(
+        model, train_loader, criterion, device, metrics_dict, phase="train"
+    )
 
-    # Calculate and return epoch metrics
-    return {
-        'loss': epoch_loss / len(train_loader),
-        'accuracy': 100.0 * epoch_correct / epoch_total if mixup_fn is None else 0.0
-    }
+
+def evaluate_and_log_metrics(
+    model, data_loader, criterion, device, metrics_dict, phase="train"
+):
+    """
+    Evaluates the model and logs metrics for either training or validation phase.
+
+    Args:
+        model (nn.Module): The model to evaluate
+        data_loader (DataLoader): DataLoader for either training or validation data
+        criterion (nn.Module): Loss function
+        device (torch.device): Device to run evaluation on
+        metrics_dict (dict): Dictionary containing all metrics history
+        phase (str): Either "train" or "val"
+
+    Returns:
+        dict: Current evaluation metrics
+    """
+    # Evaluate model
+    current_metrics = evaluate_model(model, data_loader, criterion, device)
+
+    # Update metrics history
+    metrics_dict[f"{phase}_losses"].append(current_metrics["loss"])
+    metrics_dict[f"{phase}_accuracies"].append(current_metrics["accuracy"])
+    metrics_dict[f"{phase}_precision"].append(current_metrics["precision"])
+    metrics_dict[f"{phase}_recall"].append(current_metrics["recall"])
+    metrics_dict[f"{phase}_f1"].append(current_metrics["f1"])
+
+    if phase == "val":
+        metrics_dict["val_confusion_matrices"].append(
+            current_metrics["confusion_matrix"]
+        )
+
+    # Print metrics
+    phase_name = "Train" if phase == "train" else "Val  "
+    print(
+        f"{phase_name} - Loss: {current_metrics['loss']:.4f}, "
+        f"Acc: {current_metrics['accuracy']:.2f}%"
+    )
+    print(f"      - Mean Precision: {float(np.mean(current_metrics['precision'])):.4f}")
+    print(f"      - Mean Recall: {float(np.mean(current_metrics['recall'])):.4f}")
+    print(f"      - Mean F1: {float(np.mean(current_metrics['f1'])):.4f}")
+
+    return current_metrics
+
+
+def log_gradients(model, epoch, gradients_file):
+    """
+    Log gradients for each parameter of the model.
+    
+    Args:
+        model (nn.Module): The model whose gradients should be logged
+        epoch (int): Current epoch number
+        gradients_file (str): Path to the gradients log file
+    """
+    with open(gradients_file, 'a', encoding='utf-8') as f:
+        for name, param in model.named_parameters():
+            if param.grad is not None:
+                avg_grad = torch.mean(torch.abs(param.grad)).item()
+                max_grad = torch.max(torch.abs(param.grad)).item()
+                f.write(f"{epoch+1},{name},{avg_grad:.6f},{max_grad:.6f}\n")

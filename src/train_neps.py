@@ -5,18 +5,20 @@ Training module for automated hyperparameter optimization of medical image analy
 import logging
 import os
 
-from torch import nn, optim
+import hydra
+import numpy as np
 import torch
+import yaml
 from neps import run
 from omegaconf import DictConfig, OmegaConf
-import hydra
-import yaml
+from torch import nn, optim
 
 from src.data import get_data_loaders
-from src.util_functions import (evaluate_model, get_model, set_seed,
-                              yaml_to_neps_pipeline_space, CheckpointManager,
-                              train_epoch, set_dropout, get_warmup_scheduler,
-                              adjust_learning_rate, Mixup)
+from src.util_functions import (CheckpointManager, adjust_learning_rate,
+                                evaluate_and_log_metrics, get_model,
+                                get_warmup_scheduler, set_dropout, set_seed,
+                                train_epoch, yaml_to_neps_pipeline_space,
+                                log_gradients)
 
 
 def run_pipeline(
@@ -24,13 +26,13 @@ def run_pipeline(
 ):
     """
     Main training pipeline for model optimization using NePS.
-    
-    IMPORTANT: The argument order and parameter names must be exactly as shown for NePS compatibility:
+
+    IMPORTANT: The argument order and parameter names must be as shown for NePS compatibility:
     1. pipeline_directory
     2. previous_pipeline_directory
     3. config
     4. **hyperparameters
-    
+
     NePS requires these specific positional arguments in this order to manage
     the optimization process and handle checkpointing correctly.
 
@@ -56,10 +58,27 @@ def run_pipeline(
     # Set seed for pipeline reproducibility
     set_seed(config.seed)
 
+    # Create metrics directory
+    metrics_dir = os.path.join(pipeline_directory, "metrics")
+    os.makedirs(metrics_dir, exist_ok=True)
+
+    # Create metrics and gradient logging files
+    metrics_file = os.path.join(metrics_dir, "metrics.csv")
+    gradients_file = os.path.join(metrics_dir, "gradients.csv")
+    
+    # Create CSV headers if files don't exist
+    if not os.path.exists(metrics_file):
+        with open(metrics_file, 'w', encoding='utf-8') as f:
+            f.write("epoch,phase,loss,accuracy,precision,recall,f1\n")
+            
+    if not os.path.exists(gradients_file):
+        with open(gradients_file, 'w', encoding='utf-8') as f:
+            f.write("epoch,layer_name,avg_grad,max_grad\n")
+
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
-    
+
     # Load dataset and create data loaders
     train_loader, val_loader, num_classes = get_data_loaders(
         config.data.dataset,
@@ -83,49 +102,58 @@ def run_pipeline(
 
     # Define loss and optimizer
     criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
-    
+
     # Create optimizer based on type
     if hyperparameters["optimizer_type"] == "adam":
         optimizer = optim.Adam(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
-            weight_decay=hyperparameters["weight_decay"]
+            weight_decay=hyperparameters["weight_decay"],
         )
     elif hyperparameters["optimizer_type"] == "adamw":
         optimizer = optim.AdamW(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
-            weight_decay=hyperparameters["weight_decay"]
+            weight_decay=hyperparameters["weight_decay"],
         )
     elif hyperparameters["optimizer_type"] == "sgd":
         optimizer = optim.SGD(
-            model.parameters(), 
+            model.parameters(),
             lr=hyperparameters["learning_rate"],
             weight_decay=hyperparameters["weight_decay"],
-            momentum=0.9
+            momentum=0.9,
         )
+    else:
+        raise ValueError(f"Invalid optimizer type: {hyperparameters['optimizer_type']}")
 
     # Apply dropout to model
     model.apply(lambda m: set_dropout(m, hyperparameters["dropout_rate"]))
 
     # Initialize mixup if alpha > 0
-    mixup_fn = None
-    if hyperparameters["mixup_alpha"] > 0:
-        mixup_fn = Mixup(mixup_alpha=hyperparameters["mixup_alpha"])
+    mixup_alpha = hyperparameters["mixup_alpha"]
 
     # Warmup scheduler
     warmup_epochs = hyperparameters["warmup_epochs"]
     if warmup_epochs > 0:
         scheduler = get_warmup_scheduler(optimizer, warmup_epochs, len(train_loader))
+    else:
+        raise ValueError("Warmup epochs must be greater than 0")
 
     # Initialize training metrics
     metrics = {
-        'train_losses': [],
-        'train_accuracies': [],
-        'val_losses': [],
-        'val_accuracies': []
+        "train_losses": [],
+        "train_accuracies": [],
+        "train_precision": [],
+        "train_recall": [],
+        "train_f1": [],
+        "val_losses": [],
+        "val_accuracies": [],
+        "val_precision": [],
+        "val_recall": [],
+        "val_f1": [],
+        "val_confusion_matrices": [],
     }
-    
+
     # Configure training hyperparameters and directories
     # The number_of_epochs is a fidelity parameter that controls the training duration
     # and is automatically adjusted by NePS during the optimization process
@@ -135,13 +163,18 @@ def run_pipeline(
     print(f"Previous pipeline directory: {previous_pipeline_directory}\n")
 
     # Initialize checkpoint manager
-    checkpoint_manager = CheckpointManager(pipeline_directory, previous_pipeline_directory)
-    
+    checkpoint_manager = CheckpointManager(
+        pipeline_directory, previous_pipeline_directory
+    )
+
     # Load previous checkpoint if available
     start_epoch = checkpoint_manager.initialize_training(model, metrics)
 
     # Setup mixed precision training
     scaler = torch.cuda.amp.GradScaler()
+
+    # Add log_gradients method to model
+    model.log_gradients = lambda epoch: log_gradients(model, epoch, gradients_file)
 
     # Main training loop
     for epoch in range(start_epoch, epochs):
@@ -150,50 +183,78 @@ def run_pipeline(
 
         # Apply warmup scheduler if configured
         if epoch < warmup_epochs:
-            adjust_learning_rate(scheduler, epoch)
+            adjust_learning_rate(scheduler)
 
         # Training phase
         train_metrics = train_epoch(
-            model, 
-            train_loader, 
-            criterion, 
-            optimizer, 
-            scaler, 
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            scaler,
             device,
-            mixup_fn=mixup_fn
+            metrics,
+            epoch,
+            mixup_alpha,
         )
-        metrics['train_losses'].append(train_metrics['loss'])
-        metrics['train_accuracies'].append(train_metrics['accuracy'])
-        print(f"Train - Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.2f}%")
-
-        # Validation phase
-        val_acc = None
+        
+        # Log training metrics and gradients
+        with open(metrics_file, 'a', encoding='utf-8') as f:
+            f.write(f"{epoch+1},train,{train_metrics['loss']:.4f},{train_metrics['accuracy']:.4f},"
+                   f"{np.mean(train_metrics['precision']):.4f},{np.mean(train_metrics['recall']):.4f},"
+                   f"{np.mean(train_metrics['f1']):.4f}\n")
+        
+        # Validation phase (based on eval_every or last epoch)
+        val_metrics = None
         if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
-            val_loss, val_acc = evaluate_model(model, val_loader, criterion, device)
-            metrics['val_losses'].append(val_loss)
-            metrics['val_accuracies'].append(val_acc)
-            print(f"Val   - Loss: {val_loss:.4f}, Acc: {val_acc:.2f}%")
+            val_metrics = evaluate_and_log_metrics(
+                model, val_loader, criterion, device, metrics, phase="val"
+            )
+            
+            # Log validation metrics
+            with open(metrics_file, 'a', encoding='utf-8') as f:
+                f.write(f"{epoch+1},val,{val_metrics['loss']:.4f},{val_metrics['accuracy']:.4f},"
+                       f"{np.mean(val_metrics['precision']):.4f},{np.mean(val_metrics['recall']):.4f},"
+                       f"{np.mean(val_metrics['f1']):.4f}\n")
 
         # Save progress
-        checkpoint_manager.save(model, val_acc, config, num_classes, hyperparameters,
-                              device, epoch, metrics)
+        checkpoint_manager.save(
+            model,
+            val_metrics["accuracy"],
+            config,
+            num_classes,
+            hyperparameters,
+            device,
+            epoch,
+            metrics,
+        )
 
     print("\nTraining completed!")
-    final_val_acc = metrics['val_accuracies'][-1] if metrics['val_accuracies'] else 0
-    print(f"Final validation accuracy: {final_val_acc:.2f}%\n")
+    # Get final metrics
+    final_metrics = {
+        "accuracy": metrics["val_accuracies"][-1] if metrics["val_accuracies"] else 0,
+        "precision": (
+            np.mean(metrics["val_precision"][-1]) if metrics["val_precision"] else 0
+        ),
+        "recall": np.mean(metrics["val_recall"][-1]) if metrics["val_recall"] else 0,
+        "f1": np.mean(metrics["val_f1"][-1]) if metrics["val_f1"] else 0,
+    }
 
-    return {"loss": -final_val_acc}  # NePS minimizes negative accuracy
+    selected_metric = final_metrics[config.metric]
+    print(f"Final {config.metric}: {selected_metric:.2f}%\n")
+
+    return {"loss": -selected_metric}  # NePS minimizes negative metric
 
 
 @hydra.main(
-    version_base=None, 
+    version_base=None,
     config_path="../configs/experiments",
-    config_name="desmoid_config.yaml"
+    config_name="desmoid_config.yaml",
 )
 def main(config: DictConfig) -> None:
     """
     Main entry point for the training script.
-    
+
     Args:
         config (DictConfig): Hydra configuration object
     """
@@ -206,14 +267,16 @@ def main(config: DictConfig) -> None:
 
     # Print configurations
     print("\nconfig: ", config, "\npipeline space: ", pipeline_space, "\n")
-    
+
     # Save configurations to files
     output_dir = os.path.join(config.experiment_base_dir, "hydra_output")
     os.makedirs(output_dir, exist_ok=True)
-    
-    for filename, data in [("config.yaml", OmegaConf.to_yaml(config)), 
-                         ("pipeline_space.yaml", yaml.dump(pipeline_space))]:
-        with open(os.path.join(output_dir, filename), "w") as f:
+
+    for filename, data in [
+        ("config.yaml", OmegaConf.to_yaml(config)),
+        ("pipeline_space.yaml", yaml.dump(pipeline_space)),
+    ]:
+        with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
             f.write(data)
 
     # Run NePS optimization
@@ -237,4 +300,5 @@ def main(config: DictConfig) -> None:
 
 
 if __name__ == "__main__":
+    # pylint: disable=no-value-for-parameter
     main()
