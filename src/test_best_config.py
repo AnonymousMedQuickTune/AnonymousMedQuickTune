@@ -11,9 +11,11 @@ import numpy as np
 import torch
 from omegaconf import OmegaConf
 from torch import nn
+import pandas as pd
 
 from src.data import get_data_loaders
 from src.util_functions import evaluate_model, get_model, set_seed
+from src.analysis.generalization_analysis import analyze_training_validation_metrics, analyze_validation_test_generalization
 
 
 def parse_best_config(config_file_path):
@@ -122,6 +124,9 @@ def test_run_pipeline(
 
     # Test evaluation
     test_metrics = evaluate_model(model, test_loader, criterion, device)
+    
+    # Analyze validation-test generalization
+    analyze_validation_test_generalization(neps_output_dir, test_metrics)
 
     print("\nTest Results:")
     print(f"Loss: {test_metrics['loss']:.4f}")
@@ -202,12 +207,15 @@ def main():
     # Get the best hyperparameters and config ID
     best_hyperparameters, config_id = parse_best_config(args.config_path)
 
+    # Get NePS output directory from config_path
+    neps_output_dir = Path(args.config_path).parent
+
+    # Analyze generalization across all configurations
+    analyze_training_validation_metrics(neps_output_dir)
+
     # Create test directory
     test_dir = Path(config.experiment_base_dir) / "test_run"
     test_dir.mkdir(parents=True, exist_ok=True)
-
-    # Get NePS output directory from config_path
-    neps_output_dir = Path(args.config_path).parent
 
     # Änderung: Speichere die Performance-Datei eine Ebene höher als NePS_output
     performance_file = neps_output_dir.parent / "test_performance.txt"
