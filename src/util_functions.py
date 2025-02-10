@@ -128,28 +128,28 @@ def get_model(model_config):
 
     # Modern, widely used architectures
     if model_type == "vit":  # Vision Transformer - State of the art
-        model = models.vit_b_16(pretrained=True)
+        model = models.vit_b_16(weights=models.ViT_B_16_Weights.DEFAULT)
         model.heads = nn.Linear(model.hidden_dim, num_classes)
     elif model_type == "convnext":  # Modern CNN architecture
-        model = models.convnext_base(pretrained=True)
+        model = models.convnext_base(weights=models.ConvNeXt_Base_Weights.DEFAULT)
         model.classifier[2] = nn.Linear(model.classifier[2].in_features, num_classes)
     elif model_type == "resnet":  # Classic, reliable architecture
-        model = models.resnet18(pretrained=True)
+        model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
     elif model_type == "swin":  # Modern hierarchical ViT
-        model = models.swin_v2_b(pretrained=True)
+        model = models.swin_v2_b(weights=models.Swin_V2_B_Weights.DEFAULT)
         model.head = nn.Linear(model.head.in_features, num_classes)
     elif model_type == "efficientnet":  # Efficient modern CNN
-        model = models.efficientnet_b0(pretrained=True)
+        model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "efficientnetv2":  # Updated EfficientNet
-        model = models.efficientnet_v2_s(pretrained=True)
+        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "densenet":  # Older architecture
-        model = models.densenet121(pretrained=True)
+        model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
     elif model_type == "densenet201":  # Larger DenseNet variant
-        model = models.densenet201(pretrained=True)
+        model = models.densenet201(weights=models.DenseNet201_Weights.DEFAULT)
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
     else:
         raise ValueError("Unknown model type: " + model_type)
@@ -468,18 +468,19 @@ def train_epoch(
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
 
             # Forward pass with mixed precision
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast(device.type):
                 outputs = model(inputs)
                 loss = lam * criterion(outputs, targets_a) + (1 - lam) * criterion(
                     outputs, targets_b
                 )
         else:
             # Forward pass with mixed precision
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast(device.type):
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
-        # Backward pass with gradient scaling
+        # Optimizer step first
+        optimizer.zero_grad()
         scaler.scale(loss).backward()
 
         # Log gradients before optimizer step if the method exists
@@ -489,16 +490,17 @@ def train_epoch(
         # Optimizer step with gradient scaling
         scaler.step(optimizer)
         scaler.update()
-        optimizer.zero_grad()
+
+    print() # print empty line for better readability in the logging
 
     # Evaluate and log metrics after training
     return evaluate_and_log_metrics(
-        model, train_loader, criterion, device, metrics_dict, phase="train"
+        model, train_loader, criterion, device, metrics_dict, phase="train", epoch=epoch
     )
 
 
 def evaluate_and_log_metrics(
-    model, data_loader, criterion, device, metrics_dict, phase="train"
+    model, data_loader, criterion, device, metrics_dict, phase="train", epoch=None
 ):
     """
     Evaluates the model and logs metrics for either training or validation phase.
@@ -510,6 +512,7 @@ def evaluate_and_log_metrics(
         device (torch.device): Device to run evaluation on
         metrics_dict (dict): Dictionary containing all metrics history
         phase (str): Either "train" or "val"
+        epoch (int, optional): Current epoch number
 
     Returns:
         dict: Current evaluation metrics
@@ -530,14 +533,17 @@ def evaluate_and_log_metrics(
         )
 
     # Print metrics
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     phase_name = "Train" if phase == "train" else "Val  "
+    epoch_str = f"[Epoch {epoch+1}] " if epoch is not None else ""
     print(
-        f"{phase_name} - Loss: {current_metrics['loss']:.4f}, "
-        f"Acc: {current_metrics['accuracy']:.2f}%"
+        f"[{timestamp}]{epoch_str}{phase_name} - "
+        f"Loss: {current_metrics['loss']:.4f}, "
+        f"Acc: {current_metrics['accuracy']:.2f}%, "
+        f"Prec: {float(np.mean(current_metrics['precision']))*100:.2f}%, "
+        f"Rec: {float(np.mean(current_metrics['recall']))*100:.2f}%, "
+        f"F1: {float(np.mean(current_metrics['f1']))*100:.2f}%"
     )
-    print(f"      - Mean Precision: {float(np.mean(current_metrics['precision'])):.4f}")
-    print(f"      - Mean Recall: {float(np.mean(current_metrics['recall'])):.4f}")
-    print(f"      - Mean F1: {float(np.mean(current_metrics['f1'])):.4f}")
 
     return current_metrics
 
@@ -738,9 +744,9 @@ def log_metrics(log_file, epoch, phase, metrics):
         f"{phase},"
         f"{metrics['loss']:.4f},"
         f"{metrics['accuracy']:.4f},"
-        f"{np.mean(metrics['precision']):.4f},"
-        f"{np.mean(metrics['recall']):.4f},"
-        f"{np.mean(metrics['f1']):.4f}\n"
+        f"{np.mean(metrics['precision'])*100:.4f},"
+        f"{np.mean(metrics['recall'])*100:.4f},"
+        f"{np.mean(metrics['f1'])*100:.4f}\n"
     )
 
     with open(log_file, "a", encoding="utf-8") as f:

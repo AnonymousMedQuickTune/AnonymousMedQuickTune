@@ -125,15 +125,20 @@ def test_run_pipeline(
     # Test evaluation
     test_metrics = evaluate_model(model, test_loader, criterion, device)
     
+    # Convert metrics to percentages right after evaluation
+    test_metrics['precision'] = [p * 100 for p in test_metrics['precision']]
+    test_metrics['recall'] = [r * 100 for r in test_metrics['recall']]
+    test_metrics['f1'] = [f * 100 for f in test_metrics['f1']]
+    
     # Analyze validation-test generalization
     analyze_validation_test_generalization(neps_output_dir, test_metrics)
 
     print("\nTest Results:")
     print(f"Loss: {test_metrics['loss']:.4f}")
     print(f"Accuracy: {test_metrics['accuracy']:.2f}%")
-    print(f"Precision: {np.mean(test_metrics['precision']):.4f}")
-    print(f"Recall: {np.mean(test_metrics['recall']):.4f}")
-    print(f"F1-Score: {np.mean(test_metrics['f1']):.4f}")
+    print(f"Precision: {np.mean(test_metrics['precision']):.2f}%")
+    print(f"Recall: {np.mean(test_metrics['recall']):.2f}%")
+    print(f"F1-Score: {np.mean(test_metrics['f1']):.2f}%")
 
     print("\nPer-class metrics:")
     for i, (p, r, f1) in enumerate(
@@ -199,10 +204,19 @@ def main():
         required=True,
         help="Path to hydra config file (e.g., main_experiment_config.yaml)",
     )
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        required=True,
+        help="Dataset name to override config",
+    )
     args = parser.parse_args()
 
     # Load the hydra config
     config = OmegaConf.load(args.hydra_config)
+    
+    # Override the dataset in config with the one provided via command line
+    config.data.dataset = args.dataset
 
     # Get the best hyperparameters and config ID
     best_hyperparameters, config_id = parse_best_config(args.config_path)

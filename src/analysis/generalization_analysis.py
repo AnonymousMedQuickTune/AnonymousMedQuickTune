@@ -98,25 +98,25 @@ def analyze_training_validation_metrics(neps_output_dir):
         log_print(f"Analyzed {len(df_final)} configurations:", f)
         log_print("\n=== Final Epoch Metrics ===", f)
         log_print("\nAverage Metrics Across All Configs (Final Epoch):", f)
-        log_print(f"Training Accuracy: {df_final['train_acc'].mean():.2f}% ± {df_final['train_acc'].std():.2f}%", f)
-        log_print(f"Validation Accuracy: {df_final['val_acc'].mean():.2f}% ± {df_final['val_acc'].std():.2f}%", f)
-        log_print(f"Accuracy Gap (Train-Val): {df_final['acc_gap'].mean():.2f}% ± {df_final['acc_gap'].std():.2f}%", f)
+        log_print(f"Training Accuracy: {df_final['train_acc'].mean():.2f}% ± {df_final['train_acc'].std():.2f}", f)
+        log_print(f"Validation Accuracy: {df_final['val_acc'].mean():.2f}% ± {df_final['val_acc'].std():.2f}", f)
+        log_print(f"Accuracy Gap (Train-Val): {df_final['acc_gap'].mean():.2f}% ± {df_final['acc_gap'].std():.2f}", f)
         
-        log_print(f"\nTraining Loss: {df_final['train_loss'].mean():.4f} ± {df_final['train_loss'].std():.4f}", f)
-        log_print(f"Validation Loss: {df_final['val_loss'].mean():.4f} ± {df_final['val_loss'].std():.4f}", f)
-        log_print(f"Loss Gap (Val-Train): {df_final['loss_gap'].mean():.4f} ± {df_final['loss_gap'].std():.4f}", f)
+        log_print(f"\nTraining Loss: {df_final['train_loss'].mean():.2f} ± {df_final['train_loss'].std():.4f}", f)
+        log_print(f"Validation Loss: {df_final['val_loss'].mean():.2f} ± {df_final['val_loss'].std():.4f}", f)
+        log_print(f"Loss Gap (Val-Train): {df_final['loss_gap'].mean():.2f} ± {df_final['loss_gap'].std():.4f}", f)
         
-        log_print(f"\nTraining F1: {df_final['train_f1'].mean():.4f} ± {df_final['train_f1'].std():.4f}", f)
-        log_print(f"Validation F1: {df_final['val_f1'].mean():.4f} ± {df_final['val_f1'].std():.4f}", f)
-        log_print(f"F1 Gap (Train-Val): {df_final['f1_gap'].mean():.4f} ± {df_final['f1_gap'].std():.4f}", f)
+        log_print(f"\nTraining F1: {df_final['train_f1'].mean():.2f}% ± {df_final['train_f1'].std():.2f}", f)
+        log_print(f"Validation F1: {df_final['val_f1'].mean():.2f}% ± {df_final['val_f1'].std():.2f}", f)
+        log_print(f"F1 Gap (Train-Val): {df_final['f1_gap'].mean():.2f}% ± {df_final['f1_gap'].std():.2f}", f)
 
-        log_print(f"\nTraining Precision: {df_final['train_precision'].mean():.4f} ± {df_final['train_precision'].std():.4f}", f)
-        log_print(f"Validation Precision: {df_final['val_precision'].mean():.4f} ± {df_final['val_precision'].std():.4f}", f)
-        log_print(f"Precision Gap (Train-Val): {df_final['precision_gap'].mean():.4f} ± {df_final['precision_gap'].std():.4f}", f)
+        log_print(f"\nTraining Precision: {df_final['train_precision'].mean():.2f}% ± {df_final['train_precision'].std():.2f}", f)
+        log_print(f"Validation Precision: {df_final['val_precision'].mean():.2f}% ± {df_final['val_precision'].std():.2f}", f)
+        log_print(f"Precision Gap (Train-Val): {df_final['precision_gap'].mean():.2f}% ± {df_final['precision_gap'].std():.2f}", f)
 
-        log_print(f"\nTraining Recall: {df_final['train_recall'].mean():.4f} ± {df_final['train_recall'].std():.4f}", f)
-        log_print(f"Validation Recall: {df_final['val_recall'].mean():.4f} ± {df_final['val_recall'].std():.4f}", f)
-        log_print(f"Recall Gap (Train-Val): {df_final['recall_gap'].mean():.4f} ± {df_final['recall_gap'].std():.4f}", f)
+        log_print(f"\nTraining Recall: {df_final['train_recall'].mean():.2f}% ± {df_final['train_recall'].std():.2f}", f)
+        log_print(f"Validation Recall: {df_final['val_recall'].mean():.2f}% ± {df_final['val_recall'].std():.2f}", f)
+        log_print(f"Recall Gap (Train-Val): {df_final['recall_gap'].mean():.2f}% ± {df_final['recall_gap'].std():.2f}", f)
         
         # Print and log mean statistics
         log_print("\n=== Mean Metrics Across All Epochs ===", f)
@@ -125,21 +125,21 @@ def analyze_training_validation_metrics(neps_output_dir):
         log_print(f"Validation Accuracy: {df_mean['val_acc'].mean():.2f}% ± {df_mean['val_acc'].std():.2f}%", f)
         log_print(f"Accuracy Gap (Train-Val): {df_mean['acc_gap'].mean():.2f}% ± {df_mean['acc_gap'].std():.2f}%", f)
         
-        log_print(f"\nTraining Loss: {df_mean['train_loss'].mean():.4f} ± {df_mean['train_loss'].std():.4f}", f)
-        log_print(f"Validation Loss: {df_mean['val_loss'].mean():.4f} ± {df_mean['val_loss'].std():.4f}", f)
-        log_print(f"Loss Gap (Val-Train): {df_mean['loss_gap'].mean():.4f} ± {df_mean['loss_gap'].std():.4f}", f)
+        log_print(f"\nTraining Loss: {df_mean['train_loss'].mean():.2f} ± {df_mean['train_loss'].std():.4f}", f)
+        log_print(f"Validation Loss: {df_mean['val_loss'].mean():.2f} ± {df_mean['val_loss'].std():.4f}", f)
+        log_print(f"Loss Gap (Val-Train): {df_mean['loss_gap'].mean():.2f} ± {df_mean['loss_gap'].std():.4f}", f)
         
-        log_print(f"\nTraining F1: {df_mean['train_f1'].mean():.4f} ± {df_mean['train_f1'].std():.4f}", f)
-        log_print(f"Validation F1: {df_mean['val_f1'].mean():.4f} ± {df_mean['val_f1'].std():.4f}", f)
-        log_print(f"F1 Gap (Train-Val): {df_mean['f1_gap'].mean():.4f} ± {df_mean['f1_gap'].std():.4f}", f)
+        log_print(f"\nTraining F1: {df_mean['train_f1'].mean():.2f}% ± {df_mean['train_f1'].std():.2f}%", f)
+        log_print(f"Validation F1: {df_mean['val_f1'].mean():.2f}% ± {df_mean['val_f1'].std():.2f}%", f)
+        log_print(f"F1 Gap (Train-Val): {df_mean['f1_gap'].mean():.2f}% ± {df_mean['f1_gap'].std():.2f}%", f)
 
-        log_print(f"\nTraining Precision: {df_mean['train_precision'].mean():.4f} ± {df_mean['train_precision'].std():.4f}", f)
-        log_print(f"Validation Precision: {df_mean['val_precision'].mean():.4f} ± {df_mean['val_precision'].std():.4f}", f)
-        log_print(f"Precision Gap (Train-Val): {df_mean['precision_gap'].mean():.4f} ± {df_mean['precision_gap'].std():.4f}", f)
+        log_print(f"\nTraining Precision: {df_mean['train_precision'].mean():.2f}% ± {df_mean['train_precision'].std():.2f}%", f)
+        log_print(f"Validation Precision: {df_mean['val_precision'].mean():.2f}% ± {df_mean['val_precision'].std():.2f}%", f)
+        log_print(f"Precision Gap (Train-Val): {df_mean['precision_gap'].mean():.2f}% ± {df_mean['precision_gap'].std():.2f}%", f)
 
-        log_print(f"\nTraining Recall: {df_mean['train_recall'].mean():.4f} ± {df_mean['train_recall'].std():.4f}", f)
-        log_print(f"Validation Recall: {df_mean['val_recall'].mean():.4f} ± {df_mean['val_recall'].std():.4f}", f)
-        log_print(f"Recall Gap (Train-Val): {df_mean['recall_gap'].mean():.4f} ± {df_mean['recall_gap'].std():.4f}", f)
+        log_print(f"\nTraining Recall: {df_mean['train_recall'].mean():.2f}% ± {df_mean['train_recall'].std():.2f}%", f)
+        log_print(f"Validation Recall: {df_mean['val_recall'].mean():.2f}% ± {df_mean['val_recall'].std():.2f}%", f)
+        log_print(f"Recall Gap (Train-Val): {df_mean['recall_gap'].mean():.2f}% ± {df_mean['recall_gap'].std():.2f}%", f)
         
         # Best/Worst generalizing configs based on final epoch
         best_gen_idx = df_final['acc_gap'].abs().idxmin()
@@ -172,15 +172,15 @@ def analyze_training_validation_metrics(neps_output_dir):
             log_print(f"Training Loss: {row['train_loss']:.4f}", f)
             log_print(f"Validation Loss: {row['val_loss']:.4f}", f)
             log_print(f"Loss Gap: {row['loss_gap']:.4f}", f)
-            log_print(f"Training F1: {row['train_f1']:.4f}", f)
-            log_print(f"Validation F1: {row['val_f1']:.4f}", f)
-            log_print(f"F1 Gap: {row['f1_gap']:.4f}", f)
-            log_print(f"Training Precision: {row['train_precision']:.4f}", f)
-            log_print(f"Validation Precision: {row['val_precision']:.4f}", f)
-            log_print(f"Precision Gap: {row['precision_gap']:.4f}", f)
-            log_print(f"Training Recall: {row['train_recall']:.4f}", f)
-            log_print(f"Validation Recall: {row['val_recall']:.4f}", f)
-            log_print(f"Recall Gap: {row['recall_gap']:.4f}", f)
+            log_print(f"Training F1: {row['train_f1']:.2f}%", f)
+            log_print(f"Validation F1: {row['val_f1']:.2f}%", f)
+            log_print(f"F1 Gap: {row['f1_gap']:.2f}%", f)
+            log_print(f"Training Precision: {row['train_precision']:.2f}%", f)
+            log_print(f"Validation Precision: {row['val_precision']:.2f}%", f)
+            log_print(f"Precision Gap: {row['precision_gap']:.2f}%", f)
+            log_print(f"Training Recall: {row['train_recall']:.2f}%", f)
+            log_print(f"Validation Recall: {row['val_recall']:.2f}%", f)
+            log_print(f"Recall Gap: {row['recall_gap']:.2f}%", f)
             
             log_print("\nMean Across Epochs:", f)
             log_print(f"Training Accuracy: {mean_row['train_acc']:.2f}%", f)
@@ -189,15 +189,15 @@ def analyze_training_validation_metrics(neps_output_dir):
             log_print(f"Training Loss: {mean_row['train_loss']:.4f}", f)
             log_print(f"Validation Loss: {mean_row['val_loss']:.4f}", f)
             log_print(f"Loss Gap: {mean_row['loss_gap']:.4f}", f)
-            log_print(f"Training F1: {mean_row['train_f1']:.4f}", f)
-            log_print(f"Validation F1: {mean_row['val_f1']:.4f}", f)
-            log_print(f"F1 Gap: {mean_row['f1_gap']:.4f}", f)
-            log_print(f"Training Precision: {mean_row['train_precision']:.4f}", f)
-            log_print(f"Validation Precision: {mean_row['val_precision']:.4f}", f)
-            log_print(f"Precision Gap: {mean_row['precision_gap']:.4f}", f)
-            log_print(f"Training Recall: {mean_row['train_recall']:.4f}", f)
-            log_print(f"Validation Recall: {mean_row['val_recall']:.4f}", f)
-            log_print(f"Recall Gap: {mean_row['recall_gap']:.4f}", f)
+            log_print(f"Training F1: {mean_row['train_f1']:.2f}%", f)
+            log_print(f"Validation F1: {mean_row['val_f1']:.2f}%", f)
+            log_print(f"F1 Gap: {mean_row['f1_gap']:.2f}%", f)
+            log_print(f"Training Precision: {mean_row['train_precision']:.2f}%", f)
+            log_print(f"Validation Precision: {mean_row['val_precision']:.2f}%", f)
+            log_print(f"Precision Gap: {mean_row['precision_gap']:.2f}%", f)
+            log_print(f"Training Recall: {mean_row['train_recall']:.2f}%", f)
+            log_print(f"Validation Recall: {mean_row['val_recall']:.2f}%", f)
+            log_print(f"Recall Gap: {mean_row['recall_gap']:.2f}%", f)
 
     print(f"\nGeneralization analysis saved to: {analysis_file}")
 
@@ -265,27 +265,27 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics):
         test_f1 = np.mean(test_metrics['f1'])
         f1_gap = val_f1 - test_f1
         log_print(f"\nF1 Score:", f)
-        log_print(f"Validation: {val_f1:.4f}", f)
-        log_print(f"Test: {test_f1:.4f}", f)
-        log_print(f"Gap (Val-Test): {f1_gap:.4f}", f)
+        log_print(f"Validation: {val_f1:.2f}%", f)
+        log_print(f"Test: {test_f1:.2f}%", f)
+        log_print(f"Gap (Val-Test): {f1_gap:.2f}%", f)
         
         # Precision
         val_precision = final_val['precision']
         test_precision = np.mean(test_metrics['precision'])
         precision_gap = val_precision - test_precision
         log_print(f"\nPrecision:", f)
-        log_print(f"Validation: {val_precision:.4f}", f)
-        log_print(f"Test: {test_precision:.4f}", f)
-        log_print(f"Gap (Val-Test): {precision_gap:.4f}", f)
+        log_print(f"Validation: {val_precision:.2f}%", f)
+        log_print(f"Test: {test_precision:.2f}%", f)
+        log_print(f"Gap (Val-Test): {precision_gap:.2f}%", f)
         
         # Recall
         val_recall = final_val['recall']
         test_recall = np.mean(test_metrics['recall'])
         recall_gap = val_recall - test_recall
         log_print(f"\nRecall:", f)
-        log_print(f"Validation: {val_recall:.4f}", f)
-        log_print(f"Test: {test_recall:.4f}", f)
-        log_print(f"Gap (Val-Test): {recall_gap:.4f}", f)
+        log_print(f"Validation: {val_recall:.2f}%", f)
+        log_print(f"Test: {test_recall:.2f}%", f)
+        log_print(f"Gap (Val-Test): {recall_gap:.2f}%", f)
 
     print(f"\nValidation-Test generalization analysis saved to: {analysis_file}")
 
@@ -337,7 +337,7 @@ def compare_validation_test_generalization(dataset, exp1, exp2):
         file.write(message + "\n")
     
     with open(output_file, 'w') as f:
-        log_print(f"=== Generalization Gap Comparison ===", f)
+        log_print(f"\n=== Test-Validation Generalization Gap Comparison ===", f)
         log_print(f"Experiment 1: {exp1}", f)
         log_print(f"Experiment 2: {exp2}\n", f)
         
@@ -367,12 +367,12 @@ def compare_validation_test_generalization(dataset, exp1, exp2):
                     else:
                         log_print(f"→ Generalization improved by {abs(diff):.2f}{unit}", f)
             else:
-                log_print(f"Difference (Exp2 - Exp1): {diff:.4f}", f)
+                log_print(f"Difference (Exp2 - Exp1): {diff:.2f}", f)
                 if abs(diff) > 0.01:  # More than 0.01 difference for loss
                     if diff > 0:
-                        log_print(f"→ Generalization got worse by {diff:.4f}", f)
+                        log_print(f"→ Generalization got worse by {diff:.2f}", f)
                     else:
-                        log_print(f"→ Generalization improved by {abs(diff):.4f}", f)
+                        log_print(f"→ Generalization improved by {abs(diff):.2f}", f)
             log_print("", f)
         
         # Overall assessment
@@ -424,11 +424,11 @@ def compare_validation_train_generalization(dataset, exp1, exp2):
                         elif "Loss Gap (Val-Train):" in lines[j]:
                             metrics['loss_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
                         elif "F1 Gap (Train-Val):" in lines[j]:
-                            metrics['f1_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                            metrics['f1_gap'] = float(lines[j].split("±")[0].split(":")[1].strip().rstrip('%'))
                         elif "Precision Gap (Train-Val):" in lines[j]:
-                            metrics['precision_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                            metrics['precision_gap'] = float(lines[j].split("±")[0].split(":")[1].strip().rstrip('%'))
                         elif "Recall Gap (Train-Val):" in lines[j]:
-                            metrics['recall_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                            metrics['recall_gap'] = float(lines[j].split("±")[0].split(":")[1].strip().rstrip('%'))
         return metrics
     
     exp1_metrics = extract_metrics(exp1_file)
@@ -439,7 +439,7 @@ def compare_validation_train_generalization(dataset, exp1, exp2):
         file.write(message + "\n")
     
     with open(output_file, 'w') as f:
-        log_print(f"=== Train-Validation Gap Comparison ===", f)
+        log_print(f"\n=== Train-Validation Generalization Gap Comparison ===", f)
         log_print(f"Experiment 1: {exp1}", f)
         log_print(f"Experiment 2: {exp2}\n", f)
         
@@ -447,9 +447,9 @@ def compare_validation_train_generalization(dataset, exp1, exp2):
         metrics = {
             'Accuracy': ('accuracy_gap', '%'),
             'Loss': ('loss_gap', ''),
-            'F1 Score': ('f1_gap', ''),
-            'Precision': ('precision_gap', ''),
-            'Recall': ('recall_gap', '')
+            'F1 Score': ('f1_gap', '%'),
+            'Precision': ('precision_gap', '%'),
+            'Recall': ('recall_gap', '%')
         }
         
         for metric_name, (metric_key, unit) in metrics.items():
@@ -469,12 +469,12 @@ def compare_validation_train_generalization(dataset, exp1, exp2):
                     else:
                         log_print(f"→ Generalization improved by {abs(diff):.2f}{unit}", f)
             else:
-                log_print(f"Difference (Exp2 - Exp1): {diff:.4f}", f)
+                log_print(f"Difference (Exp2 - Exp1): {diff:.2f}", f)
                 if abs(diff) > 0.01:  # More than 0.01 difference
                     if diff > 0:
-                        log_print(f"→ Generalization got worse by {diff:.4f}", f)
+                        log_print(f"→ Generalization got worse by {diff:.2f}", f)
                     else:
-                        log_print(f"→ Generalization improved by {abs(diff):.4f}", f)
+                        log_print(f"→ Generalization improved by {abs(diff):.2f}", f)
             log_print("", f)
         
         # Overall assessment

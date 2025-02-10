@@ -14,4 +14,6 @@ DATA_DIR="$BASE_DIR/datasets/"
 
 python -m src.test_best_config \
     --config_path "$CONFIG_PATH" \
-    --hydra_config "$HYDRA_CONFIG"
+    --hydra_config "$HYDRA_CONFIG" \
+    --dataset "$DATASET" \
+    --data_dir "$DATA_DIR"

@@ -149,7 +149,7 @@ def run_pipeline(
     checkpoint_manager = CheckpointManager(
         pipeline_directory, previous_pipeline_directory
     )
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+    scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
 
     # Load checkpoint and initialize training state
     start_epoch = checkpoint_manager.initialize_training(
@@ -197,7 +197,7 @@ def run_pipeline(
         val_metrics = None  # Initialize val_metrics as None
         if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
             val_metrics = evaluate_and_log_metrics(
-                model, val_loader, criterion, device, metrics, phase="val"
+                model, val_loader, criterion, device, metrics, phase="val", epoch=epoch
             )
         eval_time = time.time() - eval_start_time
 
