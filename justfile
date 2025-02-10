@@ -105,3 +105,28 @@ analyze-generalization DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
     --dataset {{DATASET}} \
     --exp1 {{EXPERIMENT_NAME_1}} \
     --exp2 {{EXPERIMENT_NAME_2}}
+
+# Analyze and compare generalization performance between two NePS runs (cluster)
+analyze-generalization-cluster DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME_1={{EXPERIMENT_NAME_1}},EXPERIMENT_NAME_2={{EXPERIMENT_NAME_2}} \
+    cluster_scripts/analyze_generalization.sh
+
+# Analyze fidelity correlations from a NePS experiment
+analyze-fidelity-correlation DATASET EXPERIMENT_NAME SEED:
+    python -m src.analysis.fidelity_correlation \
+        experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt
+
+# Analyze fidelity correlations from a NePS experiment (cluster)
+analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
+    cluster_scripts/analyze_fidelity_correlation.sh
