@@ -6,6 +6,8 @@ import argparse
 import ast
 from contextlib import redirect_stdout
 from pathlib import Path
+import os
+import pickle
 
 import numpy as np
 import pandas as pd
@@ -83,13 +85,28 @@ def test_run_pipeline(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
 
-    # Load test dataset and create data loader
+    # Load normalization stats from cache
+    cache_dir = os.path.join(config.data.path, "cache")
+    cache_file = os.path.join(cache_dir, f"{config.data.dataset}_normalization_stats.pkl")
+    
+    if not os.path.exists(cache_file):
+        raise FileNotFoundError(
+            f"Normalization stats cache not found at {cache_file}. "
+            "Please run preprocess_dataset.py first."
+        )
+    
+    with open(cache_file, "rb") as f:
+        cached_data = pickle.load(f)
+        normalization_stats = cached_data["normalization_stats"]
+
+    # Load test dataset and create data loader with cached normalization stats
     test_loader, num_classes = get_data_loaders(
         config.data.dataset,
         config.data.num_workers,
         hyperparameters["batch_size"],
         split="test",
         data_path=config.data.path,
+        normalization_stats=normalization_stats  # Pass the cached stats
     )
     print(f"Test dataset '{config.data.dataset}' loaded with {num_classes} classes")
     print(f"Test batches: {len(test_loader)}\n")

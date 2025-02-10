@@ -9,7 +9,7 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from src.data import get_data_loaders
+from src.data import get_data_loaders, calculate_normalization_stats, load_dataset
 from src.util_functions import yaml_to_neps_pipeline_space
 
 
@@ -31,46 +31,42 @@ def main(config: DictConfig) -> None:
     dataset = config.data.dataset
     print(f"Processing dataset: {dataset}")
 
-    # Convert YAML pipeline space configuration into NePS-compatible format
-    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
-
     # Create cache directory in the same location as the dataset
     data_path = Path(config.data.path)
     cache_dir = data_path / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate cache filename based on dataset and batch size
-    cache_file = cache_dir / f"{dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+    # Generate cache filename - simplified to just use dataset name
+    cache_file = cache_dir / f"{dataset}_normalization_stats.pkl"
 
     if cache_file.exists():
         print(f"Cache file already exists at {cache_file}")
         print("Delete it manually if you want to regenerate the cache.")
         return
 
-    # Initialize data loaders
-    print(f"Loading dataset '{config.data.dataset}'...")
-    train_loader, val_loader, num_classes = get_data_loaders(
-        config.data.dataset,
-        config.data.num_workers,
-        batch_size=pipeline_space["batch_size"].upper,
-        split="train",
-        data_path=config.data.path,
-    )
-
-    # Cache the data loaders and num_classes
+    # Load raw dataset first
+    print(f"Loading dataset '{dataset}'...")
+    dataset_dict = load_dataset(dataset, data_path=config.data.path)
+    
+    # Calculate normalization statistics from training data only
+    print("Calculating dataset-specific normalization statistics...")
+    means, stds = calculate_normalization_stats(dataset_dict["train_data"])
+    print(f"Dataset means: {means}")
+    print(f"Dataset stds: {stds}")
+    
+    # Cache the normalization stats
     print(f"\nSaving cache to {cache_file}...")
     with open(cache_file, "wb") as f:
         pickle.dump(
             {
-                "train_loader": train_loader,
-                "val_loader": val_loader,
-                "num_classes": num_classes,
+                "normalization_stats": (means, stds)
             },
             f,
         )
 
-    print("\nPreprocessing completed! You can now run experiments faster.")
-    print(f"Dataset '{config.data.dataset}' cached with {num_classes} classes")
+    print("\nPreprocessing completed!")
+    print(f"Dataset '{dataset}' preprocessed")
+    print(f"Dataset-specific normalization values have been calculated and cached.")
 
 
 if __name__ == "__main__":

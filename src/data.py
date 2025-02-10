@@ -7,6 +7,7 @@ for deep learning models, including custom Dataset classes and data loaders.
 import glob
 import os
 import random
+import pickle
 
 import nibabel as nib
 import numpy as np
@@ -298,8 +299,29 @@ def load_dataset(name, data_path="datasets"):
     }
 
 
+def calculate_normalization_stats(images):
+    """
+    Calculate mean and std across all images in the dataset.
+    This function should only be called with training images to prevent data leakage.
+    
+    Args:
+        images (list): List of image tensors of shape [C, H, W] from training set only
+    
+    Returns:
+        tuple: (means, stds) for each channel
+    """
+    # Stack all images into a single tensor [N, C, H, W]
+    all_images = torch.stack(images)
+    
+    # Calculate mean and std across all images for each channel
+    means = torch.mean(all_images, dim=[0, 2, 3])
+    stds = torch.std(all_images, dim=[0, 2, 3])
+    
+    return means.tolist(), stds.tolist()
+
+
 def get_data_loaders(
-    dataset_name, num_workers, batch_size, split="train", data_path="datasets"
+    dataset_name, num_workers, batch_size, split="train", data_path="datasets", normalization_stats=None
 ):
     """
     Create data loaders for the specified dataset split.
@@ -309,67 +331,100 @@ def get_data_loaders(
         num_workers (int): Number of worker processes for data loading
         batch_size (int): Batch size for the data loaders
         split (str, optional): Which split to load ('train' or 'test'). Defaults to 'train'
-        data_path (str): Base path to the datasets directory. Defaults to 'datasets'
+        data_path (str, optional): Base path to the datasets directory. Default to 'datasets'
+        normalization_stats (tuple, optional): Normalization stats for the dataset. If not provided,
+            stats will be calculated from training data if split is 'train'.
+            For 'test' split, stats must be provided.
 
     Returns:
-        tuple: Data loaders and number of classes
+        tuple: (train_loader, val_loader, num_classes) if split is 'train'
+        tuple: (test_loader, num_classes) if split is 'test'
     """
-    # Base normalization (ImageNet stats)
-    normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    )
-
     try:
+        # Load dataset first
         dataset = load_dataset(dataset_name, data_path)
+        
+        # Try to load normalization stats from cache if not provided
+        if normalization_stats is None:
+            cache_dir = os.path.join(data_path, "cache")
+            cache_file = os.path.join(cache_dir, f"{dataset_name}_normalization_stats.pkl")
+            
+            if os.path.exists(cache_file):
+                with open(cache_file, "rb") as f:
+                    cached_data = pickle.load(f)
+                    normalization_stats = cached_data["normalization_stats"]
+            elif split == "train":
+                # Calculate stats only from training data to prevent data leakage
+                means, stds = calculate_normalization_stats(dataset["train_data"])
+                normalization_stats = (means, stds)
+                
+                # Cache the normalization stats
+                os.makedirs(cache_dir, exist_ok=True)
+                with open(cache_file, "wb") as f:
+                    pickle.dump({"normalization_stats": normalization_stats}, f)
+            else:
+                raise ValueError(
+                    "normalization_stats must be provided for test split or available in cache "
+                    "to ensure consistent normalization with training data"
+                )
+        
+        means, stds = normalization_stats
+
+        # For debugging / testing:
+        # ImageNet normalization stats
+        # means = [0.485, 0.456, 0.406]
+        # stds = [0.229, 0.224, 0.225]
+        
+        normalize = transforms.Normalize(mean=means, std=stds)
+
+        if split == "train":
+            # Create train and validation datasets
+            train_dataset = WORCDataset(
+                dataset["train_data"],
+                dataset["train_labels"],
+                transform=normalize,
+                is_training=True,  # Enable augmentation for training
+            )
+            val_dataset = WORCDataset(
+                dataset["val_data"],
+                dataset["val_labels"],
+                transform=normalize,
+                is_training=False,  # Disable augmentation for validation
+            )
+
+            # Add prefetch factor for better data loading performance
+            loader_args = {
+                "batch_size": batch_size,
+                "num_workers": num_workers,
+                "pin_memory": True,
+                "prefetch_factor": 2,
+                "persistent_workers": True,
+            }
+
+            train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
+            val_loader = DataLoader(val_dataset, shuffle=False, **loader_args)
+
+            return train_loader, val_loader, dataset["num_classes"]
+
+        if split == "test":
+            test_dataset = WORCDataset(
+                dataset["test_data"],
+                dataset["test_labels"],
+                transform=normalize,
+                is_training=False,  # Disable augmentation for test
+            )
+
+            test_loader = DataLoader(
+                test_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                pin_memory=True,
+            )
+
+            return test_loader, dataset["num_classes"]
+
+        raise ValueError(f"Unknown split: {split}")
+        
     except Exception as e:
         raise RuntimeError(f"Failed to load dataset {dataset_name}: {str(e)}") from e
-
-    if split == "train":
-        # Create train and validation datasets with augmentation flag
-        train_dataset = WORCDataset(
-            dataset["train_data"],
-            dataset["train_labels"],
-            transform=normalize,
-            is_training=True,  # Enable augmentation for training
-        )
-        val_dataset = WORCDataset(
-            dataset["val_data"],
-            dataset["val_labels"],
-            transform=normalize,
-            is_training=False,  # Disable augmentation for validation
-        )
-
-        # Add prefetch factor for better data loading performance
-        loader_args = {
-            "batch_size": batch_size,
-            "num_workers": num_workers,
-            "pin_memory": True,
-            "prefetch_factor": 2,
-            "persistent_workers": True,
-        }
-
-        train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
-        val_loader = DataLoader(val_dataset, shuffle=False, **loader_args)
-
-        return train_loader, val_loader, dataset["num_classes"]
-
-    if split == "test":
-        # Create test dataset without augmentation
-        test_dataset = WORCDataset(
-            dataset["test_data"],
-            dataset["test_labels"],
-            transform=normalize,
-            is_training=False,
-        )
-
-        test_loader = DataLoader(
-            test_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            pin_memory=True,
-        )
-
-        return test_loader, dataset["num_classes"]
-
-    raise ValueError(f"Unknown split: {split}")
