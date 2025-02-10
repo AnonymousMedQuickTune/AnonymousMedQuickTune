@@ -288,3 +288,221 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics):
         log_print(f"Gap (Val-Test): {recall_gap:.4f}", f)
 
     print(f"\nValidation-Test generalization analysis saved to: {analysis_file}")
+
+def compare_validation_test_generalization(dataset, exp1, exp2):
+    """
+    Compares validation-test generalization performance between two NePS experiment runs.
+    
+    Args:
+        dataset (str): Name of the dataset
+        exp1 (str): Name of first experiment
+        exp2 (str): Name of second experiment
+    """
+    # Create output directory if it doesn't exist
+    output_dir = Path("experiments") / dataset / "generalization_comparisons"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Define output file path
+    output_file = output_dir / f"{exp1}_vs_{exp2}_test_val_comparison.txt"
+    
+    # Read generalization files for both experiments
+    exp1_file = Path("experiments") / dataset / exp1 / "seed_42" / "validation_test_generalization.txt"
+    exp2_file = Path("experiments") / dataset / exp2 / "seed_42" / "validation_test_generalization.txt"
+    
+    def extract_metrics(file_path):
+        metrics = {}
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if "Gap" in line:
+                    if "Val-Test" in line:
+                        value = float(line.split(":")[1].strip().rstrip('%'))
+                        if "Accuracy" in lines[i-3]:
+                            metrics['accuracy_gap'] = value
+                        elif "F1" in lines[i-3]:
+                            metrics['f1_gap'] = value
+                        elif "Precision" in lines[i-3]:
+                            metrics['precision_gap'] = value
+                        elif "Recall" in lines[i-3]:
+                            metrics['recall_gap'] = value
+                    elif "Test-Val" in line and "Loss" in lines[i-3]:
+                        metrics['loss_gap'] = float(line.split(":")[1].strip())
+        return metrics
+    
+    exp1_metrics = extract_metrics(exp1_file)
+    exp2_metrics = extract_metrics(exp2_file)
+    
+    def log_print(message, file):
+        print(message)
+        file.write(message + "\n")
+    
+    with open(output_file, 'w') as f:
+        log_print(f"=== Generalization Gap Comparison ===", f)
+        log_print(f"Experiment 1: {exp1}", f)
+        log_print(f"Experiment 2: {exp2}\n", f)
+        
+        # Compare each metric
+        metrics = {
+            'Accuracy': ('accuracy_gap', '%'),
+            'Loss': ('loss_gap', ''),
+            'F1 Score': ('f1_gap', '%'),
+            'Precision': ('precision_gap', '%'),
+            'Recall': ('recall_gap', '%')
+        }
+        
+        for metric_name, (metric_key, unit) in metrics.items():
+            gap1 = exp1_metrics[metric_key]
+            gap2 = exp2_metrics[metric_key]
+            diff = gap2 - gap1  # Positive means exp2 has larger gap (worse generalization)
+            
+            log_print(f"{metric_name} Gap:", f)
+            log_print(f"Exp1: {gap1:.2f}{unit}", f)
+            log_print(f"Exp2: {gap2:.2f}{unit}", f)
+            
+            if unit == '%':
+                log_print(f"Difference (Exp2 - Exp1): {diff:.2f}{unit}", f)
+                if abs(diff) > 0.1:  # More than 0.1% difference
+                    if diff > 0:
+                        log_print(f"→ Generalization got worse by {diff:.2f}{unit}", f)
+                    else:
+                        log_print(f"→ Generalization improved by {abs(diff):.2f}{unit}", f)
+            else:
+                log_print(f"Difference (Exp2 - Exp1): {diff:.4f}", f)
+                if abs(diff) > 0.01:  # More than 0.01 difference for loss
+                    if diff > 0:
+                        log_print(f"→ Generalization got worse by {diff:.4f}", f)
+                    else:
+                        log_print(f"→ Generalization improved by {abs(diff):.4f}", f)
+            log_print("", f)
+        
+        # Overall assessment
+        total_metrics = len(metrics)
+        improved_metrics = sum(1 for metric_key, _ in metrics.values() 
+                             if exp2_metrics[metric_key] < exp1_metrics[metric_key])
+        
+        log_print("=== Overall Assessment ===", f)
+        log_print(f"Metrics improved: {improved_metrics}/{total_metrics}", f)
+        if improved_metrics > total_metrics/2:
+            log_print("Overall: Generalization generally improved", f)
+        elif improved_metrics < total_metrics/2:
+            log_print("Overall: Generalization generally worsened", f)
+        else:
+            log_print("Overall: Mixed results in generalization", f)
+    
+    print(f"\nComparison analysis saved to: {output_file}")
+
+def compare_validation_train_generalization(dataset, exp1, exp2):
+    """
+    Compares validation-train generalization performance between two NePS experiment runs.
+    
+    Args:
+        dataset (str): Name of the dataset
+        exp1 (str): Name of first experiment
+        exp2 (str): Name of second experiment
+    """
+    # Create output directory if it doesn't exist
+    output_dir = Path("experiments") / dataset / "generalization_comparisons"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Define output file path
+    output_file = output_dir / f"{exp1}_vs_{exp2}_train_val_comparison.txt"
+    
+    # Read generalization files for both experiments
+    exp1_file = Path("experiments") / dataset / exp1 / "seed_42" / "validation_train_generalization.txt"
+    exp2_file = Path("experiments") / dataset / exp2 / "seed_42" / "validation_train_generalization.txt"
+    
+    def extract_metrics(file_path):
+        metrics = {}
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+            for i, line in enumerate(lines):
+                if "Average Metrics Across All Configs (Final Epoch):" in line:
+                    # Extract gaps from the following lines
+                    for j in range(i, i + 20):  # Look at next 20 lines
+                        if "Accuracy Gap (Train-Val):" in lines[j]:
+                            metrics['accuracy_gap'] = float(lines[j].split("±")[0].split(":")[1].strip().rstrip('%'))
+                        elif "Loss Gap (Val-Train):" in lines[j]:
+                            metrics['loss_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                        elif "F1 Gap (Train-Val):" in lines[j]:
+                            metrics['f1_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                        elif "Precision Gap (Train-Val):" in lines[j]:
+                            metrics['precision_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+                        elif "Recall Gap (Train-Val):" in lines[j]:
+                            metrics['recall_gap'] = float(lines[j].split("±")[0].split(":")[1].strip())
+        return metrics
+    
+    exp1_metrics = extract_metrics(exp1_file)
+    exp2_metrics = extract_metrics(exp2_file)
+    
+    def log_print(message, file):
+        print(message)
+        file.write(message + "\n")
+    
+    with open(output_file, 'w') as f:
+        log_print(f"=== Train-Validation Gap Comparison ===", f)
+        log_print(f"Experiment 1: {exp1}", f)
+        log_print(f"Experiment 2: {exp2}\n", f)
+        
+        # Compare each metric
+        metrics = {
+            'Accuracy': ('accuracy_gap', '%'),
+            'Loss': ('loss_gap', ''),
+            'F1 Score': ('f1_gap', ''),
+            'Precision': ('precision_gap', ''),
+            'Recall': ('recall_gap', '')
+        }
+        
+        for metric_name, (metric_key, unit) in metrics.items():
+            gap1 = exp1_metrics[metric_key]
+            gap2 = exp2_metrics[metric_key]
+            diff = gap2 - gap1  # Positive means exp2 has larger gap (worse generalization)
+            
+            log_print(f"{metric_name} Gap:", f)
+            log_print(f"Exp1: {gap1:.2f}{unit}", f)
+            log_print(f"Exp2: {gap2:.2f}{unit}", f)
+            
+            if unit == '%':
+                log_print(f"Difference (Exp2 - Exp1): {diff:.2f}{unit}", f)
+                if abs(diff) > 0.1:  # More than 0.1% difference
+                    if diff > 0:
+                        log_print(f"→ Generalization got worse by {diff:.2f}{unit}", f)
+                    else:
+                        log_print(f"→ Generalization improved by {abs(diff):.2f}{unit}", f)
+            else:
+                log_print(f"Difference (Exp2 - Exp1): {diff:.4f}", f)
+                if abs(diff) > 0.01:  # More than 0.01 difference
+                    if diff > 0:
+                        log_print(f"→ Generalization got worse by {diff:.4f}", f)
+                    else:
+                        log_print(f"→ Generalization improved by {abs(diff):.4f}", f)
+            log_print("", f)
+        
+        # Overall assessment
+        total_metrics = len(metrics)
+        improved_metrics = sum(1 for metric_key, _ in metrics.values() 
+                             if exp2_metrics[metric_key] < exp1_metrics[metric_key])
+        
+        log_print("=== Overall Assessment ===", f)
+        log_print(f"Metrics improved: {improved_metrics}/{total_metrics}", f)
+        if improved_metrics > total_metrics/2:
+            log_print("Overall: Train-validation generalization generally improved", f)
+        elif improved_metrics < total_metrics/2:
+            log_print("Overall: Train-validation generalization generally worsened", f)
+        else:
+            log_print("Overall: Mixed results in train-validation generalization", f)
+    
+    print(f"\nTrain-validation comparison analysis saved to: {output_file}")
+
+if __name__ == "__main__":
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='Analyze generalization performance')
+    parser.add_argument('--dataset', type=str, required=True, help='Dataset name')
+    parser.add_argument('--exp1', type=str, required=True, help='First experiment name')
+    parser.add_argument('--exp2', type=str, required=True, help='Second experiment name')
+    
+    args = parser.parse_args()
+    
+    # Run both comparisons
+    compare_validation_test_generalization(args.dataset, args.exp1, args.exp2)
+    compare_validation_train_generalization(args.dataset, args.exp1, args.exp2)

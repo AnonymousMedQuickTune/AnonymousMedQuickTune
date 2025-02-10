@@ -95,3 +95,12 @@ test-cluster DATASET EXPERIMENT_NAME SEED:
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/main_experiment_config.yaml" \
     cluster_scripts/test_best_config.sh
+
+# ANALYSIS -----------------------------------------------------------------------------------------
+
+# Analyze and compare generalization performance between two NePS runs
+analyze-generalization DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
+  python -m src.analysis.generalization_analysis \
+    --dataset {{DATASET}} \
+    --exp1 {{EXPERIMENT_NAME_1}} \
+    --exp2 {{EXPERIMENT_NAME_2}}
