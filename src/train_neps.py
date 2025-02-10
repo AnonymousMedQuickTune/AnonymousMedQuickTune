@@ -149,7 +149,7 @@ def run_pipeline(
     checkpoint_manager = CheckpointManager(
         pipeline_directory, previous_pipeline_directory
     )
-    scaler = torch.amp.GradScaler('cuda') if device.type == "cuda" else None
+    scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
 
     # Load checkpoint and initialize training state
     start_epoch = checkpoint_manager.initialize_training(

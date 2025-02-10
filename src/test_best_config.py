@@ -8,14 +8,16 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from omegaconf import OmegaConf
 from torch import nn
-import pandas as pd
 
+from src.analysis.generalization_analysis import (
+    analyze_training_validation_metrics,
+    analyze_validation_test_generalization)
 from src.data import get_data_loaders
 from src.util_functions import evaluate_model, get_model, set_seed
-from src.analysis.generalization_analysis import analyze_training_validation_metrics, analyze_validation_test_generalization
 
 
 def parse_best_config(config_file_path):
@@ -124,12 +126,12 @@ def test_run_pipeline(
 
     # Test evaluation
     test_metrics = evaluate_model(model, test_loader, criterion, device)
-    
+
     # Convert metrics to percentages right after evaluation
-    test_metrics['precision'] = [p * 100 for p in test_metrics['precision']]
-    test_metrics['recall'] = [r * 100 for r in test_metrics['recall']]
-    test_metrics['f1'] = [f * 100 for f in test_metrics['f1']]
-    
+    test_metrics["precision"] = [p * 100 for p in test_metrics["precision"]]
+    test_metrics["recall"] = [r * 100 for r in test_metrics["recall"]]
+    test_metrics["f1"] = [f * 100 for f in test_metrics["f1"]]
+
     # Analyze validation-test generalization
     analyze_validation_test_generalization(neps_output_dir, test_metrics)
 
@@ -214,7 +216,7 @@ def main():
 
     # Load the hydra config
     config = OmegaConf.load(args.hydra_config)
-    
+
     # Override the dataset in config with the one provided via command line
     config.data.dataset = args.dataset
 

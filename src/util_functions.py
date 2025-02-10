@@ -143,7 +143,9 @@ def get_model(model_config):
         model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "efficientnetv2":  # Updated EfficientNet
-        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
+        model = models.efficientnet_v2_s(
+            weights=models.EfficientNet_V2_S_Weights.DEFAULT
+        )
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "densenet":  # Older architecture
         model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
@@ -491,7 +493,7 @@ def train_epoch(
         scaler.step(optimizer)
         scaler.update()
 
-    print() # print empty line for better readability in the logging
+    print()  # print empty line for better readability in the logging
 
     # Evaluate and log metrics after training
     return evaluate_and_log_metrics(

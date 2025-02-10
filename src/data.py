@@ -6,17 +6,17 @@ for deep learning models, including custom Dataset classes and data loaders.
 
 import glob
 import os
+import random
 
 import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
+from PIL import Image
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-import torch.nn.functional as F
-import random
-from PIL import Image
 
 
 class WORCDataset(Dataset):
@@ -53,15 +53,15 @@ class WORCDataset(Dataset):
             tuple: (image, label) where image is a tensor and label is an int
         """
         image = self.data[idx]
-        
+
         # Apply augmentation during training
         if self.is_training and self.augmentation is not None:
             image = self.augmentation(image)
-            
+
         # Apply normalization or other transforms
         if self.transform:
             image = self.transform(image)
-            
+
         return image, self.labels[idx]
 
 
@@ -70,72 +70,74 @@ class MedicalImageAugmentation:
     Advanced augmentation pipeline for medical images, specifically designed for classification tasks.
     Implements state-of-the-art augmentation techniques that preserve medical image characteristics.
     """
+
     def __init__(self, p=0.5):
         """
         Args:
             p (float): Probability of applying each augmentation
         """
         self.p = p
-        
+
     def __call__(self, img):
         """
         Apply augmentations to the image with probability p.
-        
+
         Args:
             img (torch.Tensor): Input image tensor of shape [C, H, W]
-        
+
         Returns:
             torch.Tensor: Augmented image
         """
         # Convert to PIL for some transformations
         img_np = img.permute(1, 2, 0).numpy()
-        img_pil = Image.fromarray((img_np * 255).astype('uint8'))
-        
+        img_pil = Image.fromarray((img_np * 255).astype("uint8"))
+
         # Random rotation (small angles to preserve medical relevance)
         if random.random() < self.p:
             angle = random.uniform(-10, 10)
             img_pil = transforms.functional.rotate(img_pil, angle, fill=0)
-        
+
         # Random affine transformation (slight deformation)
         if random.random() < self.p:
             scale = random.uniform(0.95, 1.05)
             translate = (random.uniform(-0.02, 0.02), random.uniform(-0.02, 0.02))
-            img_pil = transforms.functional.affine(img_pil, angle=0, translate=translate, 
-                                                 scale=scale, shear=0, fill=0)
-        
+            img_pil = transforms.functional.affine(
+                img_pil, angle=0, translate=translate, scale=scale, shear=0, fill=0
+            )
+
         # Convert back to tensor
         img = transforms.functional.to_tensor(img_pil)
-        
+
         # Gaussian noise
         if random.random() < self.p:
             noise = torch.randn_like(img) * 0.02
             img = torch.clamp(img + noise, 0, 1)
-        
+
         # Random gamma correction
         if random.random() < self.p:
             gamma = random.uniform(0.8, 1.2)
             img = torch.pow(img, gamma)
-        
+
         # Random contrast
         if random.random() < self.p:
             contrast_factor = random.uniform(0.9, 1.1)
             img = transforms.functional.adjust_contrast(img, contrast_factor)
-        
+
         # Random brightness
         if random.random() < self.p:
             brightness_factor = random.uniform(0.9, 1.1)
             img = transforms.functional.adjust_brightness(img, brightness_factor)
-            
+
         # Elastic deformation
         if random.random() < self.p:
             img = self._elastic_transform(img)
-            
+
         return img
-    
+
     def _elastic_transform(self, img, alpha=1000, sigma=30):
         """
         Apply elastic deformation to image.
-        
+
         Args:
             img (torch.Tensor): Input image
             alpha (float): Scaling factor for displacement
@@ -144,26 +146,29 @@ class MedicalImageAugmentation:
         shape = img.shape[1:]
         dx = torch.randn(shape) * alpha
         dy = torch.randn(shape) * alpha
-        
+
         # Apply Gaussian blur to the displacement fields
-        dx = transforms.GaussianBlur(kernel_size=7, sigma=sigma)(dx.unsqueeze(0)).squeeze()
-        dy = transforms.GaussianBlur(kernel_size=7, sigma=sigma)(dy.unsqueeze(0)).squeeze()
-        
+        dx = transforms.GaussianBlur(kernel_size=7, sigma=sigma)(
+            dx.unsqueeze(0)
+        ).squeeze()
+        dy = transforms.GaussianBlur(kernel_size=7, sigma=sigma)(
+            dy.unsqueeze(0)
+        ).squeeze()
+
         x, y = torch.meshgrid(torch.arange(shape[0]), torch.arange(shape[1]))
-        indices = torch.stack([
-            y + dy,
-            x + dx
-        ])
-        
+        indices = torch.stack([y + dy, x + dx])
+
         # Normalize indices to [-1, 1] for grid_sample
         indices[0] = 2 * indices[0] / (shape[0] - 1) - 1
         indices[1] = 2 * indices[1] / (shape[1] - 1) - 1
-        
+
         # Reshape indices for grid_sample
         grid = indices.permute(1, 2, 0).unsqueeze(0)
-        
+
         # Apply transformation
-        img = F.grid_sample(img.unsqueeze(0), grid, mode='bilinear', padding_mode='zeros').squeeze(0)
+        img = F.grid_sample(
+            img.unsqueeze(0), grid, mode="bilinear", padding_mode="zeros"
+        ).squeeze(0)
         return img
 
 
@@ -311,8 +316,7 @@ def get_data_loaders(
     """
     # Base normalization (ImageNet stats)
     normalize = transforms.Normalize(
-        mean=[0.485, 0.456, 0.406], 
-        std=[0.229, 0.224, 0.225]
+        mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
     )
 
     try:
@@ -323,16 +327,16 @@ def get_data_loaders(
     if split == "train":
         # Create train and validation datasets with augmentation flag
         train_dataset = WORCDataset(
-            dataset["train_data"], 
-            dataset["train_labels"], 
+            dataset["train_data"],
+            dataset["train_labels"],
             transform=normalize,
-            is_training=True  # Enable augmentation for training
+            is_training=True,  # Enable augmentation for training
         )
         val_dataset = WORCDataset(
-            dataset["val_data"], 
-            dataset["val_labels"], 
+            dataset["val_data"],
+            dataset["val_labels"],
             transform=normalize,
-            is_training=False  # Disable augmentation for validation
+            is_training=False,  # Disable augmentation for validation
         )
 
         # Add prefetch factor for better data loading performance
@@ -352,10 +356,10 @@ def get_data_loaders(
     if split == "test":
         # Create test dataset without augmentation
         test_dataset = WORCDataset(
-            dataset["test_data"], 
-            dataset["test_labels"], 
+            dataset["test_data"],
+            dataset["test_labels"],
             transform=normalize,
-            is_training=False
+            is_training=False,
         )
 
         test_loader = DataLoader(
