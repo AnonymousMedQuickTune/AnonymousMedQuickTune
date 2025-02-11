@@ -229,13 +229,20 @@ def main():
         required=True,
         help="Dataset name to override config",
     )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        required=True,
+        help="Path to the data directory",
+    )
     args = parser.parse_args()
 
     # Load the hydra config
     config = OmegaConf.load(args.hydra_config)
 
-    # Override the dataset in config with the one provided via command line
+    # Override the dataset and data path in config
     config.data.dataset = args.dataset
+    config.data.path = args.data_dir
 
     # Get the best hyperparameters and config ID
     best_hyperparameters, config_id = parse_best_config(args.config_path)
