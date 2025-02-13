@@ -61,12 +61,12 @@ preprocess-datasets-cluster DATASET:
 
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
-# Run a test experiment on the local machine
+# Run a test experiment on the local machine with k-fold cross validation
 run-local-test DATASET EXPERIMENT_NAME SEED:
   python -m src.train_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
-    seed={{SEED}}
+    seed={{SEED}} \
 
 # Submit a test experiment to the cluster
 run-cluster-test DATASET EXPERIMENT_NAME SEED:
@@ -81,11 +81,13 @@ run-cluster-test DATASET EXPERIMENT_NAME SEED:
 # TEST EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run test with best hyperparameters locally
-test-local DATASET EXPERIMENT_NAME SEED:
+test-local DATASET EXPERIMENT_NAME SEED FOLDS:
   python -m src.test_best_config \
     --config_path experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
     --hydra_config configs/main_experiment_config.yaml \
-    --dataset {{DATASET}}
+    --dataset {{DATASET}} \
+    --data_dir datasets \
+    --k_folds {{FOLDS}}
 
 # Run test with best hyperparameters on cluster
 test-cluster DATASET EXPERIMENT_NAME SEED:
