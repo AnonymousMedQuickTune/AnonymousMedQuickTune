@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -428,3 +428,62 @@ def get_data_loaders(
         
     except Exception as e:
         raise RuntimeError(f"Failed to load dataset {dataset_name}: {str(e)}") from e
+
+
+def get_kfold_loaders(data, labels, k_folds, batch_size, num_workers, fold_idx):
+    """
+    Create train and validation loaders for a specific fold.
+    
+    Args:
+        data (list): List of all data samples
+        labels (list): List of all labels
+        k_folds (int): Number of folds
+        batch_size (int): Batch size for the data loaders
+        num_workers (int): Number of worker processes
+        fold_idx (int): Current fold index
+        
+    Returns:
+        tuple: (train_loader, val_loader)
+    """
+    # Create k-fold splitter
+    kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+    
+    # Convert to list for indexing
+    data_list = list(data)
+    labels_list = list(labels)
+    
+    # Get the splits for the current fold
+    splits = list(kfold.split(data_list))
+    train_idx, val_idx = splits[fold_idx]
+    
+    # Create datasets for this fold
+    train_dataset = WORCDataset(
+        [data_list[i] for i in train_idx],
+        [labels_list[i] for i in train_idx],
+        is_training=True
+    )
+    
+    val_dataset = WORCDataset(
+        [data_list[i] for i in val_idx],
+        [labels_list[i] for i in val_idx],
+        is_training=False
+    )
+    
+    # Create data loaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=True
+    )
+    
+    return train_loader, val_loader
