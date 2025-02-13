@@ -72,18 +72,13 @@ def run_pipeline(
     k_folds = config.get('k_folds', 5)
     
     # Initialize metrics storage for all folds
-    all_fold_metrics = {
-        "accuracy": [],
-        "precision": [],
-        "recall": [],
-        "f1": []
+    all_folds_final_metrics = {
+        'accuracy': [],
+        'precision': [],
+        'recall': [],
+        'f1': []
     }
 
-    all_folds_accuracy = []
-    all_folds_f1 = []
-    all_folds_precision = []
-    all_folds_recall = []
-    
     # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}")
@@ -254,38 +249,17 @@ def run_pipeline(
                 metrics,
             )
 
-            # After training completion, store the final metrics for this fold
-            all_fold_metrics["accuracy"].append(metrics["val"]["accuracy"][-1] if metrics["val"]["accuracy"] else 0)
-            all_fold_metrics["precision"].append(np.mean(metrics["val"]["precision"][-1]) * 100 if metrics["val"]["precision"] else 0)
-            all_fold_metrics["recall"].append(np.mean(metrics["val"]["recall"][-1]) * 100 if metrics["val"]["recall"] else 0)
-            all_fold_metrics["f1"].append(np.mean(metrics["val"]["f1"][-1]) * 100 if metrics["val"]["f1"] else 0)
+            # Store final metrics for all folds
+            if epoch == epochs - 1:
+                all_folds_final_metrics['accuracy'].append(val_metrics["accuracy"])
+                all_folds_final_metrics['precision'].append(np.mean(val_metrics["precision"]) * 100)
+                all_folds_final_metrics['recall'].append(np.mean(val_metrics["recall"]) * 100)
+                all_folds_final_metrics['f1'].append(np.mean(val_metrics["f1"]) * 100)
 
         print("\nTraining completed!")
 
-        all_folds_accuracy.append(all_fold_metrics["accuracy"][-1])
-        print(f"All fold accuracy: {all_folds_accuracy}")
-        all_folds_f1.append(all_fold_metrics["f1"][-1])
-        print(f"All fold f1: {all_folds_f1}")
-        all_folds_precision.append(all_fold_metrics["precision"][-1])
-        print(f"All fold precision: {all_folds_precision}")
-        all_folds_recall.append(all_fold_metrics["recall"][-1])
-        print(f"All fold recall: {all_folds_recall}")
-
-    # Calculate mean metrics across all folds
-    final_metrics = {
-        'accuracy': np.mean(all_folds_accuracy),
-        'precision': np.mean(all_folds_precision),
-        'recall': np.mean(all_folds_recall),
-        'f1': np.mean(all_folds_f1)
-    }
-    print(f"\nFinal metrics: {final_metrics}")
-
-    # Print all final metrics
-    for metric, value in final_metrics.items():
-        print(f"Mean {metric} across {k_folds} folds: {value:.2f}%")
-
     # Get the specified metric from final metrics for NePS
-    selected_metric = final_metrics[config.metric]
+    selected_metric = np.mean(all_folds_final_metrics[config.metric])
     print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
 
     # Convert to NePS loss (negative because NePS minimizes)
