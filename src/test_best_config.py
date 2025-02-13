@@ -4,10 +4,10 @@ Test script to train model with optimal hyperparameters found by NePS.
 
 import argparse
 import ast
-from contextlib import redirect_stdout
-from pathlib import Path
 import os
 import pickle
+from contextlib import redirect_stdout
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 from src.analysis.generalization_analysis import (
     analyze_training_validation_metrics,
     analyze_validation_test_generalization)
-from src.data import get_kfold_loaders, load_dataset, WORCDataset
+from src.data import WORCDataset, get_kfold_loaders, load_dataset
 from src.util_functions import evaluate_model, get_model, set_seed
 
 
@@ -79,18 +79,18 @@ def test_run_pipeline(
 
     # Load the dataset first
     dataset = load_dataset(config.data.dataset, data_path=config.data.path)
-    
+
     # Create a single test loader for the complete test set
-    test_dataset = WORCDataset(dataset['test_data'], dataset['test_labels'])
+    test_dataset = WORCDataset(dataset["test_data"], dataset["test_labels"])
     test_loader = DataLoader(
         test_dataset,
         batch_size=hyperparameters["batch_size"],
         shuffle=False,
-        num_workers=config.data.num_workers
+        num_workers=config.data.num_workers,
     )
-    
-    num_classes = dataset['num_classes']
-    
+
+    num_classes = dataset["num_classes"]
+
     # Initialize storage for metrics across folds
     all_fold_metrics = []
     all_fold_f1_scores = []
@@ -98,13 +98,15 @@ def test_run_pipeline(
     # Evaluate each fold's model on the complete test set
     for fold in range(k_folds):
         print(f"\n=== Evaluating Fold {fold + 1}/{k_folds} ===")
-        
+
         # Initialize the model
-        model = get_model({
-            "type": config.model.type,
-            "task": config.model.task,
-            "num_classes": num_classes,
-        })
+        model = get_model(
+            {
+                "type": config.model.type,
+                "task": config.model.task,
+                "num_classes": num_classes,
+            }
+        )
 
         # Load the trained model checkpoint for this fold
         checkpoint_path = (
@@ -114,7 +116,7 @@ def test_run_pipeline(
             / f"fold_{fold}"
             / "model_latest_checkpoint.pth"
         )
-        
+
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}")
 
@@ -123,13 +125,15 @@ def test_run_pipeline(
         model = model.to(device)
         model.eval()
 
-        criterion = nn.CrossEntropyLoss(label_smoothing=hyperparameters["label_smoothing"])
-        
+        criterion = nn.CrossEntropyLoss(
+            label_smoothing=hyperparameters["label_smoothing"]
+        )
+
         # Test evaluation for this fold's model on complete test set
         fold_metrics = evaluate_model(model, test_loader, criterion, device)
         all_fold_metrics.append(fold_metrics)
-        all_fold_f1_scores.append(np.mean(fold_metrics['f1']))
-        
+        all_fold_f1_scores.append(np.mean(fold_metrics["f1"]))
+
         # Print fold results
         print(f"\nFold {fold + 1} Results:")
         print(f"Loss: {fold_metrics['loss']:.4f}")
@@ -155,17 +159,23 @@ def test_run_pipeline(
             f"{class1_total:>3d} total"
         )
         print("            ----------------------")
-        print(f"Total        {conf_matrix[:,0].sum():>10d} {conf_matrix[:,1].sum():>10d}")
+        print(
+            f"Total        {conf_matrix[:,0].sum():>10d} {conf_matrix[:,1].sum():>10d}"
+        )
 
         print("\nDetailed Interpretation:")
-        print(f"True Negatives (TN)  : {conf_matrix[0,0]} (Correctly predicted Class 0)")
+        print(
+            f"True Negatives (TN)  : {conf_matrix[0,0]} (Correctly predicted Class 0)"
+        )
         print(
             f"False Positives (FP) : {conf_matrix[0,1]} (Class 0 wrongly predicted as Class 1)"
         )
         print(
             f"False Negatives (FN) : {conf_matrix[1,0]} (Class 1 wrongly predicted as Class 0)"
         )
-        print(f"True Positives (TP)  : {conf_matrix[1,1]} (Correctly predicted Class 1)")
+        print(
+            f"True Positives (TP)  : {conf_matrix[1,1]} (Correctly predicted Class 1)"
+        )
 
     # Calculate average metrics across folds
     avg_metrics = {
@@ -174,7 +184,9 @@ def test_run_pipeline(
         "precision": np.mean([np.mean(m["precision"]) for m in all_fold_metrics]) * 100,
         "recall": np.mean([np.mean(m["recall"]) for m in all_fold_metrics]) * 100,
         "f1": np.mean(all_fold_f1_scores) * 100,
-        "confusion_matrix": np.mean([m["confusion_matrix"] for m in all_fold_metrics], axis=0)
+        "confusion_matrix": np.mean(
+            [m["confusion_matrix"] for m in all_fold_metrics], axis=0
+        ),
     }
 
     # Print average results

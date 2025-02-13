@@ -6,6 +6,7 @@ import logging
 import os
 import pickle
 import time
+import warnings
 from pathlib import Path
 
 import hydra
@@ -16,9 +17,9 @@ from neps import run
 from omegaconf import DictConfig, OmegaConf
 from torch import nn, optim
 from torch.utils.data import DataLoader
-import warnings
 
-from src.data import get_data_loaders, get_kfold_loaders, load_dataset, WORCDataset
+from src.data import (WORCDataset, get_data_loaders, get_kfold_loaders,
+                      load_dataset)
 from src.util_functions import (CheckpointManager, adjust_learning_rate,
                                 evaluate_and_log_metrics, get_model,
                                 get_optimizer, get_warmup_scheduler,
@@ -30,7 +31,9 @@ from src.util_functions import (CheckpointManager, adjust_learning_rate,
 
 # TODO: Fix warnings
 warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
-warnings.filterwarnings("ignore", message="Default grid_sample and affine_grid behavior")
+warnings.filterwarnings(
+    "ignore", message="Default grid_sample and affine_grid behavior"
+)
 warnings.filterwarnings("ignore", message="Detected call of `lr_scheduler.step()`")
 
 
@@ -61,53 +64,50 @@ def run_pipeline(
         dataset_dict (dict): Dictionary containing all data and labels
         num_classes (int): Number of classes in the dataset
         **hyperparameters: Configuration dictionary containing hyperparameters
-        
+
     Returns:
         dict: Dictionary containing the negative mean of the selected metric as loss for NePS
     """
     # Set seed for pipeline reproducibility
     set_seed(config.seed)
-    
+
     # Get k-fold parameter from config or default to 5
-    k_folds = config.get('k_folds', 5)
-    
+    k_folds = config.get("k_folds", 5)
+
     # Initialize metrics storage for all folds
-    all_folds_final_metrics = {
-        'accuracy': [],
-        'precision': [],
-        'recall': [],
-        'f1': []
-    }
+    all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
 
     # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}")
-        
+
         # Create fold-specific directory
         fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
         os.makedirs(fold_directory, exist_ok=True)
-        
+
         # Initialize logging files for this fold
         logging_dir = os.path.join(fold_directory, "logging")
         log_files = initialize_logging_files(logging_dir)
-        
+
         # Get data loaders for this fold
         train_loader, val_loader = get_kfold_loaders(
-            dataset_dict['train_data'],
-            dataset_dict['train_labels'],
+            dataset_dict["train_data"],
+            dataset_dict["train_labels"],
             k_folds=k_folds,
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
-            fold_idx=fold
+            fold_idx=fold,
         )
-        
+
         # Setup model and training components for this fold
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = get_model({
-            "type": config.model.type,
-            "task": config.model.task,
-            "num_classes": num_classes,
-        }).to(device)
+        model = get_model(
+            {
+                "type": config.model.type,
+                "task": config.model.task,
+                "num_classes": num_classes,
+            }
+        ).to(device)
         model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
         print(f"Model initialized: {config.model.type}\n")
 
@@ -214,7 +214,13 @@ def run_pipeline(
             val_metrics = None  # Initialize val_metrics as None
             if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
                 val_metrics = evaluate_and_log_metrics(
-                    model, val_loader, criterion, device, metrics, phase="val", epoch=epoch
+                    model,
+                    val_loader,
+                    criterion,
+                    device,
+                    metrics,
+                    phase="val",
+                    epoch=epoch,
                 )
             eval_time = time.time() - eval_start_time
 
@@ -251,10 +257,14 @@ def run_pipeline(
 
             # Store final metrics for all folds
             if epoch == epochs - 1:
-                all_folds_final_metrics['accuracy'].append(val_metrics["accuracy"])
-                all_folds_final_metrics['precision'].append(np.mean(val_metrics["precision"]) * 100)
-                all_folds_final_metrics['recall'].append(np.mean(val_metrics["recall"]) * 100)
-                all_folds_final_metrics['f1'].append(np.mean(val_metrics["f1"]) * 100)
+                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+                all_folds_final_metrics["precision"].append(
+                    np.mean(val_metrics["precision"]) * 100
+                )
+                all_folds_final_metrics["recall"].append(
+                    np.mean(val_metrics["recall"]) * 100
+                )
+                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
 
         print("\nTraining completed!")
 
@@ -328,26 +338,26 @@ def main(config: DictConfig) -> None:
         print("Falling back to regular data loading...")
         # Load the raw dataset first
         dataset = load_dataset(config.data.dataset, data_path=config.data.path)
-        
+
         # Store the training data and labels
         dataset_dict = {
-            'train_data': dataset['train_data'],
-            'train_labels': dataset['train_labels']
+            "train_data": dataset["train_data"],
+            "train_labels": dataset["train_labels"],
         }
-        num_classes = dataset['num_classes']
+        num_classes = dataset["num_classes"]
 
         # Create initial loaders for printing info
         train_loader = DataLoader(
-            WORCDataset(dataset['train_data'], dataset['train_labels']),
+            WORCDataset(dataset["train_data"], dataset["train_labels"]),
             batch_size=pipeline_space["batch_size"].upper,
             shuffle=True,
-            num_workers=config.data.num_workers
+            num_workers=config.data.num_workers,
         )
         val_loader = DataLoader(
-            WORCDataset(dataset['val_data'], dataset['val_labels']),
+            WORCDataset(dataset["val_data"], dataset["val_labels"]),
             batch_size=pipeline_space["batch_size"].upper,
             shuffle=False,
-            num_workers=config.data.num_workers
+            num_workers=config.data.num_workers,
         )
 
     print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")

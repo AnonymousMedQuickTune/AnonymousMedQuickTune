@@ -9,7 +9,8 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from src.data import get_data_loaders, calculate_normalization_stats, load_dataset
+from src.data import (calculate_normalization_stats, get_data_loaders,
+                      load_dataset)
 from src.util_functions import yaml_to_neps_pipeline_space
 
 
@@ -47,20 +48,18 @@ def main(config: DictConfig) -> None:
     # Load raw dataset first
     print(f"Loading dataset '{dataset}'...")
     dataset_dict = load_dataset(dataset, data_path=config.data.path)
-    
+
     # Calculate normalization statistics from training data only
     print("Calculating dataset-specific normalization statistics...")
     means, stds = calculate_normalization_stats(dataset_dict["train_data"])
     print(f"Dataset means: {means}")
     print(f"Dataset stds: {stds}")
-    
+
     # Cache the normalization stats
     print(f"\nSaving cache to {cache_file}...")
     with open(cache_file, "wb") as f:
         pickle.dump(
-            {
-                "normalization_stats": (means, stds)
-            },
+            {"normalization_stats": (means, stds)},
             f,
         )
 

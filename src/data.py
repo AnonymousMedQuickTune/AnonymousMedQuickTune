@@ -6,8 +6,8 @@ for deep learning models, including custom Dataset classes and data loaders.
 
 import glob
 import os
-import random
 import pickle
+import random
 
 import nibabel as nib
 import numpy as np
@@ -15,7 +15,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from sklearn.model_selection import train_test_split, KFold
+from sklearn.model_selection import KFold, train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -303,25 +303,30 @@ def calculate_normalization_stats(images):
     """
     Calculate mean and std across all images in the dataset.
     This function should only be called with training images to prevent data leakage.
-    
+
     Args:
         images (list): List of image tensors of shape [C, H, W] from training set only
-    
+
     Returns:
         tuple: (means, stds) for each channel
     """
     # Stack all images into a single tensor [N, C, H, W]
     all_images = torch.stack(images)
-    
+
     # Calculate mean and std across all images for each channel
     means = torch.mean(all_images, dim=[0, 2, 3])
     stds = torch.std(all_images, dim=[0, 2, 3])
-    
+
     return means.tolist(), stds.tolist()
 
 
 def get_data_loaders(
-    dataset_name, num_workers, batch_size, split="train", data_path="datasets", normalization_stats=None
+    dataset_name,
+    num_workers,
+    batch_size,
+    split="train",
+    data_path="datasets",
+    normalization_stats=None,
 ):
     """
     Create data loaders for the specified dataset split.
@@ -343,12 +348,14 @@ def get_data_loaders(
     try:
         # Load dataset first
         dataset = load_dataset(dataset_name, data_path)
-        
+
         # Try to load normalization stats from cache if not provided
         if normalization_stats is None:
             cache_dir = os.path.join(data_path, "cache")
-            cache_file = os.path.join(cache_dir, f"{dataset_name}_normalization_stats.pkl")
-            
+            cache_file = os.path.join(
+                cache_dir, f"{dataset_name}_normalization_stats.pkl"
+            )
+
             if os.path.exists(cache_file):
                 with open(cache_file, "rb") as f:
                     cached_data = pickle.load(f)
@@ -357,7 +364,7 @@ def get_data_loaders(
                 # Calculate stats only from training data to prevent data leakage
                 means, stds = calculate_normalization_stats(dataset["train_data"])
                 normalization_stats = (means, stds)
-                
+
                 # Cache the normalization stats
                 os.makedirs(cache_dir, exist_ok=True)
                 with open(cache_file, "wb") as f:
@@ -367,14 +374,14 @@ def get_data_loaders(
                     "normalization_stats must be provided for test split or available in cache "
                     "to ensure consistent normalization with training data"
                 )
-        
+
         means, stds = normalization_stats
 
         # For debugging / testing:
         # ImageNet normalization stats
         # means = [0.485, 0.456, 0.406]
         # stds = [0.229, 0.224, 0.225]
-        
+
         normalize = transforms.Normalize(mean=means, std=stds)
 
         if split == "train":
@@ -425,7 +432,7 @@ def get_data_loaders(
             return test_loader, dataset["num_classes"]
 
         raise ValueError(f"Unknown split: {split}")
-        
+
     except Exception as e:
         raise RuntimeError(f"Failed to load dataset {dataset_name}: {str(e)}") from e
 
@@ -433,7 +440,7 @@ def get_data_loaders(
 def get_kfold_loaders(data, labels, k_folds, batch_size, num_workers, fold_idx):
     """
     Create train and validation loaders for a specific fold.
-    
+
     Args:
         data (list): List of all data samples
         labels (list): List of all labels
@@ -441,49 +448,49 @@ def get_kfold_loaders(data, labels, k_folds, batch_size, num_workers, fold_idx):
         batch_size (int): Batch size for the data loaders
         num_workers (int): Number of worker processes
         fold_idx (int): Current fold index
-        
+
     Returns:
         tuple: (train_loader, val_loader)
     """
     # Create k-fold splitter
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
-    
+
     # Convert to list for indexing
     data_list = list(data)
     labels_list = list(labels)
-    
+
     # Get the splits for the current fold
     splits = list(kfold.split(data_list))
     train_idx, val_idx = splits[fold_idx]
-    
+
     # Create datasets for this fold
     train_dataset = WORCDataset(
         [data_list[i] for i in train_idx],
         [labels_list[i] for i in train_idx],
-        is_training=True
+        is_training=True,
     )
-    
+
     val_dataset = WORCDataset(
         [data_list[i] for i in val_idx],
         [labels_list[i] for i in val_idx],
-        is_training=False
+        is_training=False,
     )
-    
+
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
-    
+
     return train_loader, val_loader

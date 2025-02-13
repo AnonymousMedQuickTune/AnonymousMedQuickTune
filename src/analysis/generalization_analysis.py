@@ -13,7 +13,9 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
     Analyzes training and validation metrics across all NePS configurations and folds.
     """
     results_dir = Path(neps_output_dir) / "results"
-    print("\nAnalyzing training-validation generalization across all configurations and folds:")
+    print(
+        "\nAnalyzing training-validation generalization across all configurations and folds:"
+    )
 
     all_configs_metrics_final = []
     all_configs_metrics_mean = []
@@ -22,11 +24,13 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
         print(message)
         file.write(message + "\n")
 
-    with open(Path(neps_output_dir).parent / "validation_train_generalization.txt", "w") as f:
+    with open(
+        Path(neps_output_dir).parent / "validation_train_generalization.txt", "w"
+    ) as f:
         for config_dir in results_dir.glob("config_*"):
             config_metrics_final = []
             config_metrics_mean = []
-            
+
             # Analyze each fold
             for fold in range(k_folds):
                 metrics_file = config_dir / f"fold_{fold}" / "logging" / "metrics.csv"
@@ -40,9 +44,9 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
                 final_train = df[
                     (df["epoch"] == final_epoch) & (df["phase"] == "train")
                 ].iloc[0]
-                final_val = df[(df["epoch"] == final_epoch) & (df["phase"] == "val")].iloc[
-                    0
-                ]
+                final_val = df[
+                    (df["epoch"] == final_epoch) & (df["phase"] == "val")
+                ].iloc[0]
 
                 # Calculate mean metrics across all epochs (only for numeric columns)
                 numeric_cols = ["loss", "accuracy", "precision", "recall", "f1"]
@@ -93,7 +97,7 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
 
                 config_metrics_final.append(final_metrics)
                 config_metrics_mean.append(mean_metrics)
-            
+
             # Average metrics across folds for this config
             if config_metrics_final:
                 avg_final = {
@@ -244,7 +248,9 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
             log_print(f"Validation Recall: {mean_row['val_recall']:.2f}%", f)
             log_print(f"Recall Gap: {mean_row['recall_gap']:.2f}%", f)
 
-    print(f"\nGeneralization analysis saved to: {Path(neps_output_dir).parent / 'validation_train_generalization.txt'}")
+    print(
+        f"\nGeneralization analysis saved to: {Path(neps_output_dir).parent / 'validation_train_generalization.txt'}"
+    )
 
 
 def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_folds):
@@ -279,35 +285,38 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_fold
                 raise ValueError("Could not find Config ID in file")
 
         # Calculate average validation metrics across folds
-        val_metrics = {metric: [] for metric in ["accuracy", "loss", "f1", "precision", "recall"]}
-        
+        val_metrics = {
+            metric: [] for metric in ["accuracy", "loss", "f1", "precision", "recall"]
+        }
+
         for fold in range(k_folds):
             metrics_file = (
-                results_dir 
-                / f"config_{best_config_id}" 
-                / f"fold_{fold}" 
-                / "logging" 
+                results_dir
+                / f"config_{best_config_id}"
+                / f"fold_{fold}"
+                / "logging"
                 / "metrics.csv"
             )
-            
+
             if not metrics_file.exists():
                 continue
-            
+
             df = pd.read_csv(metrics_file)
             final_epoch = df["epoch"].max()
-            final_val = df[(df["epoch"] == final_epoch) & (df["phase"] == "val")].iloc[0]
-            
+            final_val = df[(df["epoch"] == final_epoch) & (df["phase"] == "val")].iloc[
+                0
+            ]
+
             for metric in val_metrics:
                 if metric == "f1":
                     # Store F1 score directly without additional processing
                     val_metrics[metric].append(final_val[metric])
                 else:
                     val_metrics[metric].append(final_val[metric])
-        
+
         # Average validation metrics across folds
         avg_val_metrics = {
-            metric: np.mean(values) 
-            for metric, values in val_metrics.items()
+            metric: np.mean(values) for metric, values in val_metrics.items()
         }
 
         # Calculate generalization gaps
