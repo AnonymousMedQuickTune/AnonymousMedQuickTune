@@ -1,0 +1,41 @@
+mean_1:
+  type: float
+  log: false
+  lower: 0
+  upper: 1
+
+mean_2:
+  type: float
+  log: false
+  lower: 0
+  upper: 1
+
+mean_3:
+  type: float
+  log: false
+  lower: 0
+  upper: 1
+
+std_1:
+  type: float
+  log: false
+  lower: 0
+  upper: 1  
+
+std_2:
+  type: float
+  log: false
+  lower: 0
+  upper: 1  
+
+std_3:
+  type: float
+  log: false
+  lower: 0
+  upper: 1
+
+number_of_epochs:  # for multifidelity
+  type: int
+  lower: 10
+  upper: 100
+  is_fidelity: true  # explicitly marked as fidelity parameter

@@ -77,9 +77,25 @@ def run_pipeline(
     # Initialize metrics storage for all folds
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
 
-    # Calculate normalization stats from all training data once
-    normalization_stats = None  # Will be calculated from training data in first fold
-    # TODO: Optimize normalization stats with NePS
+    if "autonorm" in str(config.pipeline_space):
+        # Use normalization stats from NePS hyperparameters
+        print(f"\nNormalization parameters from NePS:")
+        mean_values = np.array([float(hyperparameters['mean_1']), 
+                              float(hyperparameters['mean_2']), 
+                              float(hyperparameters['mean_3'])], dtype=np.float32)
+        std_values = np.array([float(hyperparameters['std_1']), 
+                             float(hyperparameters['std_2']), 
+                             float(hyperparameters['std_3'])], dtype=np.float32)
+        print(f"Mean: {mean_values}")
+        print(f"Std: {std_values}\n")
+        
+        normalization_stats = {
+            'mean': mean_values,
+            'std': std_values
+        }
+    else:
+        # Calculate normalization stats from all training data once
+        normalization_stats = None  # Will be calculated from training data in first fold
     
     # Run k-fold cross validation
     for fold in range(k_folds):
@@ -185,7 +201,10 @@ def run_pipeline(
         )
         log_initial_state(
             log_files=log_files,
-            hyperparameters=hyperparameters,
+            hyperparameters={
+                "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
+                **hyperparameters  # Include all other hyperparameters
+            },
             config=config,
             model=model,
             epochs=epochs,
@@ -211,7 +230,7 @@ def run_pipeline(
                 device,
                 metrics,
                 epoch,
-                hyperparameters["mixup_alpha"],
+                hyperparameters.get("mixup_alpha", 0.0),
             )
             train_time = time.time() - train_start_time
 
@@ -329,7 +348,8 @@ def main(config: DictConfig) -> None:
     cache_file = (
         data_path
         / "cache"
-        / f"{config.data.dataset}_bs{pipeline_space['batch_size'].upper}.pkl"
+        / f"{config.data.dataset}_bs{pipeline_space.get('batch_size', {'upper': 32})['upper']}.pkl"
+        # TODO: checkout if this is correct
     )
     if cache_file.exists():
         print("\nLoading data from cache...")
@@ -355,13 +375,13 @@ def main(config: DictConfig) -> None:
         # Create initial loaders for printing info
         train_loader = DataLoader(
             WORCDataset(dataset["train_data"], dataset["train_labels"]),
-            batch_size=pipeline_space["batch_size"].upper,
+            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"], # TODO: checkout if this is correct
             shuffle=True,
             num_workers=config.data.num_workers,
         )
         val_loader = DataLoader(
             WORCDataset(dataset["val_data"], dataset["val_labels"]),
-            batch_size=pipeline_space["batch_size"].upper,
+            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"], # TODO: checkout if this is correct
             shuffle=False,
             num_workers=config.data.num_workers,
         )

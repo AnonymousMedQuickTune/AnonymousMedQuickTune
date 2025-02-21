@@ -14,7 +14,7 @@ experiment_name: test_desmoid
 #------------------------------------------------------------------------------
 # NePS Optimization Settings
 #------------------------------------------------------------------------------
-pipeline_space: configs/pipeline_spaces/pipeline_space_with_user_priors.yaml
+pipeline_space: configs/pipeline_spaces/baseline.yaml
 max_evaluations: 50       # Maximum number of configurations to evaluate
 metric: f1                # Metric to optimize: 'f1' (default), 'accuracy', 'precision', or 'recall'
 

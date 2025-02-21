@@ -469,9 +469,10 @@ def get_kfold_loaders(
     # Calculate normalization stats from training data only if not provided
     if normalization_stats is None:
         means, stds = calculate_normalization_stats(train_data)
-        normalization_stats = (means, stds)
+    else:
+        means = normalization_stats['mean'].tolist() if torch.is_tensor(normalization_stats['mean']) else normalization_stats['mean']
+        stds = normalization_stats['std'].tolist() if torch.is_tensor(normalization_stats['std']) else normalization_stats['std']
     
-    means, stds = normalization_stats
     normalize = transforms.Normalize(mean=means, std=stds)
 
     # Create datasets for this fold
