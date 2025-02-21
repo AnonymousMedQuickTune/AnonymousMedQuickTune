@@ -439,7 +439,7 @@ def train_epoch(
     device,
     metrics_dict,
     epoch,
-    mixup_alpha=None,
+    mixup_alpha=0.0,
 ):
     """
     Train model for one epoch and return training metrics.
@@ -466,7 +466,7 @@ def train_epoch(
         inputs, targets = inputs.to(device), targets.to(device)
 
         # Apply mixup if configured
-        if mixup_alpha is not None and mixup_alpha > 0:
+        if mixup_alpha > 0:  #  is not None and mixup_alpha > 0:
             inputs, targets_a, targets_b, lam = mixup_data(inputs, targets, mixup_alpha)
 
             # Forward pass with mixed precision
@@ -483,15 +483,25 @@ def train_epoch(
 
         # Optimizer step first
         optimizer.zero_grad()
-        scaler.scale(loss).backward()
+        # scaler.scale(loss).backward()
 
-        # Log gradients before optimizer step if the method exists
-        if hasattr(model, "log_gradients"):
-            model.log_gradients(epoch)
+        # # Log gradients before optimizer step if the method exists
+        # if hasattr(model, "log_gradients"):
+        #     model.log_gradients(epoch)
 
-        # Optimizer step with gradient scaling
-        scaler.step(optimizer)
-        scaler.update()
+        # # Optimizer step with gradient scaling
+        # scaler.step(optimizer)
+        # scaler.update()
+
+        # Inside the training loop, modify the backward pass to handle both with and without scaler
+        if scaler is not None:
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+
+        else:
+            loss.backward()
+            optimizer.step()
 
     print()  # print empty line for better readability in the logging
 
