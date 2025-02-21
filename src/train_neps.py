@@ -77,6 +77,10 @@ def run_pipeline(
     # Initialize metrics storage for all folds
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
 
+    # Calculate normalization stats from all training data once
+    normalization_stats = None  # Will be calculated from training data in first fold
+    # TODO: Optimize normalization stats with NePS
+    
     # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}")
@@ -97,6 +101,8 @@ def run_pipeline(
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
             fold_idx=fold,
+            normalization_stats=normalization_stats,
+            data_path=config.data.path,
         )
 
         # Setup model and training components for this fold

@@ -437,20 +437,19 @@ def get_data_loaders(
         raise RuntimeError(f"Failed to load dataset {dataset_name}: {str(e)}") from e
 
 
-def get_kfold_loaders(data, labels, k_folds, batch_size, num_workers, fold_idx):
+def get_kfold_loaders(
+    data, 
+    labels, 
+    k_folds, 
+    batch_size, 
+    num_workers, 
+    fold_idx,
+    normalization_stats=None,
+    data_path="datasets"
+):
     """
     Create train and validation loaders for a specific fold.
-
-    Args:
-        data (list): List of all data samples
-        labels (list): List of all labels
-        k_folds (int): Number of folds
-        batch_size (int): Batch size for the data loaders
-        num_workers (int): Number of worker processes
-        fold_idx (int): Current fold index
-
-    Returns:
-        tuple: (train_loader, val_loader)
+    Normalization statistics are calculated only from training data of the current fold.
     """
     # Create k-fold splitter
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -463,34 +462,53 @@ def get_kfold_loaders(data, labels, k_folds, batch_size, num_workers, fold_idx):
     splits = list(kfold.split(data_list))
     train_idx, val_idx = splits[fold_idx]
 
+    # Get training data for this fold
+    train_data = [data_list[i] for i in train_idx]
+    train_labels = [labels_list[i] for i in train_idx]
+    
+    # Calculate normalization stats from training data only if not provided
+    if normalization_stats is None:
+        means, stds = calculate_normalization_stats(train_data)
+        normalization_stats = (means, stds)
+    
+    means, stds = normalization_stats
+    normalize = transforms.Normalize(mean=means, std=stds)
+
     # Create datasets for this fold
     train_dataset = WORCDataset(
-        [data_list[i] for i in train_idx],
-        [labels_list[i] for i in train_idx],
+        train_data,
+        train_labels,
+        transform=normalize,
         is_training=True,
     )
 
     val_dataset = WORCDataset(
         [data_list[i] for i in val_idx],
         [labels_list[i] for i in val_idx],
+        transform=normalize,
         is_training=False,
     )
+
+    # Add prefetch factor for better data loading performance
+    loader_args = {
+        "batch_size": batch_size,
+        "num_workers": num_workers,
+        "pin_memory": True,
+        "prefetch_factor": 2,
+        "persistent_workers": True,
+    }
 
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
         shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True,
+        **loader_args
     )
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
         shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
+        **loader_args
     )
 
     return train_loader, val_loader
