@@ -84,7 +84,7 @@ def test_run_pipeline(
     test_dataset = WORCDataset(dataset["test_data"], dataset["test_labels"])
     test_loader = DataLoader(
         test_dataset,
-        batch_size=hyperparameters["batch_size"],
+        batch_size=hyperparameters.get("label_smoothing", 32),
         shuffle=False,
         num_workers=config.data.num_workers,
     )
@@ -126,7 +126,7 @@ def test_run_pipeline(
         model.eval()
 
         criterion = nn.CrossEntropyLoss(
-            label_smoothing=hyperparameters["label_smoothing"]
+            label_smoothing=hyperparameters.get("label_smoothing", 0.0)
         )
 
         # Test evaluation for this fold's model on complete test set
