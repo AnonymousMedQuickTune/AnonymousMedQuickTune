@@ -29,15 +29,28 @@ class WORCDataset(Dataset):
         labels (list): List of corresponding labels
         transform (callable, optional): Optional transform to be applied on images
         is_training (bool): Whether this is a training dataset
+        augmentation_type (str): Type of augmentation to use ('medical' or 'trivial')
     """
 
-    def __init__(self, data, labels, transform=None, is_training=False):
+    def __init__(self, data, labels, transform=None, is_training=False, augmentation_type='medical'):
         """Initialize dataset with images and labels."""
         self.data = data
         self.labels = labels
         self.transform = transform
         self.is_training = is_training
-        self.augmentation = MedicalImageAugmentation(p=0.5) if is_training else None
+        
+        # Set up augmentation based on type
+        if is_training:
+            if augmentation_type == 'medical':
+                self.augmentation = MedicalImageAugmentation(p=0.5)
+                print("\n\n\nUsing medical augmentation\n\n\n")
+            elif augmentation_type == 'trivial':
+                self.augmentation = transforms.TrivialAugmentWide()
+                print("\n\n\nUsing trivial augmentation\n\n\n")
+            else:
+                raise ValueError(f"Unknown augmentation type: {augmentation_type}")
+        else:
+            self.augmentation = None
 
     def __len__(self):
         """Return the total number of samples."""
@@ -57,7 +70,15 @@ class WORCDataset(Dataset):
 
         # Apply augmentation during training
         if self.is_training and self.augmentation is not None:
-            image = self.augmentation(image)
+            if isinstance(self.augmentation, MedicalImageAugmentation):
+                # Medical augmentation expects float32 (0-1 range)
+                image = self.augmentation(image)
+            else:  # TrivialAugmentWide
+                # Convert to uint8 (0-255 range) for TrivialAugmentWide
+                image = (image * 255).byte()
+                image = self.augmentation(image)
+                # Convert back to float32 (0-1 range)
+                image = image.float() / 255.0
 
         # Apply normalization or other transforms
         if self.transform:
@@ -327,6 +348,7 @@ def get_data_loaders(
     split="train",
     data_path="datasets",
     normalization_stats=None,
+    augmentation_type='medical'
 ):
     """
     Create data loaders for the specified dataset split.
@@ -340,6 +362,7 @@ def get_data_loaders(
         normalization_stats (tuple, optional): Normalization stats for the dataset. If not provided,
             stats will be calculated from training data if split is 'train'.
             For 'test' split, stats must be provided.
+        augmentation_type (str): Type of augmentation to use ('medical' or 'trivial')
 
     Returns:
         tuple: (train_loader, val_loader, num_classes) if split is 'train'
@@ -391,12 +414,14 @@ def get_data_loaders(
                 dataset["train_labels"],
                 transform=normalize,
                 is_training=True,  # Enable augmentation for training
+                augmentation_type=augmentation_type
             )
             val_dataset = WORCDataset(
                 dataset["val_data"],
                 dataset["val_labels"],
                 transform=normalize,
                 is_training=False,  # Disable augmentation for validation
+                augmentation_type=augmentation_type
             )
 
             # Add prefetch factor for better data loading performance
@@ -445,7 +470,8 @@ def get_kfold_loaders(
     num_workers, 
     fold_idx,
     normalization_stats=None,
-    data_path="datasets"
+    data_path="datasets",
+    augmentation_type='medical'
 ):
     """
     Create train and validation loaders for a specific fold.
@@ -481,6 +507,7 @@ def get_kfold_loaders(
         train_labels,
         transform=normalize,
         is_training=True,
+        augmentation_type=augmentation_type
     )
 
     val_dataset = WORCDataset(
@@ -488,6 +515,7 @@ def get_kfold_loaders(
         [labels_list[i] for i in val_idx],
         transform=normalize,
         is_training=False,
+        augmentation_type=augmentation_type
     )
 
     # Add prefetch factor for better data loading performance

@@ -119,6 +119,7 @@ def run_pipeline(
             fold_idx=fold,
             normalization_stats=normalization_stats,
             data_path=config.data.path,
+            augmentation_type=config.data.augmentation_type
         )
 
         # Setup model and training components for this fold
@@ -377,14 +378,22 @@ def main(config: DictConfig) -> None:
 
         # Create initial loaders for printing info
         train_loader = DataLoader(
-            WORCDataset(dataset["train_data"], dataset["train_labels"]),
-            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"], # TODO: checkout if this is correct
+            WORCDataset(
+                dataset["train_data"], 
+                dataset["train_labels"],
+                augmentation_type=config.data.augmentation_type
+            ),
+            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"],
             shuffle=True,
             num_workers=config.data.num_workers,
         )
         val_loader = DataLoader(
-            WORCDataset(dataset["val_data"], dataset["val_labels"]),
-            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"], # TODO: checkout if this is correct
+            WORCDataset(
+                dataset["val_data"], 
+                dataset["val_labels"],
+                augmentation_type=config.data.augmentation_type
+            ),
+            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"],
             shuffle=False,
             num_workers=config.data.num_workers,
         )

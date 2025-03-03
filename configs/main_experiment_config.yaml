@@ -15,7 +15,7 @@ experiment_name: test_desmoid
 # NePS Optimization Settings
 #------------------------------------------------------------------------------
 pipeline_space: configs/pipeline_spaces/baseline.yaml
-max_evaluations: 50       # Maximum number of configurations to evaluate
+max_evaluations: 1       # Maximum number of configurations to evaluate
 metric: f1                # Metric to optimize: 'f1' (default), 'accuracy', 'precision', or 'recall'
 
 #------------------------------------------------------------------------------
@@ -33,6 +33,7 @@ data:
   path: datasets          # Path to the dataset
   debug_mode: False       # Enable/disable debug mode
   num_workers: 4          # Number of parallel data loading workers
+  augmentation_type: medical   # Type of augmentation to use ('medical' or 'trivial')
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing
