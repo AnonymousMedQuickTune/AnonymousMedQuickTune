@@ -180,10 +180,22 @@ def run_pipeline(
         }
 
         # Training setup
+        # For multi-fidelity compatible searchers (e.g., PriorBand, HyperBand):
         # 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
         # Early optimization runs use fewer epochs for rapid exploration,
         # while promising hyperparameter configurations get more epochs later.
-        epochs = hyperparameters["number_of_epochs"]
+        #
+        # For random search:
+        # The maximum number of epochs from the pipeline space is used for all evaluations.
+        epochs = hyperparameters.get("number_of_epochs")
+        if epochs is None and config.searcher == "random_search":
+            # Load the pipeline space config to get the upper value
+            with open(config.pipeline_space, 'r') as f:
+                pipeline_config = yaml.safe_load(f)
+                epochs = pipeline_config['number_of_epochs']['upper']
+            print(f"Random Search: Using maximum epochs value: {epochs}")
+        elif epochs is None:
+            raise ValueError("number_of_epochs cannot be None for non-random search optimizers")
 
         # Initialize training components
         checkpoint_manager = CheckpointManager(
@@ -413,6 +425,7 @@ def main(config: DictConfig) -> None:
             **kwargs,
         ),
         pipeline_space=pipeline_space,
+        searcher=config.searcher,
         root_directory=config.root_directory,
         max_evaluations_total=1 if "baseline" in str(config.pipeline_space) else config.max_evaluations,
         overwrite_working_directory=False,
