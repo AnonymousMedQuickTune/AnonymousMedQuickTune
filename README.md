@@ -1,6 +1,5 @@
 # MedQuickTune
-Train models on medical datasets, explore configuration spaces, and integrate multifidelity optimization. Includes learning curve storage in CSV format with config IDs. Aims to advance hyperparameter and model tuning workflows in the medical domain.
-
+TODO: Add project description
 
 ## **Getting Started**
 
@@ -104,26 +103,31 @@ Use the following commands to download and set up the required datasets:
 ### Run a Test Experiment
 Run a test experiment on the local machine:
 ```bash
-just run-local-test EXPERIMENT_NAME=<name> SEED=<seed>
+just run-local-test DATASET=<dataset> EXPERIMENT_NAME=<name> SEED=<seed>
 ```
 
 > **Example:**
 > ```bash
-> just run-local-test test_experiment 42
+> just run-local-test desmoid test_experiment 42
 > ```
 
 Submit a test experiment to the cluster:
 ```bash
-just run-cluster-test EXPERIMENT_NAME=<name> SEED=<seed>
+just run-cluster-test DATASET=<dataset> EXPERIMENT_NAME=<name> SEED=<seed>
 ```
 
 > **Example:**
 > ```bash
-> just run-cluster-test test_experiment 42
+> just run-cluster-test desmoidtest_experiment 42
 > ```
 
 > **Note:**  
 > The workspace needs to be adjusted in the `justfile` and the bash scripts in the `cluster_scripts/` directory.
+### Format Code
+To format the code using `black` and `isort`:
+```bash
+just format
+```
 
 ### Delete Test Experiments
 To clean up all test experiments (experiments that name starts with `test_`):
@@ -146,41 +150,44 @@ This will show all available commands along with a brief description of what eac
 ## **Project Structure**
 ```
 MEDQUICKTUNE
-├── cluster_scripts/        # Bash scripts for submitting experiments to the cluster
+├── cluster_scripts/                # Bash scripts for submitting experiments to the cluster
 │
-├── configs/                # YAML configuration files
-│   ├── experiments/        # Experiment-specific configuration files
-│   ├── hydra/              # Hydra configuration files (for experiment management)
-│   └── pipeline_spaces/    # Pipeline space configuration files (HPO)
+├── configs/                        # YAML configuration files
+│   ├── pipeline_spaces/            # Pipeline space configuration files (HPO)
+│   └── main_experiment_config.yaml # Main experiment configuration file
 │
-├── datasets/               # Directory for raw and processed datasets (requires downloading)
-│   ├── <DATASET>/          # Each dataset has its own directory
-│   └── mini/               # Mini version of datasets (for testing/debugging)
-│    └── <DATASET>/         # Each mini-dataset has its own directory
+├── datasets/                       # Directory for raw and processed datasets (requires downloading)
+│   ├── <DATASET>/                  # Each dataset has its own directory
+│   └── mini/                       # Mini version of datasets (for testing/debugging)
+│    └── <DATASET>/                 # Each mini-dataset has its own directory
 │
-├── experiments/            # Stores dataset-specific experiments, logs, and results
-│   └──<DATASET>/           # Experiments are grouped by dataset
-│     └── <NAME>/           # Experiment name
-│       └── hydra_output/   # Hydra output directory
-│       └── NePS_output/    # NePS output directory
+├── experiments/                    # Stores dataset-specific experiments, logs, and results
+│   └──<DATASET>/                   # Experiments are grouped by dataset
+│     └── <NAME>/                   # Experiment name
+│       └── hydra_output/           # Hydra output directory
+│       └── NePS_output/            # NePS output directory
 │
-├── reports/                # Directory for analyses, plots, presentations, etc.
-│   └── <REPORT>/           # Each report has its own directory
+├── reports/                        # Directory for analyses, plots, presentations, etc.
+│   └── <REPORT>/                   # Each report has its own directory
 │
-├── src/                    # Main code of the project
-│   ├── analysis/           # Scripts for analysis (e.g., plotting scripts)
-│   ├── data_utils.py       # Code for dataset handling and preprocessing
-│   ├── test.py             # Evaluation script
-│   ├── train.py            # Training script
-│   └── util_functions.py   # Utility functions used in train.py and test.py
+├── shell_scripts/                  # Shell scripts for dataset downloading, formatting, and linting
 │
-├── utils/                  # Utility scripts
-│   ├── delete_test_experiments.sh  # Script for deleting test experiments
-│   ├── download_datasets.sh        # Script for downloading datasets
-│   ├── download_mini_datasets.sh   # Script for downloading a smaller version of the datasets
-│   ├── format.sh                   # Script for formatting the code with black and isort
-│   ├── preprocess_data.py          # Script for preprocessing the data
-│   └── pylint.sh                   # Script for linting the code with pylint
+├── src/                            # Main code of the project
+│   ├── analysis/                   # Scripts for experiment analysis (e.g., plotting scripts)
+│   ├── classification_2d/          # Code for 2D classification
+│   │   ├── models_2d.py            # Code for model definitions    
+│   │   ├── objective_function_2d.py    # Code for 2D run pipeline
+│   │   ├── preprocess_data_2d.py       # Code for 2D data preprocessing
+│   │   └── preprocess_work_labels.py   # Code for 2D WORC (dataset) label preprocessing
+│   ├── classification_3d/          # Code for 3D classification
+│   │   ├── models_3d.py            # Code for model definitions    
+│   │   ├── objective_function_3d.py    # Code for 3D run pipeline
+│   │   └── preprocess_data_3d.py       # Code for 3D data preprocessing
+│   ├── utils/                      # Core utilities for model training, logging, checkpointing, and configuration management
+│   ├── _init_.py                   # Empty file to make the directory a package
+│   ├── test_best_config.py         # Evaluation script
+│   └── train_neps.py               # Training script
+│
 └── ...
 ```
 ## **Contributing**

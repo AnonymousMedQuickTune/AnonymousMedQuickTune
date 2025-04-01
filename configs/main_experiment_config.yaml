@@ -30,11 +30,14 @@ model:
 # Dataset Configuration
 #------------------------------------------------------------------------------
 data:
+  dimensionality: 2d      # Dimension of the dataset
   dataset: desmoid        # Name of the dataset
   path: datasets          # Path to the dataset
   debug_mode: False       # Enable/disable debug mode
   num_workers: 4          # Number of parallel data loading workers
   augmentation_type: medical   # Type of augmentation to use ('medical' or 'trivial')
+  k_folds: 5              # Number of folds for K-Fold Cross Validation
+  preload_data: True      # Whether to preload the data into memory
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing

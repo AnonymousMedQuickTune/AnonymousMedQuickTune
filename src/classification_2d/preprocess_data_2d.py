@@ -1,8 +1,10 @@
-"""
-Data loading and preprocessing module for medical image datasets.
-This module provides functionality for loading and preparing medical image data
-for deep learning models, including custom Dataset classes and data loaders.
-"""
+import pickle
+from pathlib import Path
+
+import hydra
+from omegaconf import DictConfig
+
+from src.utils.common_utils import yaml_to_neps_pipeline_space
 
 import glob
 import os
@@ -15,10 +17,12 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
+from sklearn.model_selection import KFold
 
+# TODO: Use other dataset(s)
 
 class WORCDataset(Dataset):
     """
@@ -30,14 +34,16 @@ class WORCDataset(Dataset):
         transform (callable, optional): Optional transform to be applied on images
         is_training (bool): Whether this is a training dataset
         augmentation_type (str): Type of augmentation to use ('medical' or 'trivial')
+        normalization_stats (dict, optional): Dictionary containing 'mean' and 'std' for normalization
     """
 
-    def __init__(self, data, labels, transform=None, is_training=False, augmentation_type='medical'):
+    def __init__(self, data, labels, transform=None, is_training=False, augmentation_type='medical', normalization_stats=None):
         """Initialize dataset with images and labels."""
         self.data = data
         self.labels = labels
         self.transform = transform
         self.is_training = is_training
+        self.normalization_stats = normalization_stats
         
         # Set up augmentation based on type
         if is_training:
@@ -80,7 +86,18 @@ class WORCDataset(Dataset):
                 # Convert back to float32 (0-1 range)
                 image = image.float() / 255.0
 
-        # Apply normalization or other transforms
+        # Apply normalization if stats are provided
+        if self.normalization_stats is not None:
+            mean = self.normalization_stats['mean']
+            std = self.normalization_stats['std']
+            if isinstance(mean, (int, float)):
+                mean = [mean] * image.shape[0]  # Broadcast to all channels
+            if isinstance(std, (int, float)):
+                std = [std] * image.shape[0]  # Broadcast to all channels
+            transform = transforms.Normalize(mean=mean, std=std)
+            image = transform(image)
+
+        # Apply other transforms
         if self.transform:
             image = self.transform(image)
 
@@ -194,7 +211,7 @@ class MedicalImageAugmentation:
         return img
 
 
-def load_dataset(name, data_path="datasets"):
+def load_2d_dataset(name, data_path="datasets", seed=42):
     """
     Load and preprocess a medical image dataset.
 
@@ -295,25 +312,18 @@ def load_dataset(name, data_path="datasets"):
     unique_labels, counts = np.unique(labels, return_counts=True)
     print(f"Class distribution after filtering: {dict(zip(unique_labels, counts))}")
 
-    # First split into train and temp (80-20)
-    train_data, temp_data, train_labels, temp_labels = train_test_split(
-        images, labels, test_size=0.2, random_state=42, stratify=labels
-    )
-
-    # Split temp into val and test (50-50, resulting in 80-10-10 split)
-    val_data, test_data, val_labels, test_labels = train_test_split(
-        temp_data, temp_labels, test_size=0.5, random_state=42, stratify=temp_labels
+    # Split into train+val and test (80-20)
+    train_val_data, test_data, train_val_labels, test_labels = train_test_split(
+        images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
     print(
-        f"\nDataset split (train/val/test): {len(train_data)}/{len(val_data)}/{len(test_data)}"
+        f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}"
     )
 
     return {
-        "train_data": train_data,
-        "train_labels": train_labels,
-        "val_data": val_data,
-        "val_labels": val_labels,
+        "train_val_data": train_val_data,
+        "train_val_labels": train_val_labels,
         "test_data": test_data,
         "test_labels": test_labels,
         "num_classes": len(unique_labels),
@@ -341,127 +351,6 @@ def calculate_normalization_stats(images):
     return means.tolist(), stds.tolist()
 
 
-def get_data_loaders(
-    dataset_name,
-    num_workers,
-    batch_size,
-    split="train",
-    data_path="datasets",
-    normalization_stats=None,
-    augmentation_type='medical'
-):
-    """
-    Create data loaders for the specified dataset split.
-
-    Args:
-        dataset_name (str): Name of the dataset ('lipo', 'desmoid', 'gist')
-        num_workers (int): Number of worker processes for data loading
-        batch_size (int): Batch size for the data loaders
-        split (str, optional): Which split to load ('train' or 'test'). Defaults to 'train'
-        data_path (str, optional): Base path to the datasets directory. Default to 'datasets'
-        normalization_stats (tuple, optional): Normalization stats for the dataset. If not provided,
-            stats will be calculated from training data if split is 'train'.
-            For 'test' split, stats must be provided.
-        augmentation_type (str): Type of augmentation to use ('medical' or 'trivial')
-
-    Returns:
-        tuple: (train_loader, val_loader, num_classes) if split is 'train'
-        tuple: (test_loader, num_classes) if split is 'test'
-    """
-    try:
-        # Load dataset first
-        dataset = load_dataset(dataset_name, data_path)
-
-        # Try to load normalization stats from cache if not provided
-        if normalization_stats is None:
-            cache_dir = os.path.join(data_path, "cache")
-            cache_file = os.path.join(
-                cache_dir, f"{dataset_name}_normalization_stats.pkl"
-            )
-
-            if os.path.exists(cache_file):
-                with open(cache_file, "rb") as f:
-                    cached_data = pickle.load(f)
-                    normalization_stats = cached_data["normalization_stats"]
-            elif split == "train":
-                # Calculate stats only from training data to prevent data leakage
-                means, stds = calculate_normalization_stats(dataset["train_data"])
-                normalization_stats = (means, stds)
-
-                # Cache the normalization stats
-                os.makedirs(cache_dir, exist_ok=True)
-                with open(cache_file, "wb") as f:
-                    pickle.dump({"normalization_stats": normalization_stats}, f)
-            else:
-                raise ValueError(
-                    "normalization_stats must be provided for test split or available in cache "
-                    "to ensure consistent normalization with training data"
-                )
-
-        means, stds = normalization_stats
-
-        # For debugging / testing:
-        # ImageNet normalization stats
-        # means = [0.485, 0.456, 0.406]
-        # stds = [0.229, 0.224, 0.225]
-
-        normalize = transforms.Normalize(mean=means, std=stds)
-
-        if split == "train":
-            # Create train and validation datasets
-            train_dataset = WORCDataset(
-                dataset["train_data"],
-                dataset["train_labels"],
-                transform=normalize,
-                is_training=True,  # Enable augmentation for training
-                augmentation_type=augmentation_type
-            )
-            val_dataset = WORCDataset(
-                dataset["val_data"],
-                dataset["val_labels"],
-                transform=normalize,
-                is_training=False,  # Disable augmentation for validation
-                augmentation_type=augmentation_type
-            )
-
-            # Add prefetch factor for better data loading performance
-            loader_args = {
-                "batch_size": batch_size,
-                "num_workers": num_workers,
-                "pin_memory": True,
-                "prefetch_factor": 2,
-                "persistent_workers": True,
-            }
-
-            train_loader = DataLoader(train_dataset, shuffle=True, **loader_args)
-            val_loader = DataLoader(val_dataset, shuffle=False, **loader_args)
-
-            return train_loader, val_loader, dataset["num_classes"]
-
-        if split == "test":
-            test_dataset = WORCDataset(
-                dataset["test_data"],
-                dataset["test_labels"],
-                transform=normalize,
-                is_training=False,  # Disable augmentation for test
-            )
-
-            test_loader = DataLoader(
-                test_dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=num_workers,
-                pin_memory=True,
-            )
-
-            return test_loader, dataset["num_classes"]
-
-        raise ValueError(f"Unknown split: {split}")
-
-    except Exception as e:
-        raise RuntimeError(f"Failed to load dataset {dataset_name}: {str(e)}") from e
-
-
 def get_kfold_loaders(
     data, 
     labels, 
@@ -474,70 +363,159 @@ def get_kfold_loaders(
     augmentation_type='medical'
 ):
     """
-    Create train and validation loaders for a specific fold.
-    Normalization statistics are calculated only from training data of the current fold.
+    Create data loaders for k-fold cross validation.
+
+    Args:
+        data (list): Combined training and validation data
+        labels (numpy.ndarray): Combined training and validation labels
+        k_folds (int): Number of folds for cross-validation
+        batch_size (int): Batch size for data loaders
+        num_workers (int): Number of workers for data loading
+        fold_idx (int): Current fold index
+        normalization_stats (dict, optional): Pre-computed normalization statistics
+        data_path (str): Path to dataset directory
+        augmentation_type (str): Type of augmentation to use
+
+    Returns:
+        tuple: (train_loader, val_loader) for the current fold
     """
+    
+
     # Create k-fold splitter
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
 
-    # Convert to list for indexing
-    data_list = list(data)
-    labels_list = list(labels)
+    # Convert data list to indices
+    indices = np.arange(len(data))
 
-    # Get the splits for the current fold
-    splits = list(kfold.split(data_list))
-    train_idx, val_idx = splits[fold_idx]
+    # Get train and validation indices for current fold
+    for i, (train_idx, val_idx) in enumerate(kfold.split(indices)):
+        if i == fold_idx:
+            break
 
-    # Get training data for this fold
-    train_data = [data_list[i] for i in train_idx]
-    train_labels = [labels_list[i] for i in train_idx]
-    
-    # Calculate normalization stats from training data only if not provided
+    # Split data for current fold
+    train_data = [data[i] for i in train_idx]
+    train_labels = labels[train_idx]
+    val_data = [data[i] for i in val_idx]
+    val_labels = labels[val_idx]
+
+    # Calculate normalization stats from training data if not provided
     if normalization_stats is None:
-        means, stds = calculate_normalization_stats(train_data)
-    else:
-        means = normalization_stats['mean'].tolist() if torch.is_tensor(normalization_stats['mean']) else normalization_stats['mean']
-        stds = normalization_stats['std'].tolist() if torch.is_tensor(normalization_stats['std']) else normalization_stats['std']
-    
-    normalize = transforms.Normalize(mean=means, std=stds)
+        mean = np.mean([img.numpy().mean() for img in train_data])
+        std = np.std([img.numpy().std() for img in train_data])
+        normalization_stats = {'mean': mean, 'std': std}
 
-    # Create datasets for this fold
+
+    # Create datasets
     train_dataset = WORCDataset(
         train_data,
         train_labels,
-        transform=normalize,
-        is_training=True,
-        augmentation_type=augmentation_type
+        normalization_stats=normalization_stats,
+        augmentation_type=augmentation_type,
+        is_training=True
     )
-
+    
     val_dataset = WORCDataset(
-        [data_list[i] for i in val_idx],
-        [labels_list[i] for i in val_idx],
-        transform=normalize,
-        is_training=False,
-        augmentation_type=augmentation_type
+        val_data,
+        val_labels,
+        normalization_stats=normalization_stats,
+        augmentation_type=None,  # No augmentation for validation
+        is_training=False
     )
-
-    # Add prefetch factor for better data loading performance
-    loader_args = {
-        "batch_size": batch_size,
-        "num_workers": num_workers,
-        "pin_memory": True,
-        "prefetch_factor": 2,
-        "persistent_workers": True,
-    }
 
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
+        batch_size=batch_size,
         shuffle=True,
-        **loader_args
+        num_workers=num_workers,
+        pin_memory=True
     )
-
+    
     val_loader = DataLoader(
         val_dataset,
+        batch_size=batch_size,
         shuffle=False,
-        **loader_args
+        num_workers=num_workers,
+        pin_memory=True
     )
 
     return train_loader, val_loader
+
+
+def get_max_batch_size(pipeline_space):
+    batch_size = pipeline_space.get('batch_size', None)
+    if batch_size is None:
+        return 32
+    return batch_size.upper
+
+@hydra.main(
+    version_base=None,
+    config_path="../../configs",
+    config_name="main_experiment_config.yaml",
+)
+def preprocess_and_cache_datasets(config: DictConfig) -> None:
+    """
+    Preprocess and cache datasets for faster experiment initialization.
+
+    Args:
+        config (DictConfig): Hydra configuration object
+    """
+    print("\nPreprocessing datasets...")
+
+    # Get dataset name from config
+    dataset = config.data.dataset
+    print(f"Processing dataset: {dataset}")
+
+    # Create cache directory in the same location as the dataset
+    data_path = Path(config.data.path)
+    cache_dir = data_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # Generate cache filename - simplified to just use dataset name
+    # Convert YAML pipeline space configuration into NePS-compatible format
+    # NePS requires a specific dictionary structure for hyperparameter definitions
+    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
+    cache_file = cache_dir / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
+
+    if cache_file.exists():
+        print(f"Cache file already exists at {cache_file}")
+        print("Delete it manually if you want to regenerate the cache.")
+        return
+
+    # Load raw dataset first
+    print(f"Loading dataset '{dataset}'...")
+    dataset_dict = load_2d_dataset(dataset, data_path=config.data.path, seed=config.seed)
+
+    # Calculate normalization statistics from training data only
+    print("Calculating dataset-specific normalization statistics...")
+    means, stds = calculate_normalization_stats(dataset_dict["train_val_data"])
+    print(f"Dataset means: {means}")
+    print(f"Dataset stds: {stds}")
+
+    # Add normalization stats to dataset_dict
+    dataset_dict["normalization_stats"] = (means, stds)
+
+    # Verify all required keys are present
+    required_keys = [
+        "train_val_data", 
+        "train_val_labels", 
+        "test_data", 
+        "test_labels", 
+        "num_classes",
+        "normalization_stats"
+    ]
+    missing_keys = [key for key in required_keys if key not in dataset_dict]
+    if missing_keys:
+        raise KeyError(f"Dataset dictionary missing required keys: {missing_keys}")
+
+    # Cache the complete dataset dictionary
+    print(f"\nSaving cache to {cache_file}...")
+    with open(cache_file, "wb") as f:
+        pickle.dump(dataset_dict, f)
+
+    print("\nPreprocessing completed!")
+    print(f"Dataset '{dataset}' preprocessed and cached with {dataset_dict['num_classes']} classes")
+    print(f"Dataset-specific normalization values have been calculated and cached.")
+
+if __name__ == "__main__":
+    preprocess_and_cache_datasets()

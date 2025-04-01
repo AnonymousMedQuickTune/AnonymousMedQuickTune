@@ -4,31 +4,31 @@ list:
 
 # BASH SCRIPS --------------------------------------------------------------------------------------
 
-# Format Python code using utils/format.sh
+# Format Python code using shell_scripts/format.sh
 format:
-  bash utils/format.sh
+  bash shell_scripts/format.sh
 
 # Check code for errors and enforce style guidelines using Pylint
 pylint:
-  bash utils/pylint.sh
+  bash shell_scripts/pylint.sh
 
 # Delete all experiments whose names start with 'test'
 delete-tests:
-  bash utils/delete_test_experiments.sh
+  bash shell_scripts/delete_test_experiments.sh
 
 # Download all the datasets
 download-datasets:
-  bash utils/download_datasets.sh
+  bash shell_scripts/download_datasets.sh
 
 # Download a mini version of datasets for testing/debugging
 download-mini-datasets:
-  bash utils/download_mini_datasets.sh
+  bash shell_scripts/download_mini_datasets.sh
 
 # DATA PROCESSING ----------------------------------------------------------------------------------
 
 # Process labels.csv into dataset-specific label files and create individual subject label files
 preprocess-labels:
-  python utils/preprocess_data.py
+  python -m src.classification_2d.preprocess_work_labels
 
 # Convert NePS output to QuickTune format (local machine)
 neps2qt-local DATASET EXPERIMENT_NAME SEED:
@@ -48,7 +48,7 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
 
 # Preprocess datasets locally for faster experiment initialization
 preprocess-datasets DATASET:
-    python -m src.preprocess_dataset data.dataset={{DATASET}}
+    python -m src.classification_2d.preprocess_dataset_2d data.dataset={{DATASET}}
 
 # Preprocess datasets on cluster for faster experiment initialization
 preprocess-datasets-cluster DATASET:
@@ -61,15 +61,15 @@ preprocess-datasets-cluster DATASET:
 
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
-# Run a test experiment on the local machine with k-fold cross validation
-run-local-test DATASET EXPERIMENT_NAME SEED:
+# Run an HPO experiment on the local machine
+run-hpo-local DATASET EXPERIMENT_NAME SEED:
   python -m src.train_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
 
-# Submit a test experiment to the cluster
-run-cluster-test DATASET EXPERIMENT_NAME SEED:
+# Submit an HPO experiment to the cluster
+run-hpo-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu19 \
@@ -80,8 +80,8 @@ run-cluster-test DATASET EXPERIMENT_NAME SEED:
 
 # TEST EXPERIMENTS ---------------------------------------------------------------------------------
 
-# Run test with best hyperparameters locally
-test-local DATASET EXPERIMENT_NAME SEED FOLDS:
+# Evaluate with best hyperparameter configuration
+eval-local DATASET EXPERIMENT_NAME SEED FOLDS:
   python -m src.test_best_config \
     --config_path experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
     --hydra_config configs/main_experiment_config.yaml \
@@ -89,8 +89,8 @@ test-local DATASET EXPERIMENT_NAME SEED FOLDS:
     --data_dir datasets \
     --k_folds {{FOLDS}}
 
-# Run test with best hyperparameters on cluster
-test-cluster DATASET EXPERIMENT_NAME SEED:
+# Submit an evaluation of the best hyperparameter configuration to the cluster
+eval-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu05 \
@@ -102,7 +102,7 @@ test-cluster DATASET EXPERIMENT_NAME SEED:
 # ANALYSIS -----------------------------------------------------------------------------------------
 
 # Analyze and compare generalization performance between two NePS runs
-analyze-generalization DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
+analyze-generalization-local DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
   python -m src.analysis.generalization_analysis \
     --dataset {{DATASET}} \
     --exp1 {{EXPERIMENT_NAME_1}} \
@@ -119,7 +119,7 @@ analyze-generalization-cluster DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
     cluster_scripts/analyze_generalization.sh
 
 # Analyze fidelity correlations from a NePS experiment
-analyze-fidelity-correlation DATASET EXPERIMENT_NAME SEED:
+analyze-fidelity-correlation-local DATASET EXPERIMENT_NAME SEED:
     python -m src.analysis.fidelity_correlation \
         experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt
 

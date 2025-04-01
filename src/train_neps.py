@@ -1,40 +1,18 @@
-"""
-Training module for automated hyperparameter optimization of medical image analysis models.
-"""
-
 import logging
 import os
 import pickle
-import time
-import warnings
 from pathlib import Path
 
 import hydra
-import numpy as np
-import torch
 import yaml
 from neps import run
 from omegaconf import DictConfig, OmegaConf
-from torch import nn, optim
-from torch.utils.data import DataLoader
 
-from src.data import (WORCDataset, get_data_loaders, get_kfold_loaders,
-                      load_dataset)
-from src.util_functions import (CheckpointManager, adjust_learning_rate,
-                                evaluate_and_log_metrics, get_model,
-                                get_optimizer, get_warmup_scheduler,
-                                initialize_logging_files, log_gradients,
-                                log_initial_state, log_learning_rate,
-                                log_metrics, log_resources, log_timing,
-                                set_dropout, set_seed, train_epoch,
-                                yaml_to_neps_pipeline_space)
-
-# TODO: Fix warnings
-warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
-warnings.filterwarnings(
-    "ignore", message="Default grid_sample and affine_grid behavior"
-)
-warnings.filterwarnings("ignore", message="Detected call of `lr_scheduler.step()`")
+from src.utils.common_utils import yaml_to_neps_pipeline_space, set_seed
+from src.classification_2d.preprocess_data_2d import load_2d_dataset, get_max_batch_size
+from src.classification_2d.objective_function_2d import run_2d_pipeline
+from src.classification_3d.preprocess_data_3d import load_3d_dataset
+from src.classification_3d.objective_function_3d import run_3d_pipeline
 
 
 def run_pipeline(
@@ -46,276 +24,47 @@ def run_pipeline(
     **hyperparameters,
 ):
     """
-    Main training pipeline for model optimization using NePS with K-Fold Cross Validation.
+    Main pipeline function that delegates to specific 2D or 3D implementations
+    based on config.data.dimensionality.
 
-    IMPORTANT: The argument order and parameter names must be as shown for NePS compatibility:
-    1. pipeline_directory
-    2. previous_pipeline_directory
-    3. config
-    4. **hyperparameters
-
-    NePS requires these specific positional arguments in this order to manage
-    the optimization process and handle checkpointing correctly.
+    NOTE: The argument order and parameter names must strictly follow NePS conventions
+    to ensure proper optimization and checkpointing functionality.
 
     Args:
         pipeline_directory (str): Directory where current pipeline results will be saved
         previous_pipeline_directory (str): Directory containing previous pipeline runs
         config (DictConfig): Hydra configuration object
-        dataset_dict (dict): Dictionary containing all data and labels
-        num_classes (int): Number of classes in the dataset
+        dataset_dict (dict, optional): Combined train+val data and labels dictionary if preloaded
+        num_classes (int, optional): Number of classes in the dataset if preloaded
         **hyperparameters: Configuration dictionary containing hyperparameters
 
     Returns:
-        dict: Dictionary containing the negative mean of the selected metric as loss for NePS
+        dict: Dictionary containing optimization metrics
     """
-    # Set seed for pipeline reproducibility
-    set_seed(config.seed)
-
-    # Get k-fold parameter from config or default to 5
-    k_folds = config.get("k_folds", 5)
-
-    # Initialize metrics storage for all folds
-    all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
-
-    if "autonorm" in str(config.pipeline_space):
-        # Use normalization stats from NePS hyperparameters
-        print(f"\nNormalization parameters from NePS:")
-        mean_values = np.array([float(hyperparameters['mean_1']), 
-                              float(hyperparameters['mean_2']), 
-                              float(hyperparameters['mean_3'])], dtype=np.float32)
-        std_values = np.array([float(hyperparameters['std_1']), 
-                             float(hyperparameters['std_2']), 
-                             float(hyperparameters['std_3'])], dtype=np.float32)
-        print(f"Mean: {mean_values}")
-        print(f"Std: {std_values}\n")
-        
-        normalization_stats = {
-            'mean': mean_values,
-            'std': std_values
-        }
-    else:
-        # Calculate normalization stats from all training data once
-        normalization_stats = None  # Will be calculated from training data in first fold
+    dimensionality = config.data.dimensionality.lower()
     
-    # Run k-fold cross validation
-    for fold in range(k_folds):
-        print(f"\nTraining Fold {fold + 1}/{k_folds}")
-
-        # Create fold-specific directory
-        fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
-        os.makedirs(fold_directory, exist_ok=True)
-
-        # Initialize logging files for this fold
-        logging_dir = os.path.join(fold_directory, "logging")
-        log_files = initialize_logging_files(logging_dir)
-
-        # Get data loaders for this fold
-        train_loader, val_loader = get_kfold_loaders(
-            dataset_dict["train_data"],
-            dataset_dict["train_labels"],
-            k_folds=k_folds,
-            batch_size=hyperparameters.get("batch_size", 32),
-            num_workers=config.data.num_workers,
-            fold_idx=fold,
-            normalization_stats=normalization_stats,
-            data_path=config.data.path,
-            augmentation_type=config.data.augmentation_type
-        )
-
-        # Setup model and training components for this fold
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = get_model(
-            {
-                "type": config.model.type,
-                "task": config.model.task,
-                "num_classes": num_classes,
-            }
-        ).to(device)
-        model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
-        print(f"Model initialized: {config.model.type}\n")
-
-        # Setup loss function with optional label smoothing
-        criterion = nn.CrossEntropyLoss(
-            label_smoothing=hyperparameters.get("label_smoothing", 0.0)
-        )
-
-        # Initialize optimizer with specified parameters
-        optimizer = get_optimizer(
-            model=model,
-            optimizer_type=hyperparameters.get("optimizer_type", "adam"),
-            learning_rate=hyperparameters.get("learning_rate", 1e-3),
-            weight_decay=hyperparameters.get("weight_decay", 0.0),
-        )
-
-        # Setup warmup scheduler if warmup epochs > 0
-        warmup_epochs = hyperparameters.get("warmup_epochs", 0)
-        scheduler = (
-            get_warmup_scheduler(
-                optimizer,
-                warmup_epochs,
-                len(train_loader),
-                hyperparameters.get("learning_rate", 1e-3),
-            )
-            if warmup_epochs > 0
-            else None
-        )
-
-        # Initialize metrics
-        metrics = {
-            "train": {
-                "loss": [],
-                "accuracy": [],
-                "precision": [],
-                "recall": [],
-                "f1": [],
-            },
-            "val": {
-                "loss": [],
-                "accuracy": [],
-                "precision": [],
-                "recall": [],
-                "f1": [],
-                "confusion_matrices": [],
-            },
-        }
-
-        # Training setup
-        # For multi-fidelity compatible searchers (e.g., PriorBand, HyperBand):
-        # 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
-        # Early optimization runs use fewer epochs for rapid exploration,
-        # while promising hyperparameter configurations get more epochs later.
-        #
-        # For random search:
-        # The maximum number of epochs from the pipeline space is used for all evaluations.
-        epochs = hyperparameters.get("number_of_epochs")
-        if epochs is None and config.searcher == "random_search":
-            # Load the pipeline space config to get the upper value
-            with open(config.pipeline_space, 'r') as f:
-                pipeline_config = yaml.safe_load(f)
-                epochs = pipeline_config['number_of_epochs']['upper']
-            print(f"Random Search: Using maximum epochs value: {epochs}")
-        elif epochs is None:
-            raise ValueError("number_of_epochs cannot be None for non-random search optimizers")
-
-        # Initialize training components
-        checkpoint_manager = CheckpointManager(
-            fold_directory, previous_pipeline_directory
-        )
-        # scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
-        # Modified scaler initialization to be more robust
-        use_cuda = torch.cuda.is_available() and torch.cuda.is_initialized()
-        scaler = torch.amp.GradScaler() if use_cuda else None
-
-        # Load checkpoint and initialize training state
-        start_epoch = checkpoint_manager.initialize_training(
-            model, optimizer, scheduler, metrics
-        )
-
-        # Setup logging
-        model.log_gradients = lambda epoch: log_gradients(
-            model, epoch, log_files["gradients"]
-        )
-        log_initial_state(
-            log_files=log_files,
-            hyperparameters={
-                "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
-                **hyperparameters  # Include all other hyperparameters
-            },
+    if dimensionality == "2d":
+        return run_2d_pipeline(
+            pipeline_directory=pipeline_directory,
+            previous_pipeline_directory=previous_pipeline_directory,
             config=config,
-            model=model,
-            epochs=epochs,
-            pipeline_dir=fold_directory,
-            prev_pipeline_dir=previous_pipeline_directory,
+            dataset_dict=dataset_dict,
+            num_classes=num_classes,
+            **hyperparameters
         )
-
-        # Main training loop
-        for epoch in range(start_epoch, epochs):
-            epoch_start_time = time.time()
-
-            # Apply warmup scheduler at the beginning of each epoch
-            adjust_learning_rate(scheduler)
-
-            # Training phase
-            train_start_time = time.time()
-            train_metrics = train_epoch(
-                model,
-                train_loader,
-                criterion,
-                optimizer,
-                scaler,
-                device,
-                metrics,
-                epoch,
-                hyperparameters.get("mixup_alpha", 0.0),
-            )
-            train_time = time.time() - train_start_time
-
-            # Validation phase
-            eval_start_time = time.time()
-            val_metrics = None  # Initialize val_metrics as None
-            if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
-                val_metrics = evaluate_and_log_metrics(
-                    model,
-                    val_loader,
-                    criterion,
-                    device,
-                    metrics,
-                    phase="val",
-                    epoch=epoch,
-                )
-            eval_time = time.time() - eval_start_time
-
-            # Calculate total epoch time
-            epoch_time = time.time() - epoch_start_time
-
-            # Log all metrics and information at the end of the epoch
-            log_timing(log_files["timing"], epoch, train_time, eval_time, epoch_time)
-            log_learning_rate(log_files["lr"], epoch, optimizer)
-            log_resources(log_files["resource"], epoch)
-
-            # Log training metrics
-            log_metrics(log_files["metrics"], epoch, "train", train_metrics)
-
-            # Log validation metrics if available
-            if val_metrics is not None:
-                log_metrics(log_files["metrics"], epoch, "val", val_metrics)
-
-            # Save progress
-            checkpoint_manager.save(
-                model,
-                optimizer,
-                scheduler,
-                (
-                    val_metrics["accuracy"] if val_metrics is not None else 0.0
-                ),  # Default to 0.0 if no validation
-                config,
-                num_classes,
-                hyperparameters,
-                device,
-                epoch,
-                metrics,
-            )
-
-            # Store final metrics for all folds
-            if epoch == epochs - 1:
-                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
-                all_folds_final_metrics["precision"].append(
-                    np.mean(val_metrics["precision"]) * 100
-                )
-                all_folds_final_metrics["recall"].append(
-                    np.mean(val_metrics["recall"]) * 100
-                )
-                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
-
-        print("\nTraining completed!")
-
-    # Get the specified metric from final metrics for NePS
-    selected_metric = np.mean(all_folds_final_metrics[config.metric])
-    print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
-
-    # Convert to NePS loss (negative because NePS minimizes)
-    neps_loss = -selected_metric
-    return {"loss": neps_loss}
+    elif dimensionality == "3d":
+        return run_3d_pipeline(
+            pipeline_directory=pipeline_directory,
+            previous_pipeline_directory=previous_pipeline_directory,
+            config=config,
+            dataset_dict=dataset_dict,
+            num_classes=num_classes,
+            **hyperparameters
+        )
+    else:
+        raise ValueError(
+            f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
+        )
 
 
 @hydra.main(
@@ -337,83 +86,98 @@ def main(config: DictConfig) -> None:
     # NePS requires a specific dictionary structure for hyperparameter definitions
     pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
 
-    # Print configurations
+    # Print main experiment configuration and pipeline space
     print("\nconfig: ", config, "\npipeline space: ", pipeline_space, "\n")
 
-    # Save configurations to files
+    # Create directory for configuration files and logs
     output_dir = os.path.join(config.experiment_base_dir, "hydra_output")
     os.makedirs(output_dir, exist_ok=True)
 
-    # Load the original pipeline space YAML for compact logging
-    with open(config.pipeline_space, "r") as f:
+    # Load original pipeline space configuration for human-readable logging
+    # This version maintains the original YAML structure without NePS-specific transformations
+    with open(config.pipeline_space, "r", encoding="utf-8") as f:
         original_pipeline_space = yaml.safe_load(f)
 
-    for filename, data in [
+    # Save different versions of configurations:
+    # 1. Full Hydra config (includes all settings)
+    # 2. NePS-compatible pipeline space (used for optimization)
+    # 3. Original compact pipeline space (for better readability)
+    config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
-        ("pipeline_space.yaml", yaml.dump(pipeline_space)),  # NePS format
-        (
-            "pipeline_space_compact.yaml",
-            yaml.dump(original_pipeline_space),
-        ),  # Original compact format
-    ]:
-        with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
-            f.write(data)
+        ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
+        ("pipeline_space_compact.yaml", yaml.dump(original_pipeline_space, default_flow_style=False)),
+    ]
 
-    # Try to load from cache first
-    data_path = Path(config.data.path)
-    cache_file = (
-        data_path
-        / "cache"
-        / f"{config.data.dataset}_bs{pipeline_space.get('batch_size', {'upper': 32})['upper']}.pkl"
-        # TODO: checkout if this is correct
-    )
-    if cache_file.exists():
-        print("\nLoading data from cache...")
-        with open(cache_file, "rb") as f:
-            cached_data = pickle.load(f)
-            dataset_dict = cached_data["dataset_dict"]
-            num_classes = cached_data["num_classes"]
+    for filename, data in config_files:
+        config_path = os.path.join(output_dir, filename)
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(data)
+        except IOError as e:
+            logging.error(f"Failed to write configuration file {filename}: {e}")
+
+    # Handle data loading based on preload configuration
+    dataset_dict = None
+    num_classes = None
+    
+    # TODO: Each NePS run should also run for different train (incl. val) / test folds!!!
+
+    if config.data.preload_data:
+        # Preloading data has several benefits:
+        # 1. Reduces I/O overhead during training iterations:
+        #    - Loads data into memory once instead of repeatedly from disk
+        #    - Minimizes disk access during training loops
+        #    - Significantly improves training speed, especially with fast storage
+        #    - Reduces system resource usage from repeated file operations
+        # 2. Ensures consistent data loading across optimization runs:
+        #    - Same data ordering and batching between different trials
+        #    - Eliminates random variations from data loading
+        #    - Improves reproducibility of experiments
+        #    - Makes hyperparameter comparisons more reliable
+        # 3. Enables early validation of data integrity and format:
+        #    - Verify all data samples are properly loaded
+        #    - Check for corrupted or missing data
+        #    - Confirm data dimensions and types match expectations
+        #    - Detect potential issues before starting expensive training runs
+        # Note on Data Augmentation:
+        # - Raw data is preloaded, but dynamic augmentation still occurs during training
+        # - Each epoch can apply different random augmentations to the base data on-the-fly
+        # - Memory efficiency is maintained as augmented versions aren't stored
+        
+        # Try to load from cache first
+        data_path = Path(config.data.path)
+        cache_file = (
+            data_path
+            / "cache"
+            / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
+        )
+        
+        # Cache mechanism further improves performance by avoiding repeated data processing
+        if cache_file.exists():
+            print("\nLoading data from cache...")
+            with open(cache_file, "rb") as f:
+                cached_data = pickle.load(f)
+                # Directly use cached_data as it should already be in the correct format
+                dataset_dict = cached_data
+                num_classes = dataset_dict["num_classes"]
+        else:
+            print("\nNo cache found. Loading data directly...")
+            
+            dimensionality = config.data.dimensionality.lower()
+            if dimensionality == "2d":
+                dataset_dict = load_2d_dataset(config.data.dataset, data_path=config.data.path, seed=config.seed)
+                num_classes = dataset_dict["num_classes"]
+            elif dimensionality == "3d":  # TODO: Add 3D dataset loading
+                dataset_dict = load_3d_dataset(config.data.dataset, data_path=config.data.path, seed=config.seed)
+                num_classes = dataset_dict["num_classes"]
+            else:
+                raise ValueError(f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'")
+        
+        print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
     else:
-        print(
-            "\nNo cache found. Run 'python -m src.preprocess_dataset' first to create cache."
-        )
-        print("Falling back to regular data loading...")
-        # Load the raw dataset first
-        dataset = load_dataset(config.data.dataset, data_path=config.data.path)
+        print("\nData will be loaded on-demand during training\n")
 
-        # Store the training data and labels
-        dataset_dict = {
-            "train_data": dataset["train_data"],
-            "train_labels": dataset["train_labels"],
-        }
-        num_classes = dataset["num_classes"]
-
-        # Create initial loaders for printing info
-        train_loader = DataLoader(
-            WORCDataset(
-                dataset["train_data"], 
-                dataset["train_labels"],
-                augmentation_type=config.data.augmentation_type
-            ),
-            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"],
-            shuffle=True,
-            num_workers=config.data.num_workers,
-        )
-        val_loader = DataLoader(
-            WORCDataset(
-                dataset["val_data"], 
-                dataset["val_labels"],
-                augmentation_type=config.data.augmentation_type
-            ),
-            batch_size=pipeline_space.get("batch_size", {"upper": 32})["upper"],
-            shuffle=False,
-            num_workers=config.data.num_workers,
-        )
-
-    print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
-    print(f"Train batches: {len(train_loader)}, Val batches: {len(val_loader)}\n")
-
-    # Run NePS optimization with pre-loaded data
+    # Run NePS optimization
     logging.basicConfig(level=logging.INFO)
     run(
         run_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
@@ -424,8 +188,8 @@ def main(config: DictConfig) -> None:
             num_classes=num_classes,
             **kwargs,
         ),
-        pipeline_space=pipeline_space,
-        searcher=config.searcher,
+        pipeline_space=pipeline_space,  # Hyperparameter search space
+        searcher=config.searcher,  # HPO algorithm
         root_directory=config.root_directory,
         max_evaluations_total=1 if "baseline" in str(config.pipeline_space) else config.max_evaluations,
         overwrite_working_directory=False,
@@ -433,5 +197,4 @@ def main(config: DictConfig) -> None:
 
 
 if __name__ == "__main__":
-    # pylint: disable=no-value-for-parameter
-    main()
+    main()  # pylint: disable=no-value-for-parameter

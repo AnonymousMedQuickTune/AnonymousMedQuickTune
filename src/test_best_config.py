@@ -1,7 +1,3 @@
-"""
-Test script to train model with optimal hyperparameters found by NePS.
-"""
-
 import argparse
 import ast
 import os
@@ -22,6 +18,7 @@ from src.analysis.generalization_analysis import (
 from src.data import WORCDataset, get_kfold_loaders, load_dataset
 from src.util_functions import evaluate_model, get_model, set_seed
 
+# TODO: Integrate 2D / 3D split + clean and refactor
 
 def parse_best_config(config_file_path):
     """
