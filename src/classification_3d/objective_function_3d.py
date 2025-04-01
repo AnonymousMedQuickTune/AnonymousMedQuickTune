@@ -1,6 +1,13 @@
-from src.utils.common_utils import set_seed
 import numpy as np
-from omegaconf import DictConfig
+import os
+import torch
+
+from src.classification_2d.models_2d import get_model  # TODO: change to 3d models
+from src.utils.common_utils import set_seed
+from src.utils.logging_utils import (initialize_logging_files, log_initial_state,
+                               log_learning_rate, log_metrics, log_resources,
+                               log_timing, log_gradients)
+from src.utils.model_lifecycle_utils import get_optimizer
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -33,27 +40,86 @@ def run_3d_pipeline(
             - cost (float): Cost of the pipeline (optional)
     """
     # Set seed for pipeline reproducibility
-    set_seed(config.seed)
+    set_seed(config.seed)  # For more details on the config: pls see configs/main_experiment.yaml
+    
+    # Set device (GPU/CPU) for training
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # TODO: Add 3D trainings pipeline
+    # TODO: Add 3D trainings pipeline -------------------------------------------------------------
+    # Reference implementation available in: src/classification_2d/objective_function_2d.py
 
-    # TODO: This is a placeholder. Replace it with actual metric values
+    # Placeholder:
+    num_classes = 2
+    train_time = 20
+    eval_time = 10
+    epoch_time = 30
+    model = get_model(
+        {
+            "type": config.model.type,
+            "task": config.model.task,
+            "num_classes": num_classes,
+        }
+    ).to(device)
+    epoch = 10
+
+    # Example: How to access hyperparameters from a configuration
+    # For more details on the search spaces: pls see configs/pipeline_configs/
+    optimizer = get_optimizer(
+            model=model,
+            optimizer_type=hyperparameters.get("optimizer_type", "adam"),
+            # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
+            # otherwise use default value of 0.001
+            learning_rate=hyperparameters.get("learning_rate", 1e-3),
+            weight_decay=hyperparameters.get("weight_decay", 0.0),
+        )
+
+    # Example: Logging 5-fold cross validation for NePS
+    k_folds = 5
+    for fold in range(k_folds):
+        print(f"\nTraining Fold {fold + 1}/{k_folds}\n... training...")
+
+        # Create fold-specific directory
+        fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
+        os.makedirs(fold_directory, exist_ok=True)
+
+        # Initialize logging files for this fold
+        logging_dir = os.path.join(fold_directory, "logging")
+        log_files = initialize_logging_files(logging_dir)
+
+        # ... Training ...
+
+        # Log all metrics and information at the end of the epoch
+        log_timing(log_files["timing"], epoch, train_time, eval_time, epoch_time)
+        log_learning_rate(log_files["lr"], epoch, optimizer)
+        log_resources(log_files["resource"], epoch)
+        # ...
+    print("\nTraining completed!")
+
+    # Placeholder for metric values: The metrics from each of the 5 folds in the last epoch
     all_folds_final_metrics = {
         "accuracy": [90, 87, 85, 89, 88],
         "precision": [90, 87, 86, 89, 88],
         "recall": [90, 87, 82, 89, 88],
         "f1": [90, 87, 83, 89, 88]
     }
+    # --------------------------------------------------------------------------------------------
 
-    # Get the specified metric from final metrics for NePS
+
+    # For NePS:
+    # NePS requires a single objective (loss) to minimize. We use the negative of one selected
+    # metric (e.g., f1-score) as the loss. Additional metrics are logged in 'info_dict'.
+
+    # Get the average of the selected metric across all K-folds
     selected_metric = np.mean(all_folds_final_metrics[config.metric])
     print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
 
     # Convert to NePS loss (negative because NePS minimizes)
     neps_loss = -selected_metric
 
-    # TODO: Add cost calculation (optional)
-    cost = 0
+    # Add cost calculation (optional, currently unused feature in this project)
+    # If we want to stop a NePS run after a certain total max_cost_toal is reached, we can define
+    # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one config.
+    cost = epoch_time
 
     return {
         "loss": neps_loss,

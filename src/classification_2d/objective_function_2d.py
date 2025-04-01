@@ -9,7 +9,7 @@ import yaml
 
 from torch import nn
 
-from src.classification_2d.preprocess_dataset_2d import get_kfold_loaders
+from src.classification_2d.preprocess_data_2d import get_kfold_loaders
 from src.classification_2d.models_2d import get_model
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_initial_state,

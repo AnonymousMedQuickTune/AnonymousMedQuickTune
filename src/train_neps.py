@@ -193,6 +193,7 @@ def main(config: DictConfig) -> None:
         root_directory=config.root_directory,
         max_evaluations_total=1 if "baseline" in str(config.pipeline_space) else config.max_evaluations,
         overwrite_working_directory=False,
+        # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
     )
 
 
