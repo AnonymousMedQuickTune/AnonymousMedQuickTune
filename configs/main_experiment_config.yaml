@@ -14,10 +14,10 @@ experiment_name: test_desmoid
 #------------------------------------------------------------------------------
 # NePS Optimization Settings
 #------------------------------------------------------------------------------
-pipeline_space: configs/pipeline_spaces/baseline.yaml
-max_evaluations: 50       # Maximum number of configurations to evaluate
+pipeline_space: configs/pipeline_spaces/pipeline_space_without_user_priors.yaml
+max_evaluations: 10       # Maximum number of configurations to evaluate
 metric: f1                # Metric to optimize: 'f1' (default), 'accuracy', 'precision', or 'recall'
-searcher: random_search   # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
+searcher: hyperband       # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
 
 #------------------------------------------------------------------------------
 # Model Architecture
