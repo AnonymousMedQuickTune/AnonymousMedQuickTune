@@ -1,28 +1,25 @@
-import pickle
-from pathlib import Path
-
-import hydra
-from omegaconf import DictConfig
-
-from src.utils.common_utils import yaml_to_neps_pipeline_space
-
 import glob
 import os
 import pickle
 import random
+from pathlib import Path
 
+import hydra
 import nibabel as nib
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+from omegaconf import DictConfig
 from PIL import Image
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import KFold, train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from sklearn.model_selection import KFold
+
+from src.utils.common_utils import yaml_to_neps_pipeline_space
 
 # TODO: Use other dataset(s)
+
 
 class WORCDataset(Dataset):
     """
@@ -37,20 +34,28 @@ class WORCDataset(Dataset):
         normalization_stats (dict, optional): Dictionary containing 'mean' and 'std' for normalization
     """
 
-    def __init__(self, data, labels, transform=None, is_training=False, augmentation_type='medical', normalization_stats=None):
+    def __init__(
+        self,
+        data,
+        labels,
+        transform=None,
+        is_training=False,
+        augmentation_type="medical",
+        normalization_stats=None,
+    ):
         """Initialize dataset with images and labels."""
         self.data = data
         self.labels = labels
         self.transform = transform
         self.is_training = is_training
         self.normalization_stats = normalization_stats
-        
+
         # Set up augmentation based on type
         if is_training:
-            if augmentation_type == 'medical':
+            if augmentation_type == "medical":
                 self.augmentation = MedicalImageAugmentation(p=0.5)
                 print("\n\n\nUsing medical augmentation\n\n\n")
-            elif augmentation_type == 'trivial':
+            elif augmentation_type == "trivial":
                 self.augmentation = transforms.TrivialAugmentWide()
                 print("\n\n\nUsing trivial augmentation\n\n\n")
             else:
@@ -88,8 +93,8 @@ class WORCDataset(Dataset):
 
         # Apply normalization if stats are provided
         if self.normalization_stats is not None:
-            mean = self.normalization_stats['mean']
-            std = self.normalization_stats['std']
+            mean = self.normalization_stats["mean"]
+            std = self.normalization_stats["std"]
             if isinstance(mean, (int, float)):
                 mean = [mean] * image.shape[0]  # Broadcast to all channels
             if isinstance(std, (int, float)):
@@ -317,9 +322,7 @@ def load_2d_dataset(name, data_path="datasets", seed=42):
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
-    print(
-        f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}"
-    )
+    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}")
 
     return {
         "train_val_data": train_val_data,
@@ -352,15 +355,15 @@ def calculate_normalization_stats(images):
 
 
 def get_kfold_loaders(
-    data, 
-    labels, 
-    k_folds, 
-    batch_size, 
-    num_workers, 
+    data,
+    labels,
+    k_folds,
+    batch_size,
+    num_workers,
     fold_idx,
     normalization_stats=None,
     data_path="datasets",
-    augmentation_type='medical'
+    augmentation_type="medical",
 ):
     """
     Create data loaders for k-fold cross validation.
@@ -379,7 +382,6 @@ def get_kfold_loaders(
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
-    
 
     # Create k-fold splitter
     kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -402,8 +404,7 @@ def get_kfold_loaders(
     if normalization_stats is None:
         mean = np.mean([img.numpy().mean() for img in train_data])
         std = np.std([img.numpy().std() for img in train_data])
-        normalization_stats = {'mean': mean, 'std': std}
-
+        normalization_stats = {"mean": mean, "std": std}
 
     # Create datasets
     train_dataset = WORCDataset(
@@ -411,15 +412,15 @@ def get_kfold_loaders(
         train_labels,
         normalization_stats=normalization_stats,
         augmentation_type=augmentation_type,
-        is_training=True
+        is_training=True,
     )
-    
+
     val_dataset = WORCDataset(
         val_data,
         val_labels,
         normalization_stats=normalization_stats,
         augmentation_type=None,  # No augmentation for validation
-        is_training=False
+        is_training=False,
     )
 
     # Create data loaders
@@ -428,25 +429,26 @@ def get_kfold_loaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
-        pin_memory=True
+        pin_memory=True,
     )
 
     return train_loader, val_loader
 
 
 def get_max_batch_size(pipeline_space):
-    batch_size = pipeline_space.get('batch_size', None)
+    batch_size = pipeline_space.get("batch_size", None)
     if batch_size is None:
         return 32
     return batch_size.upper
+
 
 @hydra.main(
     version_base=None,
@@ -475,7 +477,9 @@ def preprocess_and_cache_datasets(config: DictConfig) -> None:
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
     pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
-    cache_file = cache_dir / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
+    cache_file = (
+        cache_dir / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
+    )
 
     if cache_file.exists():
         print(f"Cache file already exists at {cache_file}")
@@ -484,7 +488,9 @@ def preprocess_and_cache_datasets(config: DictConfig) -> None:
 
     # Load raw dataset first
     print(f"Loading dataset '{dataset}'...")
-    dataset_dict = load_2d_dataset(dataset, data_path=config.data.path, seed=config.seed)
+    dataset_dict = load_2d_dataset(
+        dataset, data_path=config.data.path, seed=config.seed
+    )
 
     # Calculate normalization statistics from training data only
     print("Calculating dataset-specific normalization statistics...")
@@ -497,12 +503,12 @@ def preprocess_and_cache_datasets(config: DictConfig) -> None:
 
     # Verify all required keys are present
     required_keys = [
-        "train_val_data", 
-        "train_val_labels", 
-        "test_data", 
-        "test_labels", 
+        "train_val_data",
+        "train_val_labels",
+        "test_data",
+        "test_labels",
         "num_classes",
-        "normalization_stats"
+        "normalization_stats",
     ]
     missing_keys = [key for key in required_keys if key not in dataset_dict]
     if missing_keys:
@@ -514,8 +520,11 @@ def preprocess_and_cache_datasets(config: DictConfig) -> None:
         pickle.dump(dataset_dict, f)
 
     print("\nPreprocessing completed!")
-    print(f"Dataset '{dataset}' preprocessed and cached with {dataset_dict['num_classes']} classes")
+    print(
+        f"Dataset '{dataset}' preprocessed and cached with {dataset_dict['num_classes']} classes"
+    )
     print(f"Dataset-specific normalization values have been calculated and cached.")
+
 
 if __name__ == "__main__":
     preprocess_and_cache_datasets()

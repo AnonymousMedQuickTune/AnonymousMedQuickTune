@@ -20,6 +20,7 @@ from src.util_functions import evaluate_model, get_model, set_seed
 
 # TODO: Integrate 2D / 3D split + clean and refactor
 
+
 def parse_best_config(config_file_path):
     """
     Parse the best configuration and config ID from the NePS output file.

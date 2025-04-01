@@ -6,23 +6,28 @@ from pathlib import Path
 import numpy as np
 import torch
 import yaml
-
 from torch import nn
 
-from src.classification_2d.preprocess_data_2d import get_kfold_loaders
 from src.classification_2d.models_2d import get_model
+from src.classification_2d.preprocess_data_2d import get_kfold_loaders
 from src.utils.common_utils import set_seed
-from src.utils.logging_utils import (initialize_logging_files, log_initial_state,
-                               log_learning_rate, log_metrics, log_resources,
-                               log_timing, log_gradients)
-from src.utils.model_lifecycle_utils import (CheckpointManager, adjust_learning_rate,
-                                evaluate_and_log_metrics, get_optimizer, get_warmup_scheduler,
-                                set_dropout, train_epoch)
+from src.utils.logging_utils import (initialize_logging_files, log_gradients,
+                                     log_initial_state, log_learning_rate,
+                                     log_metrics, log_resources, log_timing)
+from src.utils.model_lifecycle_utils import (CheckpointManager,
+                                             adjust_learning_rate,
+                                             evaluate_and_log_metrics,
+                                             get_optimizer,
+                                             get_warmup_scheduler, set_dropout,
+                                             train_epoch)
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
-warnings.filterwarnings("ignore", message="Default grid_sample and affine_grid behavior")
+warnings.filterwarnings(
+    "ignore", message="Default grid_sample and affine_grid behavior"
+)
 warnings.filterwarnings("ignore", message="Detected call of `lr_scheduler.step()`")
+
 
 def run_2d_pipeline(
     pipeline_directory,
@@ -59,7 +64,7 @@ def run_2d_pipeline(
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
+
     # Initialize model and move it to the appropriate device
     model = get_model(
         {
@@ -70,7 +75,7 @@ def run_2d_pipeline(
     ).to(device)
 
     # Get k-fold parameter from config or default to 5
-    k_folds = config.data.k_folds if hasattr(config.data, 'k_folds') else 5
+    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
 
     # Initialize metrics storage for all folds
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
@@ -78,24 +83,33 @@ def run_2d_pipeline(
     if "autonorm" in str(config.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         print(f"\nNormalization parameters from NePS:")
-        mean_values = np.array([float(hyperparameters['mean_1']), 
-                              float(hyperparameters['mean_2']), 
-                              float(hyperparameters['mean_3'])], dtype=np.float32)
-        std_values = np.array([float(hyperparameters['std_1']), 
-                             float(hyperparameters['std_2']), 
-                             float(hyperparameters['std_3'])], dtype=np.float32)
+        mean_values = np.array(
+            [
+                float(hyperparameters["mean_1"]),
+                float(hyperparameters["mean_2"]),
+                float(hyperparameters["mean_3"]),
+            ],
+            dtype=np.float32,
+        )
+        std_values = np.array(
+            [
+                float(hyperparameters["std_1"]),
+                float(hyperparameters["std_2"]),
+                float(hyperparameters["std_3"]),
+            ],
+            dtype=np.float32,
+        )
         print(f"Mean: {mean_values}")
         print(f"Std: {std_values}\n")
-        
-        normalization_stats = {
-            'mean': mean_values,
-            'std': std_values
-        }
+
+        normalization_stats = {"mean": mean_values, "std": std_values}
     else:
         # For each fold, normalization statistics will be calculated from that fold's training data
         # and applied to both training and validation data of that fold
-        normalization_stats = None  # Will be calculated separately for each fold's training data
-    
+        normalization_stats = (
+            None  # Will be calculated separately for each fold's training data
+        )
+
     # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}")
@@ -118,7 +132,7 @@ def run_2d_pipeline(
             fold_idx=fold,
             normalization_stats=normalization_stats,
             data_path=config.data.path,
-            augmentation_type=config.data.augmentation_type
+            augmentation_type=config.data.augmentation_type,
         )
 
         # Apply dropout rate to all applicable layers in the model
@@ -157,8 +171,8 @@ def run_2d_pipeline(
             "train": {metric: [] for metric in base_metrics},
             "val": {
                 **{metric: [] for metric in base_metrics},
-                "confusion_matrices": []  # Additional metric specific to validation
-            }
+                "confusion_matrices": [],  # Additional metric specific to validation
+            },
         }
 
         # Training setup
@@ -172,12 +186,14 @@ def run_2d_pipeline(
         epochs = hyperparameters.get("number_of_epochs")
         if epochs is None and config.searcher == "random_search":
             # Load the pipeline space config to get the upper value
-            with open(config.pipeline_space, 'r') as f:
+            with open(config.pipeline_space, "r") as f:
                 pipeline_config = yaml.safe_load(f)
-                epochs = pipeline_config['number_of_epochs']['upper']
+                epochs = pipeline_config["number_of_epochs"]["upper"]
             print(f"Random Search: Using maximum epochs value: {epochs}")
         elif epochs is None:
-            raise ValueError("number_of_epochs cannot be None for non-random search optimizers")
+            raise ValueError(
+                "number_of_epochs cannot be None for non-random search optimizers"
+            )
 
         # Initialize training components
         checkpoint_manager = CheckpointManager(
@@ -200,7 +216,7 @@ def run_2d_pipeline(
             log_files=log_files,
             hyperparameters={
                 "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
-                **hyperparameters  # Include all other hyperparameters
+                **hyperparameters,  # Include all other hyperparameters
             },
             config=config,
             model=model,
@@ -293,7 +309,7 @@ def run_2d_pipeline(
     # Get the specified metric from final metrics for NePS
     selected_metric = np.mean(all_folds_final_metrics[config.metric])
     print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
-    
+
     # Convert to NePS loss (negative because NePS minimizes)
     neps_loss = -selected_metric
 
@@ -305,7 +321,7 @@ def run_2d_pipeline(
         "info_dict": {
             "selected_metric": np.mean(all_folds_final_metrics[config.metric]),
             "all_folds_final_metrics": {
-                metric: np.mean(values) 
+                metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
         },

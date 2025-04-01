@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
 
+
 def load_3d_dataset(name, data_path="datasets", seed=42):
     """
     Load and preprocess a medical image dataset.
@@ -27,9 +28,7 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
-    print(
-        f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}"
-    )
+    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}")
 
     return {
         "train_val_data": train_val_data,

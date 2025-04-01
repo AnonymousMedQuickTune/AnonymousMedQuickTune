@@ -1,7 +1,10 @@
 from torch import nn
 from torchvision import models
 
-def get_model(model_config):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
+
+def get_model(
+    model_config,
+):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
     """
     Create and initialize a model based on the model configuration.
 
@@ -19,7 +22,7 @@ def get_model(model_config):  # TODO: Use models from https://docs.monai.io/en/s
 
     # Modern, widely used architectures
     if model_type == "resnet":
-        model = None # TODO: Add 3D ResNet
+        model = None  # TODO: Add 3D ResNet
     else:
         raise ValueError("Unknown model type: " + model_type)
 

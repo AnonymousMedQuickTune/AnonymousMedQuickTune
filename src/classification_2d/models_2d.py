@@ -1,7 +1,10 @@
 from torch import nn
 from torchvision import models
 
-def get_model(model_config):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
+
+def get_model(
+    model_config,
+):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
     """
     Create and initialize a model based on the model configuration.
 
@@ -35,7 +38,9 @@ def get_model(model_config):  # TODO: Use models from https://docs.monai.io/en/s
         model = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "efficientnetv2":  # Updated EfficientNet
-        model = models.efficientnet_v2_s(weights=models.EfficientNet_V2_S_Weights.DEFAULT)
+        model = models.efficientnet_v2_s(
+            weights=models.EfficientNet_V2_S_Weights.DEFAULT
+        )
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
     elif model_type == "densenet":  # Older architecture
         model = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)

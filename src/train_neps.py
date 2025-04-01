@@ -8,11 +8,12 @@ import yaml
 from neps import run
 from omegaconf import DictConfig, OmegaConf
 
-from src.utils.common_utils import yaml_to_neps_pipeline_space, set_seed
-from src.classification_2d.preprocess_data_2d import load_2d_dataset, get_max_batch_size
 from src.classification_2d.objective_function_2d import run_2d_pipeline
-from src.classification_3d.preprocess_data_3d import load_3d_dataset
+from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
+                                                      load_2d_dataset)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
+from src.classification_3d.preprocess_data_3d import load_3d_dataset
+from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 
 
 def run_pipeline(
@@ -42,7 +43,7 @@ def run_pipeline(
         dict: Dictionary containing optimization metrics
     """
     dimensionality = config.data.dimensionality.lower()
-    
+
     if dimensionality == "2d":
         return run_2d_pipeline(
             pipeline_directory=pipeline_directory,
@@ -50,7 +51,7 @@ def run_pipeline(
             config=config,
             dataset_dict=dataset_dict,
             num_classes=num_classes,
-            **hyperparameters
+            **hyperparameters,
         )
     elif dimensionality == "3d":
         return run_3d_pipeline(
@@ -59,7 +60,7 @@ def run_pipeline(
             config=config,
             dataset_dict=dataset_dict,
             num_classes=num_classes,
-            **hyperparameters
+            **hyperparameters,
         )
     else:
         raise ValueError(
@@ -105,7 +106,10 @@ def main(config: DictConfig) -> None:
     config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
-        ("pipeline_space_compact.yaml", yaml.dump(original_pipeline_space, default_flow_style=False)),
+        (
+            "pipeline_space_compact.yaml",
+            yaml.dump(original_pipeline_space, default_flow_style=False),
+        ),
     ]
 
     for filename, data in config_files:
@@ -119,7 +123,7 @@ def main(config: DictConfig) -> None:
     # Handle data loading based on preload configuration
     dataset_dict = None
     num_classes = None
-    
+
     # TODO: Each NePS run should also run for different train (incl. val) / test folds!!!
 
     if config.data.preload_data:
@@ -143,7 +147,7 @@ def main(config: DictConfig) -> None:
         # - Raw data is preloaded, but dynamic augmentation still occurs during training
         # - Each epoch can apply different random augmentations to the base data on-the-fly
         # - Memory efficiency is maintained as augmented versions aren't stored
-        
+
         # Try to load from cache first
         data_path = Path(config.data.path)
         cache_file = (
@@ -151,7 +155,7 @@ def main(config: DictConfig) -> None:
             / "cache"
             / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
         )
-        
+
         # Cache mechanism further improves performance by avoiding repeated data processing
         if cache_file.exists():
             print("\nLoading data from cache...")
@@ -162,17 +166,23 @@ def main(config: DictConfig) -> None:
                 num_classes = dataset_dict["num_classes"]
         else:
             print("\nNo cache found. Loading data directly...")
-            
+
             dimensionality = config.data.dimensionality.lower()
             if dimensionality == "2d":
-                dataset_dict = load_2d_dataset(config.data.dataset, data_path=config.data.path, seed=config.seed)
+                dataset_dict = load_2d_dataset(
+                    config.data.dataset, data_path=config.data.path, seed=config.seed
+                )
                 num_classes = dataset_dict["num_classes"]
             elif dimensionality == "3d":  # TODO: Add 3D dataset loading
-                dataset_dict = load_3d_dataset(config.data.dataset, data_path=config.data.path, seed=config.seed)
+                dataset_dict = load_3d_dataset(
+                    config.data.dataset, data_path=config.data.path, seed=config.seed
+                )
                 num_classes = dataset_dict["num_classes"]
             else:
-                raise ValueError(f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'")
-        
+                raise ValueError(
+                    f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
+                )
+
         print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
     else:
         print("\nData will be loaded on-demand during training\n")
@@ -191,7 +201,9 @@ def main(config: DictConfig) -> None:
         pipeline_space=pipeline_space,  # Hyperparameter search space
         searcher=config.searcher,  # HPO algorithm
         root_directory=config.root_directory,
-        max_evaluations_total=1 if "baseline" in str(config.pipeline_space) else config.max_evaluations,
+        max_evaluations_total=(
+            1 if "baseline" in str(config.pipeline_space) else config.max_evaluations
+        ),
         overwrite_working_directory=False,
         # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
     )

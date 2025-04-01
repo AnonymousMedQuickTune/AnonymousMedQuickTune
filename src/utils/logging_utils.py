@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import yaml
 
+
 def initialize_logging_files(logging_dir):
     """
     Initialize logging directory and create log files with headers.
@@ -104,6 +105,7 @@ def log_metrics(log_file, epoch, phase, metrics):
 
     with open(log_file, "a", encoding="utf-8") as f:
         f.write(metrics_line)
+
 
 def log_gradients(model, epoch, gradients_file):
     """

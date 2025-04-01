@@ -1,12 +1,14 @@
-import numpy as np
 import os
+
+import numpy as np
 import torch
 
-from src.classification_2d.models_2d import get_model  # TODO: change to 3d models
+from src.classification_2d.models_2d import \
+    get_model  # TODO: change to 3d models
 from src.utils.common_utils import set_seed
-from src.utils.logging_utils import (initialize_logging_files, log_initial_state,
-                               log_learning_rate, log_metrics, log_resources,
-                               log_timing, log_gradients)
+from src.utils.logging_utils import (initialize_logging_files, log_gradients,
+                                     log_initial_state, log_learning_rate,
+                                     log_metrics, log_resources, log_timing)
 from src.utils.model_lifecycle_utils import get_optimizer
 
 def run_3d_pipeline(
@@ -36,12 +38,15 @@ def run_3d_pipeline(
             - loss (float): Negative mean of selected metric (K-fold avg) for NePS optimization
             - info_dict (dict): Dictionary containing:
                 - selected_metric (float): Mean of selected metric (K-fold avg)
-                - all_folds_final_metrics (dict): Dictionary containing the mean value for each metric across all folds
+                - all_folds_final_metrics (dict): Dictionary containing the mean value for each 
+                  metric across all folds
             - cost (float): Cost of the pipeline (optional)
     """
     # Set seed for pipeline reproducibility
-    set_seed(config.seed)  # For more details on the config: pls see configs/main_experiment.yaml
-    
+    set_seed(
+        config.seed
+    )  # For more details on the config: pls see configs/main_experiment.yaml
+
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -65,13 +70,13 @@ def run_3d_pipeline(
     # Example: How to access hyperparameters from a configuration
     # For more details on the search spaces: pls see configs/pipeline_configs/
     optimizer = get_optimizer(
-            model=model,
-            optimizer_type=hyperparameters.get("optimizer_type", "adam"),
-            # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
-            # otherwise use default value of 0.001
-            learning_rate=hyperparameters.get("learning_rate", 1e-3),
-            weight_decay=hyperparameters.get("weight_decay", 0.0),
-        )
+        model=model,
+        optimizer_type=hyperparameters.get("optimizer_type", "adam"),
+        # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
+        # otherwise use default value of 0.001
+        learning_rate=hyperparameters.get("learning_rate", 1e-3),
+        weight_decay=hyperparameters.get("weight_decay", 0.0),
+    )
 
     # Example: Logging 5-fold cross validation for NePS
     k_folds = 5
@@ -100,10 +105,9 @@ def run_3d_pipeline(
         "accuracy": [90, 87, 85, 89, 88],
         "precision": [90, 87, 86, 89, 88],
         "recall": [90, 87, 82, 89, 88],
-        "f1": [90, 87, 83, 89, 88]
+        "f1": [90, 87, 83, 89, 88],
     }
     # --------------------------------------------------------------------------------------------
-
 
     # For NePS:
     # NePS requires a single objective (loss) to minimize. We use the negative of one selected
@@ -126,7 +130,7 @@ def run_3d_pipeline(
         "info_dict": {
             "selected_metric": np.mean(all_folds_final_metrics[config.metric]),
             "all_folds_final_metrics": {
-                metric: np.mean(values) 
+                metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
         },

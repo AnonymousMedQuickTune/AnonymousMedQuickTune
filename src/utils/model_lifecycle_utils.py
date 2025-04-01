@@ -6,8 +6,8 @@ import torch
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
 from torch import nn
 
-
 # TODO: Use MONAI Metrics + clean & refactor
+
 
 class CheckpointManager:
     """
@@ -133,6 +133,7 @@ class CheckpointManager:
                 self.pipeline_directory, f"model_checkpoint_after_{epoch+1}epochs.pth"
             )
             torch.save(checkpoint, periodic_path)
+
 
 def train_epoch(
     model,
@@ -262,6 +263,7 @@ def evaluate_and_log_metrics(
     )
 
     return current_metrics
+
 
 def evaluate_model(model, data_loader, criterion, device):
     """
@@ -406,6 +408,7 @@ def adjust_learning_rate(scheduler):
     """
     if scheduler is not None:
         scheduler.step()
+
 
 def get_optimizer(model, optimizer_type, learning_rate, weight_decay):
     """
