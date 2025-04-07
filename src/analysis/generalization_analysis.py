@@ -2,8 +2,9 @@
 Module for analyzing generalization performance of machine learning models.
 """
 
-from pathlib import Path
 import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -381,7 +382,9 @@ def compare_validation_test_generalization(dataset, exp1, seed1, exp2, seed2):
     exp2_seed_dir = base_path / exp2 / f"seed_{seed2}"
 
     if not exp1_seed_dir.is_dir() or not exp2_seed_dir.is_dir():
-        raise ValueError(f"One or both seed directories not found: {exp1_seed_dir}, {exp2_seed_dir}")
+        raise ValueError(
+            f"One or both seed directories not found: {exp1_seed_dir}, {exp2_seed_dir}"
+        )
 
     exp1_file = exp1_seed_dir / "validation_test_generalization.txt"
     exp2_file = exp2_seed_dir / "validation_test_generalization.txt"
@@ -389,7 +392,10 @@ def compare_validation_test_generalization(dataset, exp1, seed1, exp2, seed2):
     # Create output directory if it doesn't exist
     output_dir = base_path / "analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"validation_test_generalization_comparison_{exp1}_s{seed1}_vs_{exp2}_s{seed2}.txt"
+    output_file = (
+        output_dir
+        / f"validation_test_generalization_comparison_{exp1}_s{seed1}_vs_{exp2}_s{seed2}.txt"
+    )
 
     def extract_metrics(file_path):
         metrics = {}
@@ -491,7 +497,9 @@ def compare_validation_train_generalization(dataset, exp1, seed1, exp2, seed2):
     exp2_seed_dir = base_path / exp2 / f"seed_{seed2}"
 
     if not exp1_seed_dir.is_dir() or not exp2_seed_dir.is_dir():
-        raise ValueError(f"One or both seed directories not found: {exp1_seed_dir}, {exp2_seed_dir}")
+        raise ValueError(
+            f"One or both seed directories not found: {exp1_seed_dir}, {exp2_seed_dir}"
+        )
 
     exp1_file = exp1_seed_dir / "validation_train_generalization.txt"
     exp2_file = exp2_seed_dir / "validation_train_generalization.txt"
@@ -499,7 +507,10 @@ def compare_validation_train_generalization(dataset, exp1, seed1, exp2, seed2):
     # Create output directory if it doesn't exist
     output_dir = base_path / "analysis"
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"validation_train_generalization_comparison_{exp1}_s{seed1}_vs_{exp2}_s{seed2}.txt"
+    output_file = (
+        output_dir
+        / f"validation_train_generalization_comparison_{exp1}_s{seed1}_vs_{exp2}_s{seed2}.txt"
+    )
 
     def extract_metrics(file_path):
         metrics = {}
@@ -605,15 +616,25 @@ def main():
     parser = argparse.ArgumentParser(description="Analyze generalization performance")
     parser.add_argument("--dataset", type=str, required=True, help="Dataset name")
     parser.add_argument("--exp1", type=str, required=True, help="First experiment name")
-    parser.add_argument("--seed1", type=str, required=True, help="First experiment seed")
-    parser.add_argument("--exp2", type=str, required=True, help="Second experiment name")
-    parser.add_argument("--seed2", type=str, required=True, help="Second experiment seed")
+    parser.add_argument(
+        "--seed1", type=str, required=True, help="First experiment seed"
+    )
+    parser.add_argument(
+        "--exp2", type=str, required=True, help="Second experiment name"
+    )
+    parser.add_argument(
+        "--seed2", type=str, required=True, help="Second experiment seed"
+    )
 
     args = parser.parse_args()
 
     # Run both comparisons with specific seeds
-    compare_validation_test_generalization(args.dataset, args.exp1, args.seed1, args.exp2, args.seed2)
-    compare_validation_train_generalization(args.dataset, args.exp1, args.seed1, args.exp2, args.seed2)
+    compare_validation_test_generalization(
+        args.dataset, args.exp1, args.seed1, args.exp2, args.seed2
+    )
+    compare_validation_train_generalization(
+        args.dataset, args.exp1, args.seed1, args.exp2, args.seed2
+    )
 
 
 if __name__ == "__main__":

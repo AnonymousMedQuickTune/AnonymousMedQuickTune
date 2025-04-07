@@ -3,20 +3,21 @@ import time
 import warnings
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
-import matplotlib.pyplot as plt
-
 
 from src.classification_2d.models_2d import get_model
-from src.classification_2d.preprocess_data_2d import get_brain_tumor_kfold_loaders
+from src.classification_2d.preprocess_data_2d import \
+    get_brain_tumor_kfold_loaders
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
-                                     log_metrics, log_resources, log_timing, log_validation_images)
+                                     log_metrics, log_resources, log_timing,
+                                     log_validation_images)
 from src.utils.model_lifecycle_utils import (CheckpointManager,
                                              adjust_learning_rate,
                                              evaluate_and_log_metrics,
@@ -308,37 +309,58 @@ def run_2d_pipeline(
                 all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
 
             # Log metrics to TensorBoard
-            writer.add_scalar(f'Loss/train/fold_{fold}', train_metrics['loss'], epoch)
-            writer.add_scalar(f'Accuracy/train/fold_{fold}', train_metrics['accuracy'], epoch)
-            writer.add_scalar(f'Precision/train/fold_{fold}', np.mean(train_metrics['precision']), epoch)
-            writer.add_scalar(f'Recall/train/fold_{fold}', np.mean(train_metrics['recall']), epoch)
-            writer.add_scalar(f'F1/train/fold_{fold}', np.mean(train_metrics['f1']), epoch)
-            
+            writer.add_scalar(f"Loss/train/fold_{fold}", train_metrics["loss"], epoch)
+            writer.add_scalar(
+                f"Accuracy/train/fold_{fold}", train_metrics["accuracy"], epoch
+            )
+            writer.add_scalar(
+                f"Precision/train/fold_{fold}",
+                np.mean(train_metrics["precision"]),
+                epoch,
+            )
+            writer.add_scalar(
+                f"Recall/train/fold_{fold}", np.mean(train_metrics["recall"]), epoch
+            )
+            writer.add_scalar(
+                f"F1/train/fold_{fold}", np.mean(train_metrics["f1"]), epoch
+            )
+
             # Log learning rate (moved outside the val_metrics check)
-            writer.add_scalar(f'Learning_Rate/fold_{fold}', 
-                            optimizer.param_groups[0]['lr'], 
-                            epoch)
-            
+            writer.add_scalar(
+                f"Learning_Rate/fold_{fold}", optimizer.param_groups[0]["lr"], epoch
+            )
+
             if val_metrics is not None:
-                writer.add_scalar(f'Loss/val/fold_{fold}', val_metrics['loss'], epoch)
-                writer.add_scalar(f'Accuracy/val/fold_{fold}', val_metrics['accuracy'], epoch)
-                writer.add_scalar(f'Precision/val/fold_{fold}', np.mean(val_metrics['precision']), epoch)
-                writer.add_scalar(f'Recall/val/fold_{fold}', np.mean(val_metrics['recall']), epoch)
-                writer.add_scalar(f'F1/val/fold_{fold}', np.mean(val_metrics['f1']), epoch)
+                writer.add_scalar(f"Loss/val/fold_{fold}", val_metrics["loss"], epoch)
+                writer.add_scalar(
+                    f"Accuracy/val/fold_{fold}", val_metrics["accuracy"], epoch
+                )
+                writer.add_scalar(
+                    f"Precision/val/fold_{fold}",
+                    np.mean(val_metrics["precision"]),
+                    epoch,
+                )
+                writer.add_scalar(
+                    f"Recall/val/fold_{fold}", np.mean(val_metrics["recall"]), epoch
+                )
+                writer.add_scalar(
+                    f"F1/val/fold_{fold}", np.mean(val_metrics["f1"]), epoch
+                )
 
                 # Add confusion matrix as image
-                if 'confusion_matrices' in val_metrics:
+                if "confusion_matrices" in val_metrics:
                     fig = plt.figure(figsize=(8, 8))
-                    plt.imshow(val_metrics['confusion_matrices'][-1], cmap='Blues')
+                    plt.imshow(val_metrics["confusion_matrices"][-1], cmap="Blues")
                     plt.colorbar()
-                    plt.title(f'Confusion Matrix - Epoch {epoch}')
-                    writer.add_figure(f'Confusion_Matrix/fold_{fold}', fig, epoch)
+                    plt.title(f"Confusion Matrix - Epoch {epoch}")
+                    writer.add_figure(f"Confusion_Matrix/fold_{fold}", fig, epoch)
                     plt.close()
 
             # Log sample images with predictions (every N epochs or at the end)
-            if (epoch + 1) % config.logging.viz_images_every == 0 or epoch == epochs - 1:
+            if (
+                epoch + 1
+            ) % config.logging.viz_images_every == 0 or epoch == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, epoch)
-        
 
         print("\nTraining completed!")
 

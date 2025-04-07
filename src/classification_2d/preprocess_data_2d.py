@@ -1,19 +1,21 @@
 import os
+import pickle
 import random
-import torch
+import shutil
+from pathlib import Path
+
+import hydra
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from PIL import Image
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from sklearn.model_selection import StratifiedKFold, train_test_split
-import hydra
+import torch
 from omegaconf import DictConfig
-import pickle
-import shutil
+from PIL import Image
+from sklearn.model_selection import StratifiedKFold, train_test_split
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
 
 from src.utils.common_utils import yaml_to_neps_pipeline_space
+
 
 class BrainTumorDataset(Dataset):
     """
@@ -26,6 +28,7 @@ class BrainTumorDataset(Dataset):
         augmentation_type (str): Type of augmentation to use ('medical' or 'trivial')
         normalization_stats (dict, optional): Dictionary containing 'mean' and 'std' for normalization
     """
+
     def __init__(
         self,
         data,
@@ -80,10 +83,12 @@ class BrainTumorDataset(Dataset):
 
         return image, self.labels[idx]
 
+
 class MedicalBrainAugmentation:
     """
     Specialized augmentation pipeline for brain MRI images.
     """
+
     def __init__(self, p=0.5):
         self.p = p
 
@@ -121,80 +126,82 @@ class MedicalBrainAugmentation:
 
         return img
 
+
 def calculate_brain_tumor_normalization_stats(train_data):
     """
     Calculate mean and std across all brain tumor images in the dataset.
-    
+
     Args:
         train_data (list): List of image tensors from training set
-    
+
     Returns:
         tuple: (means, stds) for each channel
     """
     all_images = torch.stack(train_data)
     means = torch.mean(all_images, dim=[0, 2, 3])
     stds = torch.std(all_images, dim=[0, 2, 3])
-    
+
     return means.tolist(), stds.tolist()
+
 
 def load_brain_tumor_dataset(data_path="datasets", seed=42):
     """
     Load and preprocess the brain tumor dataset.
-    
+
     Args:
         data_path (str): Path to the dataset directory
         seed (int): Random seed for reproducibility
-    
+
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
     dataset_path = os.path.join(data_path, "brain_tumor")
-    
+
     # Load preprocessed data from the CSV created by preprocess_brain_tumor.py
     csv_path = os.path.join(dataset_path, "dataset.csv")
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"Dataset CSV not found at {csv_path}")
-    
+
     images = []
     labels = []
-    
+
     # Read the CSV file
     df = pd.read_csv(csv_path)
-    
+
     # Load and process each image
     for _, row in df.iterrows():
         try:
             # Load image
-            img_path = row['image_path']
-            img = Image.open(img_path).convert('RGB')
-            
+            img_path = row["image_path"]
+            img = Image.open(img_path).convert("RGB")
+
             # Resize to standard size (224x224)
             img = transforms.Resize((224, 224))(transforms.ToTensor()(img))
-            
+
             images.append(img)
-            labels.append(row['label'])
-            
+            labels.append(row["label"])
+
         except Exception as e:
             print(f"Error processing {img_path}: {str(e)}")
             continue
-    
+
     if not images:
         raise ValueError("No valid images were loaded")
-    
+
     # Convert labels to numpy array
     labels = np.array(labels)
-    
+
     # Split into train+val and test sets (80-20)
     train_val_data, test_data, train_val_labels, test_labels = train_test_split(
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
-    
+
     print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}")
-    
+
     # Calculate class distribution
     unique_labels, counts = np.unique(labels, return_counts=True)
     print(f"Class distribution: {dict(zip(unique_labels, counts))}")
-    
+
     return {
         "train_val_data": train_val_data,
         "train_val_labels": train_val_labels,
@@ -202,6 +209,7 @@ def load_brain_tumor_dataset(data_path="datasets", seed=42):
         "test_labels": test_labels,
         "num_classes": len(unique_labels),
     }
+
 
 def get_brain_tumor_kfold_loaders(
     data,
@@ -215,7 +223,7 @@ def get_brain_tumor_kfold_loaders(
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
-    
+
     Args:
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
@@ -225,30 +233,30 @@ def get_brain_tumor_kfold_loaders(
         fold_idx (int): Current fold index
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
-    
+
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
     # Create k-fold splitter
     kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
-    
+
     # Get indices for current fold
     indices = np.arange(len(data))
     for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
         if i == fold_idx:
             break
-    
+
     # Split data for current fold
     train_data = [data[i] for i in train_idx]
     train_labels = labels[train_idx]
     val_data = [data[i] for i in val_idx]
     val_labels = labels[val_idx]
-    
+
     # Calculate normalization stats from training data if not provided
     if normalization_stats is None:
         means, stds = calculate_brain_tumor_normalization_stats(train_data)
         normalization_stats = {"mean": means, "std": stds}
-    
+
     # Create datasets
     train_dataset = BrainTumorDataset(
         train_data,
@@ -257,7 +265,7 @@ def get_brain_tumor_kfold_loaders(
         augmentation_type=augmentation_type,
         is_training=True,
     )
-    
+
     val_dataset = BrainTumorDataset(
         val_data,
         val_labels,
@@ -265,7 +273,7 @@ def get_brain_tumor_kfold_loaders(
         augmentation_type=None,
         is_training=False,
     )
-    
+
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
@@ -274,7 +282,7 @@ def get_brain_tumor_kfold_loaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    
+
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
@@ -282,8 +290,9 @@ def get_brain_tumor_kfold_loaders(
         num_workers=num_workers,
         pin_memory=True,
     )
-    
+
     return train_loader, val_loader
+
 
 def get_max_batch_size(pipeline_space):
     batch_size = pipeline_space.get("batch_size", None)
@@ -291,63 +300,62 @@ def get_max_batch_size(pipeline_space):
         return 32
     return batch_size.upper
 
+
 def preprocess_raw_brain_tumor_dataset(dataset_path, output_path):
     """
     Processes the raw brain tumor dataset and creates a CSV file with image paths and labels.
-    
+
     Args:
         dataset_path (str): Path to original dataset with 'yes' and 'no' folders
         output_path (str): Path to output directory
-    
+
     Returns:
         pd.DataFrame: DataFrame containing image paths and labels
     """
     # Create output directory if it doesn't exist
     Path(output_path).mkdir(parents=True, exist_ok=True)
-    
+
     # Initialize lists for DataFrame
     image_paths = []
     labels = []
-    
+
     # Process each class
-    for class_name in ['no', 'yes']:
+    for class_name in ["no", "yes"]:
         class_path = os.path.join(dataset_path, class_name)
-        label = 0 if class_name == 'no' else 1
-        
+        label = 0 if class_name == "no" else 1
+
         # Check if the directory exists
         if not os.path.exists(class_path):
             print(f"Warning: Directory {class_path} not found!")
             continue
-        
+
         # Process all images in the class
         for img_name in os.listdir(class_path):
-            if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+            if img_name.lower().endswith((".png", ".jpg", ".jpeg")):
                 # Copy image to output directory
                 src_path = os.path.join(class_path, img_name)
                 dst_path = os.path.join(output_path, f"{class_name}_{img_name}")
                 shutil.copy2(src_path, dst_path)
-                
+
                 # Store path and label
                 image_paths.append(dst_path)
                 labels.append(label)
-    
+
     # Create DataFrame
-    df = pd.DataFrame({
-        'image_path': image_paths,
-        'label': labels
-    })
-    
+    df = pd.DataFrame({"image_path": image_paths, "label": labels})
+
     # Save DataFrame to CSV
-    csv_path = os.path.join(output_path, 'dataset.csv')
+    csv_path = os.path.join(output_path, "dataset.csv")
     df.to_csv(csv_path, index=False)
-    
+
     print(f"Processing completed. Dataset info:")
     print(f"Total images: {len(df)}")
     print(f"No tumor images: {len(df[df['label'] == 0])}")
     print(f"Tumor images: {len(df[df['label'] == 1])}")
     print(f"CSV file saved to: {csv_path}")
-    
+
     return df
+
 
 @hydra.main(
     version_base=None,
@@ -366,7 +374,7 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
     # First, process the raw dataset
     raw_dataset_path = os.path.join(config.data.path, "brain_mri")
     processed_dataset_path = os.path.join(config.data.path, "brain_tumor")
-    
+
     if not os.path.exists(os.path.join(processed_dataset_path, "dataset.csv")):
         print("Processing raw dataset...")
         preprocess_raw_brain_tumor_dataset(raw_dataset_path, processed_dataset_path)
@@ -389,13 +397,14 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
     # Load raw dataset
     print("Loading brain tumor dataset...")
     dataset_dict = load_brain_tumor_dataset(
-        data_path=config.data.path, 
-        seed=config.seed
+        data_path=config.data.path, seed=config.seed
     )
 
     # Calculate normalization statistics from training data only
     print("Calculating dataset-specific normalization statistics...")
-    means, stds = calculate_brain_tumor_normalization_stats(dataset_dict["train_val_data"])
+    means, stds = calculate_brain_tumor_normalization_stats(
+        dataset_dict["train_val_data"]
+    )
     print(f"Dataset means: {means}")
     print(f"Dataset stds: {stds}")
 
@@ -426,8 +435,6 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
     )
     print(f"Dataset-specific normalization values have been calculated and cached.")
 
+
 if __name__ == "__main__":
     preprocess_and_cache_brain_tumor_datasets()
-
-
-

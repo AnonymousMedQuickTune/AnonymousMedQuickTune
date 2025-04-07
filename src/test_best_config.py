@@ -15,12 +15,12 @@ from torch.utils.data import DataLoader
 from src.analysis.generalization_analysis import (
     analyze_training_validation_metrics,
     analyze_validation_test_generalization)
-from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset, BrainTumorDataset, get_max_batch_size
 from src.classification_2d.models_2d import get_model
-from src.utils.common_utils import set_seed
+from src.classification_2d.preprocess_data_2d import (BrainTumorDataset,
+                                                      get_max_batch_size,
+                                                      load_brain_tumor_dataset)
+from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
-
-from src.utils.common_utils import yaml_to_neps_pipeline_space
 
 
 def parse_best_config(config_file_path):

@@ -11,6 +11,7 @@ from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_metrics, log_resources, log_timing)
 from src.utils.model_lifecycle_utils import get_optimizer
 
+
 def run_3d_pipeline(
     pipeline_directory,
     previous_pipeline_directory,
@@ -38,7 +39,7 @@ def run_3d_pipeline(
             - loss (float): Negative mean of selected metric (K-fold avg) for NePS optimization
             - info_dict (dict): Dictionary containing:
                 - selected_metric (float): Mean of selected metric (K-fold avg)
-                - all_folds_final_metrics (dict): Dictionary containing the mean value for each 
+                - all_folds_final_metrics (dict): Dictionary containing the mean value for each
                   metric across all folds
             - cost (float): Cost of the pipeline (optional)
     """
