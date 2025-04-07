@@ -3,6 +3,8 @@ import os
 import numpy as np
 import torch
 import yaml
+import torchvision
+from PIL import Image, ImageDraw, ImageFont
 
 
 def initialize_logging_files(logging_dir):
@@ -173,3 +175,75 @@ def log_model_info(model_info_file, model, config, hyperparameters):
 
     with open(model_info_file, "w", encoding="utf-8") as f:
         yaml.dump(model_info, f)
+
+
+def log_validation_images(writer, model, val_loader, device, fold, epoch):
+    """
+    Log sample validation images and their predictions to TensorBoard.
+    
+    Args:
+        writer: TensorBoard SummaryWriter instance
+        model: The neural network model
+        val_loader: Validation data loader
+        device: Device to run the model on
+        fold: Current fold number
+        epoch: Current epoch number
+    """
+    model.eval()
+    with torch.no_grad():
+        # Get a batch of images
+        images, labels = next(iter(val_loader))
+        images, labels = images.to(device), labels.to(device)
+        
+        # Get predictions
+        outputs = model(images)
+        _, predicted = torch.max(outputs, 1)
+        
+        # Convert images for TensorBoard (denormalize if necessary)
+        if hasattr(val_loader.dataset, 'mean') and hasattr(val_loader.dataset, 'std'):
+            mean = torch.tensor(val_loader.dataset.mean).view(3, 1, 1).to(device)
+            std = torch.tensor(val_loader.dataset.std).view(3, 1, 1).to(device)
+            images = images * std + mean
+        
+        # Convert to numpy and add text to images
+        images_with_text = []
+        for i in range(min(16, len(images))):
+            # Convert to numpy and transpose to (H,W,C)
+            img = images[i].cpu().numpy().transpose(1, 2, 0)
+            
+            # Normalize to [0,1] range if needed
+            if img.max() > 1.0 or img.min() < 0.0:
+                img = (img - img.min()) / (img.max() - img.min())
+            
+            # Convert to PIL Image for text drawing
+            img = (img * 255).astype(np.uint8)
+            img_pil = Image.fromarray(img)
+            draw = ImageDraw.Draw(img_pil)
+            
+            # Load a font (you might need to adjust the font path and size)
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+            except:
+                font = ImageFont.load_default()
+            
+            # Add text
+            true_label = labels[i].item()
+            pred_label = predicted[i].item()
+            text = f'True: {true_label}\nPred: {pred_label}'
+            
+            # Add white background behind text for better visibility
+            text_bbox = draw.textbbox((10, 10), text, font=font)
+            draw.rectangle([text_bbox[0]-5, text_bbox[1]-5, text_bbox[2]+5, text_bbox[3]+5], 
+                         fill='white', outline='black')
+            draw.text((10, 10), text, fill='black', font=font)
+            
+            # Convert back to tensor
+            img_tensor = torch.from_numpy(np.array(img_pil).transpose(2, 0, 1)) / 255.0
+            images_with_text.append(img_tensor)
+        
+        # Stack images and create grid
+        images_with_text = torch.stack(images_with_text)
+        img_grid = torchvision.utils.make_grid(images_with_text, nrow=4, normalize=False)
+        
+        # Add to TensorBoard
+        writer.add_image(f'Images/fold_{fold}', img_grid, epoch)

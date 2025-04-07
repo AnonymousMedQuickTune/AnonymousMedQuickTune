@@ -30,14 +30,14 @@ model:
 # Dataset Configuration
 #------------------------------------------------------------------------------
 data:
-  dimensionality: 3d      # Dimension of the dataset
-  dataset: desmoid        # Name of the dataset
+  dimensionality: 2d      # Dimension of the dataset
+  dataset: brain_tumor    # Name of the dataset
   path: datasets          # Path to the dataset
   debug_mode: False       # Enable/disable debug mode
   num_workers: 4          # Number of parallel data loading workers
   augmentation_type: medical   # Type of augmentation to use ('medical' or 'trivial')
   k_folds: 5              # Number of folds for K-Fold Cross Validation
-  preload_data: False     # Whether to preload the data into memory
+  preload_data: True      # Whether to preload the data into memory
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing
@@ -45,3 +45,4 @@ data:
 logging:
   eval_every: 1           # Evaluate model every N epochs
   save_every: 100         # Save model checkpoint every N epochs
+  viz_images_every: 100   # Save TensorBoard images every N epochs for visualization

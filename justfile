@@ -50,6 +50,10 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
 preprocess-datasets DATASET:
     python -m src.classification_2d.preprocess_dataset_2d data.dataset={{DATASET}}
 
+# Preprocess brain tumor datasets locally for faster experiment initialization
+preprocess-brain-tumor-dataset:
+    python -m src.classification_2d.preprocess_brain_tumor_data_2d
+
 # Preprocess datasets on cluster for faster experiment initialization
 preprocess-datasets-cluster DATASET:
     #!/usr/bin/env bash

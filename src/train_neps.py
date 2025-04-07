@@ -9,8 +9,8 @@ from neps import run
 from omegaconf import DictConfig, OmegaConf
 
 from src.classification_2d.objective_function_2d import run_2d_pipeline
-from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
-                                                      load_2d_dataset)
+from src.classification_2d.preprocess_brain_tumor_data_2d import (load_brain_tumor_dataset,
+                                                                  get_max_batch_size)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
@@ -169,9 +169,12 @@ def main(config: DictConfig) -> None:
 
             dimensionality = config.data.dimensionality.lower()
             if dimensionality == "2d":
-                dataset_dict = load_2d_dataset(
-                    config.data.dataset, data_path=config.data.path, seed=config.seed
-                )
+                if config.data.dataset == "brain_tumor":
+                    dataset_dict = load_brain_tumor_dataset(
+                        data_path=config.data.path, seed=config.seed
+                    )
+                else:
+                    raise ValueError(f"Unsupported dataset: {config.data.dataset}.")
                 num_classes = dataset_dict["num_classes"]
             elif dimensionality == "3d":  # TODO: Add 3D dataset loading
                 dataset_dict = load_3d_dataset(
