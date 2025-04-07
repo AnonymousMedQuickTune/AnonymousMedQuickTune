@@ -9,7 +9,7 @@ from neps import run
 from omegaconf import DictConfig, OmegaConf
 
 from src.classification_2d.objective_function_2d import run_2d_pipeline
-from src.classification_2d.preprocess_brain_tumor_data_2d import (load_brain_tumor_dataset,
+from src.classification_2d.preprocess_data_2d import (load_brain_tumor_dataset,
                                                                   get_max_batch_size)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset

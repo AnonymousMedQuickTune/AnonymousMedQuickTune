@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 
 
 from src.classification_2d.models_2d import get_model
-from src.classification_2d.preprocess_brain_tumor_data_2d import get_brain_tumor_kfold_loaders
+from src.classification_2d.preprocess_data_2d import get_brain_tumor_kfold_loaders
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,

@@ -26,10 +26,6 @@ download-mini-datasets:
 
 # DATA PROCESSING ----------------------------------------------------------------------------------
 
-# Process labels.csv into dataset-specific label files and create individual subject label files
-preprocess-labels:
-  python -m src.classification_2d.preprocess_work_labels
-
 # Convert NePS output to QuickTune format (local machine)
 neps2qt-local DATASET EXPERIMENT_NAME SEED:
   python src/analysis/neps_quicktune_output_adapter.py \
@@ -46,22 +42,9 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/neps2qt.sh
 
-# Preprocess datasets locally for faster experiment initialization
-preprocess-datasets DATASET:
-    python -m src.classification_2d.preprocess_dataset_2d data.dataset={{DATASET}}
-
 # Preprocess brain tumor dataset: process raw data, create CSV and cache for faster experiment initialization
 preprocess-brain-tumor-dataset:
-    python -m src.classification_2d.preprocess_brain_tumor_data_2d data.path=datasets
-
-# Preprocess datasets on cluster for faster experiment initialization
-preprocess-datasets-cluster DATASET:
-    #!/usr/bin/env bash
-    sbatch --exclude=dlcgpu05 \
-        --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-        --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-        --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets",DATASET={{DATASET}} \
-        cluster_scripts/preprocess_dataset.sh
+    python -m src.classification_2d.preprocess_data_2d data.path=datasets
 
 # Preprocess brain tumor dataset on cluster
 preprocess-brain-tumor-cluster:
