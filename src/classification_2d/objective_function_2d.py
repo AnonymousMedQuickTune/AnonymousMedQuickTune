@@ -87,6 +87,7 @@ def run_2d_pipeline(
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
 
+    # Initialize normalization parameters
     if "autonorm" in str(config.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         print(f"\nNormalization parameters from NePS:")
@@ -108,14 +109,10 @@ def run_2d_pipeline(
         )
         print(f"Mean: {mean_values}")
         print(f"Std: {std_values}\n")
-
         normalization_stats = {"mean": mean_values, "std": std_values}
     else:
-        # For each fold, normalization statistics will be calculated from that fold's training data
-        # and applied to both training and validation data of that fold
-        normalization_stats = (
-            None  # Will be calculated separately for each fold's training data
-        )
+        # For k-fold CV, normalization stats will be calculated per fold
+        normalization_stats = None
 
     # Run k-fold cross validation
     for fold in range(k_folds):
@@ -137,10 +134,7 @@ def run_2d_pipeline(
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
             fold_idx=fold,
-            normalization_stats={
-                "mean": [mean_values[0], mean_values[1], mean_values[2]],
-                "std": [std_values[0], std_values[1], std_values[2]],
-            },
+            normalization_stats=normalization_stats,  # Will be None if not using autonorm
             augmentation_type=config.data.augmentation_type,
         )
 
