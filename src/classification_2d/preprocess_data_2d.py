@@ -12,7 +12,7 @@ import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig
 from PIL import Image
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 
@@ -384,13 +384,13 @@ def get_kfold_loaders(
     """
 
     # Create k-fold splitter
-    kfold = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+    kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
 
     # Convert data list to indices
     indices = np.arange(len(data))
 
     # Get train and validation indices for current fold
-    for i, (train_idx, val_idx) in enumerate(kfold.split(indices)):
+    for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
         if i == fold_idx:
             break
 
