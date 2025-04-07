@@ -50,9 +50,9 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
 preprocess-datasets DATASET:
     python -m src.classification_2d.preprocess_dataset_2d data.dataset={{DATASET}}
 
-# Preprocess brain tumor datasets locally for faster experiment initialization
+# Preprocess brain tumor dataset: process raw data, create CSV and cache for faster experiment initialization
 preprocess-brain-tumor-dataset:
-    python -m src.classification_2d.preprocess_brain_tumor_data_2d
+    python -m src.classification_2d.preprocess_brain_tumor_data_2d data.path=datasets
 
 # Preprocess datasets on cluster for faster experiment initialization
 preprocess-datasets-cluster DATASET:
@@ -62,6 +62,15 @@ preprocess-datasets-cluster DATASET:
         --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
         --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets",DATASET={{DATASET}} \
         cluster_scripts/preprocess_dataset.sh
+
+# Preprocess brain tumor dataset on cluster
+preprocess-brain-tumor-cluster:
+    #!/usr/bin/env bash
+    sbatch --exclude=dlcgpu05 \
+        --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+        --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+        --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+        cluster_scripts/preprocess_brain_tumor.sh
 
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 

@@ -11,6 +11,7 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 import hydra
 from omegaconf import DictConfig
 import pickle
+import shutil
 
 from src.utils.common_utils import yaml_to_neps_pipeline_space
 
@@ -290,6 +291,64 @@ def get_max_batch_size(pipeline_space):
         return 32
     return batch_size.upper
 
+def preprocess_raw_brain_tumor_dataset(dataset_path, output_path):
+    """
+    Processes the raw brain tumor dataset and creates a CSV file with image paths and labels.
+    
+    Args:
+        dataset_path (str): Path to original dataset with 'yes' and 'no' folders
+        output_path (str): Path to output directory
+    
+    Returns:
+        pd.DataFrame: DataFrame containing image paths and labels
+    """
+    # Create output directory if it doesn't exist
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+    
+    # Initialize lists for DataFrame
+    image_paths = []
+    labels = []
+    
+    # Process each class
+    for class_name in ['no', 'yes']:
+        class_path = os.path.join(dataset_path, class_name)
+        label = 0 if class_name == 'no' else 1
+        
+        # Check if the directory exists
+        if not os.path.exists(class_path):
+            print(f"Warning: Directory {class_path} not found!")
+            continue
+        
+        # Process all images in the class
+        for img_name in os.listdir(class_path):
+            if img_name.lower().endswith(('.png', '.jpg', '.jpeg')):
+                # Copy image to output directory
+                src_path = os.path.join(class_path, img_name)
+                dst_path = os.path.join(output_path, f"{class_name}_{img_name}")
+                shutil.copy2(src_path, dst_path)
+                
+                # Store path and label
+                image_paths.append(dst_path)
+                labels.append(label)
+    
+    # Create DataFrame
+    df = pd.DataFrame({
+        'image_path': image_paths,
+        'label': labels
+    })
+    
+    # Save DataFrame to CSV
+    csv_path = os.path.join(output_path, 'dataset.csv')
+    df.to_csv(csv_path, index=False)
+    
+    print(f"Processing completed. Dataset info:")
+    print(f"Total images: {len(df)}")
+    print(f"No tumor images: {len(df[df['label'] == 0])}")
+    print(f"Tumor images: {len(df[df['label'] == 1])}")
+    print(f"CSV file saved to: {csv_path}")
+    
+    return df
+
 @hydra.main(
     version_base=None,
     config_path="../../configs",
@@ -304,9 +363,18 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
     """
     print("\nPreprocessing brain tumor datasets...")
 
-    # Create cache directory in the same location as the dataset
-    data_path = Path(config.data.path)
-    cache_dir = data_path / "cache"
+    # First, process the raw dataset
+    raw_dataset_path = os.path.join(config.data.path, "brain_mri")
+    processed_dataset_path = os.path.join(config.data.path, "brain_tumor")
+    
+    if not os.path.exists(os.path.join(processed_dataset_path, "dataset.csv")):
+        print("Processing raw dataset...")
+        preprocess_raw_brain_tumor_dataset(raw_dataset_path, processed_dataset_path)
+    else:
+        print("Raw dataset already processed, skipping...")
+
+    # Create cache directory
+    cache_dir = Path(config.data.path) / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate cache filename

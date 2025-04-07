@@ -8,5 +8,5 @@
 
 source activate medquicktune
 
-python -m src.preprocess_dataset \
+python -m src.classification_2d.preprocess_brain_tumor_data_2d \
     data.path=$DATA_PATH
