@@ -15,10 +15,12 @@ from torch.utils.data import DataLoader
 from src.analysis.generalization_analysis import (
     analyze_training_validation_metrics,
     analyze_validation_test_generalization)
-from src.data import WORCDataset, get_kfold_loaders, load_dataset
-from src.util_functions import evaluate_model, get_model, set_seed
+from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset, BrainTumorDataset, get_max_batch_size
+from src.classification_2d.models_2d import get_model
+from src.utils.common_utils import set_seed
+from src.utils.model_lifecycle_utils import evaluate_model
 
-# TODO: Integrate 2D / 3D split + clean and refactor
+from src.utils.common_utils import yaml_to_neps_pipeline_space
 
 
 def parse_best_config(config_file_path):
@@ -76,13 +78,14 @@ def test_run_pipeline(
     print(f"\nUsing device: {device}")
 
     # Load the dataset first
-    dataset = load_dataset(config.data.dataset, data_path=config.data.path)
+    dataset = load_brain_tumor_dataset(data_path=config.data.path)
+    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
 
     # Create a single test loader for the complete test set
-    test_dataset = WORCDataset(dataset["test_data"], dataset["test_labels"])
+    test_dataset = BrainTumorDataset(dataset["test_data"], dataset["test_labels"])
     test_loader = DataLoader(
         test_dataset,
-        batch_size=hyperparameters.get("label_smoothing", 32),
+        batch_size=get_max_batch_size(pipeline_space),
         shuffle=False,
         num_workers=config.data.num_workers,
     )

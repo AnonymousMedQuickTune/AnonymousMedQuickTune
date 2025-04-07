@@ -98,20 +98,22 @@ eval-cluster DATASET EXPERIMENT_NAME SEED:
 # ANALYSIS -----------------------------------------------------------------------------------------
 
 # Analyze and compare generalization performance between two NePS runs
-analyze-generalization-local DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
+analyze-generalization-local DATASET EXP1 SEED1 EXP2 SEED2:
   python -m src.analysis.generalization_analysis \
     --dataset {{DATASET}} \
-    --exp1 {{EXPERIMENT_NAME_1}} \
-    --exp2 {{EXPERIMENT_NAME_2}}
+    --exp1 {{EXP1}} \
+    --seed1 {{SEED1}} \
+    --exp2 {{EXP2}} \
+    --seed2 {{SEED2}}
 
 # Analyze and compare generalization performance between two NePS runs (cluster)
-analyze-generalization-cluster DATASET EXPERIMENT_NAME_1 EXPERIMENT_NAME_2:
+analyze-generalization-cluster DATASET EXP1 SEED1 EXP2 SEED2:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
   sbatch --exclude=dlcgpu05 \
     --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME_1={{EXPERIMENT_NAME_1}},EXPERIMENT_NAME_2={{EXPERIMENT_NAME_2}} \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME_1={{EXP1}},SEED1={{SEED1}},EXPERIMENT_NAME_2={{EXP2}},SEED2={{SEED2}} \
     cluster_scripts/analyze_generalization.sh
 
 # Analyze fidelity correlations from a NePS experiment
