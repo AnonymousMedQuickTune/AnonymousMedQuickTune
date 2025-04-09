@@ -13,7 +13,7 @@ from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
                                                       load_brain_tumor_dataset)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
-from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
+from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space, neps_space_to_dict
 
 
 def run_pipeline(
@@ -103,9 +103,11 @@ def main(config: DictConfig) -> None:
     # 1. Full Hydra config (includes all settings)
     # 2. NePS-compatible pipeline space (used for optimization)
     # 3. Original compact pipeline space (for better readability)
+    # Convert pipeline space to dictionary for YAML serialization
+    pipeline_space_dict = neps_space_to_dict(pipeline_space)
     config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
-        ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
+        ("pipeline_space.yaml", yaml.dump(pipeline_space_dict, default_flow_style=False)),
         (
             "pipeline_space_compact.yaml",
             yaml.dump(original_pipeline_space, default_flow_style=False),
@@ -193,7 +195,8 @@ def main(config: DictConfig) -> None:
     # Run NePS optimization
     logging.basicConfig(level=logging.INFO)
     run(
-        run_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
+        pipeline_space=pipeline_space,  # Hyperparameter search space
+        evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
             config=config,
@@ -201,8 +204,7 @@ def main(config: DictConfig) -> None:
             num_classes=num_classes,
             **kwargs,
         ),
-        pipeline_space=pipeline_space,  # Hyperparameter search space
-        searcher=config.searcher,  # HPO algorithm
+        optimizer=config.searcher,  # HPO algorithm
         root_directory=config.root_directory,
         max_evaluations_total=(
             1 if "baseline" in str(config.pipeline_space) else config.max_evaluations

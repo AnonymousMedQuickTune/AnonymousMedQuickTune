@@ -16,8 +16,8 @@ def run_3d_pipeline(
     pipeline_directory,
     previous_pipeline_directory,
     config,
-    dataset_dict,
-    num_classes,
+    dataset_dict=None,
+    num_classes=None,
     **hyperparameters,
 ):
     """
@@ -36,12 +36,12 @@ def run_3d_pipeline(
 
     Returns:
         dict: Dictionary containing:
-            - loss (float): Negative mean of selected metric (K-fold avg) for NePS optimization
-            - info_dict (dict): Dictionary containing:
+            - objective_to_minimize (float): Negative mean of selected metric (K-fold avg) for NePS optimization
+            - cost (float): Cost of the pipeline (optional)
+            - extra (dict): Dictionary containing:
                 - selected_metric (float): Mean of selected metric (K-fold avg)
                 - all_folds_final_metrics (dict): Dictionary containing the mean value for each
                   metric across all folds
-            - cost (float): Cost of the pipeline (optional)
     """
     # Set seed for pipeline reproducibility
     set_seed(
@@ -127,13 +127,13 @@ def run_3d_pipeline(
     cost = epoch_time
 
     return {
-        "loss": neps_loss,
-        "info_dict": {
-            "selected_metric": np.mean(all_folds_final_metrics[config.metric]),
+        "objective_to_minimize": neps_loss,  # Required by NePS
+        "cost": cost,
+        "extra": {  # Additional information
+            "selected_metric": selected_metric,
             "all_folds_final_metrics": {
                 metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
-        },
-        "cost": cost,
+        }
     }

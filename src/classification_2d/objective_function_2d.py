@@ -2,6 +2,8 @@ import os
 import time
 import warnings
 from pathlib import Path
+from typing import Dict, Any, Optional
+from omegaconf import DictConfig
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -12,7 +14,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from src.classification_2d.models_2d import get_model
 from src.classification_2d.preprocess_data_2d import \
-    get_brain_tumor_kfold_loaders
+    get_brain_tumor_kfold_loaders, load_brain_tumor_dataset
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -24,6 +26,7 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
                                              get_optimizer,
                                              get_warmup_scheduler, set_dropout,
                                              train_epoch)
+import traceback
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
@@ -57,11 +60,11 @@ def run_2d_pipeline(
 
     Returns:
         dict: Dictionary containing:
-            - loss (float): Negative mean of selected metric (K-fold avg) for NePS optimization
-            - info_dict (dict): Dictionary containing:
+            - objective_to_minimize (float): Negative mean of selected metric (K-fold avg) for NePS optimization
+            - cost (float): Cost of the pipeline (optional)
+            - extra (dict): Dictionary containing:
                 - selected_metric (float): Mean of selected metric (K-fold avg)
                 - all_folds_final_metrics (dict): Dictionary containing the mean value for each metric across all folds
-            - cost (float): Cost of the pipeline (optional)
     """
     # Set seed for pipeline reproducibility
     set_seed(config.seed)
@@ -372,19 +375,19 @@ def run_2d_pipeline(
     print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
 
     # Convert to NePS loss (negative because NePS minimizes)
-    neps_loss = -selected_metric
+    neps_loss = -selected_metric / 100.0  # Normalize to [0,1] range
 
     # TODO: Add cost calculation (optional)
     cost = 0
 
     return {
-        "loss": neps_loss,
-        "info_dict": {
-            "selected_metric": np.mean(all_folds_final_metrics[config.metric]),
+        "objective_to_minimize": neps_loss,  # Required by NePS
+        "cost": cost,
+        "extra": {  # Additional information
+            "selected_metric": selected_metric,
             "all_folds_final_metrics": {
                 metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
-        },
-        "cost": cost,
+        }
     }

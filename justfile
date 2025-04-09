@@ -27,10 +27,10 @@ download-mini-datasets:
 # DATA PROCESSING ----------------------------------------------------------------------------------
 
 # Convert NePS output to QuickTune format (local machine)
-neps2qt-local DATASET EXPERIMENT_NAME SEED:
+neps2qt-local DATASET EXP SEED:
   python src/analysis/neps_quicktune_output_adapter.py \
-    experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/all_losses_and_configs.txt \
-    --output-dir experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/quicktune_input
+    experiments/{{DATASET}}/{{EXP}}/seed_{{SEED}} \
+    --output-dir experiments/{{DATASET}}/{{EXP}}/seed_{{SEED}}/quicktune_input
 
 # Convert NePS output to QuickTune format (cluster)
 neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
@@ -130,3 +130,39 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/analyze_fidelity_correlation.sh
+
+# Merge multiple NePS runs into a single QuickTune portfolio
+merge-neps2qt-local DATASET EXPERIMENT_NAMES SEEDS OUTPUT_DIR:
+  python src/analysis/neps_quicktune_output_adapter.py \
+    experiments/{{DATASET}} \
+    --merge-runs \
+    --experiment-names "{{EXPERIMENT_NAMES}}" \
+    --seeds "{{SEEDS}}" \
+    --output-dir {{OUTPUT_DIR}}
+
+# Run QuickTune on a portfolio of NePS runs
+run-quicktune-local DATASET PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+  python -m src.run_quicktune \
+    data.dataset={{DATASET}} \
+    portfolio_dir={{PORTFOLIO_DIR}} \
+    data.path=datasets \
+    use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
+
+# Evaluate NePS optimization results
+eval-neps-local DATASET EXPERIMENT_NAME SEED FOLDS:
+  python -m src.evaluate_neps \
+    --experiment_dir experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}} \
+    --hydra_config configs/main_experiment_config.yaml \
+    --dataset {{DATASET}} \
+    --data_dir datasets \
+    --k_folds {{FOLDS}}
+
+# Submit a NePS evaluation to the cluster
+eval-neps-cluster DATASET EXPERIMENT_NAME SEED FOLDS:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},FOLDS={{FOLDS}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/main_experiment_config.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+    cluster_scripts/evaluate_neps.sh

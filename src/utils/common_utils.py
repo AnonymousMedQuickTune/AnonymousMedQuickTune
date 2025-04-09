@@ -8,77 +8,57 @@ import yaml
 
 
 def yaml_to_neps_pipeline_space(yaml_path):
-    """
-    Parse YAML configuration file and convert to NePS pipeline space format.
-    Supports both configurations with and without user priors.
-
+    """Convert YAML pipeline space configuration to NePS format.
+    
     Args:
-        yaml_path (str): Path to the YAML configuration file
-
+        yaml_path (str): Path to YAML configuration file
+        
     Returns:
-        dict: NePS-compatible pipeline space dictionary
-
-    Raises:
-        ValueError: If unknown parameter type is encountered
+        dict: NePS-compatible pipeline space configuration
     """
-    with open(yaml_path, encoding="utf-8") as f:
+    with open(yaml_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
-
+    
     pipeline_space = {}
-
-    # Check if we're using priorband (with user priors) or not
-    using_priorband = any(
-        "default" in param and "default_confidence" in param
-        for param in config.values()
-        if isinstance(param, dict)
-    )
-
-    for key, value in config.items():
-        # Skip non-hyperparameter entries
-        if not isinstance(value, dict) or "type" not in value:
-            print(f"Skipping non-hyperparameter '{key}': {value}")
-            continue
-
-        param_type = value.get("type")
-        is_fidelity = value.get("is_fidelity", False)
-
-        # Base parameters for all types
-        param_kwargs = {}
-        if "lower" in value:
-            param_kwargs["lower"] = value["lower"]
-        if "upper" in value:
-            param_kwargs["upper"] = value["upper"]
-
-        # Handle user priors if present and using priorband
-        if using_priorband and "default" in value and "default_confidence" in value:
-            param_kwargs.update(
-                {
-                    "default": value["default"],
-                    "default_confidence": value["default_confidence"],
-                }
-            )
-
-        # Parameter-specific configuration
-        if param_type == "float":
-            param_kwargs["log"] = value.get("log", False)
-            pipeline_space[key] = neps.Float(**param_kwargs)
-        elif param_type == "int":
-            if is_fidelity:
-                param_kwargs["is_fidelity"] = True
-            pipeline_space[key] = neps.Integer(**param_kwargs)
-        elif param_type == "categorical":
-            param_kwargs.pop("lower", None)
-            param_kwargs.pop("upper", None)
-            param_kwargs["choices"] = value.get("choices")
-            pipeline_space[key] = neps.Categorical(**param_kwargs)
-        else:
-            raise ValueError(f"Unknown type '{param_type}' for parameter '{key}'")
-
-    # Log the configuration mode
-    print(f"Configuration mode: {'with' if using_priorband else 'without'} user priors")
-
+    
+    for key, param_config in config.items():
+        param_kwargs = {
+            k: float(v) if isinstance(v, str) and ('e' in v.lower()) else v 
+            for k, v in param_config.items() 
+            if k not in ['type', 'is_fidelity']
+        }
+        
+        # Create parameter
+        if param_config['type'] == 'float':
+            param = neps.Float(**param_kwargs)
+        elif param_config['type'] == 'int':
+            param = neps.Integer(**param_kwargs)
+        elif param_config['type'] == 'categorical':
+            param = neps.Categorical(**param_kwargs)
+            
+        # Add is_fidelity if specified
+        if param_config.get('is_fidelity', False):
+            param.is_fidelity = True
+            
+        pipeline_space[key] = param
+    
     return pipeline_space
 
+def neps_space_to_dict(pipeline_space):
+    """Convert NePS pipeline space to a dictionary format suitable for YAML serialization."""
+    space_dict = {}
+    for key, value in pipeline_space.items():
+        param_dict = {
+            'type': value.__class__.__name__.lower(),
+            'lower': value.lower if hasattr(value, 'lower') else None,
+            'upper': value.upper if hasattr(value, 'upper') else None,
+            'log': value.log if hasattr(value, 'log') else None,
+            'choices': value.choices if hasattr(value, 'choices') else None,
+            'is_fidelity': value.is_fidelity if hasattr(value, 'is_fidelity') else False
+        }
+        # Remove None values
+        space_dict[key] = {k: v for k, v in param_dict.items() if v is not None}
+    return space_dict
 
 def set_seed(seed):
     """

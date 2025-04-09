@@ -12,6 +12,12 @@ root_directory: ${experiment_base_dir}/NePS_output
 experiment_name: test_desmoid
 
 #------------------------------------------------------------------------------
+# QuickTune Settings
+#------------------------------------------------------------------------------
+portfolio_dir: experiments/portfolio
+use_medical_portfolio: true
+
+#------------------------------------------------------------------------------
 # NePS Optimization Settings
 #------------------------------------------------------------------------------
 pipeline_space: configs/pipeline_spaces/pipeline_space_without_user_priors.yaml

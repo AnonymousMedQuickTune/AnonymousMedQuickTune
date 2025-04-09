@@ -1,5 +1,5 @@
 # MedQuickTune
-TODO: Add project description
+![Overview_Image](reports/overview.png)
 
 ## **Getting Started**
 
