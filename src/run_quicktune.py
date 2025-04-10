@@ -185,6 +185,17 @@ def main(config: DictConfig) -> None:
     # Set seed for reproducibility
     set_seed(config.seed)
 
+    # Create quicktune output directory with full path structure
+    experiment_path = os.path.join(
+        "experiments",
+        "quicktune",
+        config.data.dataset,
+        config.experiment_name,
+        f"seed_{config.seed}"
+    )
+    os.makedirs(experiment_path, exist_ok=True)
+    abs_experiment_path = os.path.abspath(experiment_path)
+
     # Load original pipeline space configuration
     with open(config.pipeline_space, "r", encoding="utf-8") as f:
         pipeline_space = yaml.safe_load(f)
@@ -226,10 +237,13 @@ def main(config: DictConfig) -> None:
             cs=configspace,
             max_fidelity=50,  # Using the max_budget value as max_fidelity
             cost_aware=True,
+            path=abs_experiment_path  # Set the path during initialization
         )
+        optimizer.reset_path(abs_experiment_path)  # Explicitly reset path to ensure it propagates to predictors
     else:
         # Initialize the optimizer with pretrained model
         optimizer = get_pretrained_optimizer("mtlbm/full")
+        optimizer.reset_path(abs_experiment_path)  # Explicitly reset path for pretrained optimizer
 
     print("\nOptimizer created\n")
 
@@ -249,10 +263,11 @@ def main(config: DictConfig) -> None:
     optimizer.setup(n=128, metafeat=metafeat)
     print("\nOptimizer setup complete\n")
     
-    # Create QuickTuner instance and run
+    # Create QuickTuner instance with experiment-specific output path
     qt = QuickTuner(
         optimizer=optimizer, 
-        f=lambda trial, trial_info: quicktune_wrapper(trial, trial_info, config)
+        f=lambda trial, trial_info: quicktune_wrapper(trial, trial_info, config),
+        path=experiment_path  # Use the experiment-specific path
     )
     qt.run(
         fevals=config.max_evaluations, 

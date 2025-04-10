@@ -141,9 +141,11 @@ merge-neps2qt-local DATASET EXPERIMENT_NAMES SEEDS OUTPUT_DIR:
     --output-dir {{OUTPUT_DIR}}
 
 # Run QuickTune on a portfolio of NePS runs
-run-quicktune-local DATASET PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
   python -m src.run_quicktune \
     data.dataset={{DATASET}} \
+    experiment_name={{EXPERIMENT_NAME}} \
+    seed={{SEED}} \
     portfolio_dir={{PORTFOLIO_DIR}} \
     data.path=datasets \
     use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
