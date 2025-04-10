@@ -104,11 +104,6 @@ class PortfolioManager:
 def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict:
     """
     Wrapper function to adapt run_2d_pipeline for QuickTune's interface.
-    
-    Args:
-        trial (dict): Trial configuration from QuickTune
-        trial_info (dict): Trial information from QuickTune
-        config (DictConfig): Hydra configuration object
     """
     start_time = time.time()
     
@@ -122,10 +117,17 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
     num_classes = 2
     
     try:
-        # Merge trial config with fidelity as number_of_epochs
+        # Ensure number_of_epochs is set
+        if "fidelity" in trial:
+            number_of_epochs = trial["fidelity"]
+        else:
+            number_of_epochs = 4  # Default value if fidelity is not provided
+        
+        # Merge trial config with number_of_epochs
         trial_config = trial["config"].copy()
-        # trial_config["number_of_epochs"] = 20  # trial["fidelity"]
-        print(f"\n\n\n\nTrial config: {trial_config}\n\n\n\n")
+        trial_config["number_of_epochs"] = number_of_epochs
+        
+        print(f"\n\nTrial config: {trial_config}\n\n")
         
         result = run_2d_pipeline(
             pipeline_directory=pipeline_dir,
@@ -140,12 +142,10 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
         
-        # Get the metric specified in config or default to 0.0
         score = final_metrics.get(config.metric, 0.0)
         if score is None:
             score = 0.0
             
-        # Convert score to percentage if needed
         if isinstance(score, (int, float)) and score <= 1.0:
             score = score * 100
             
@@ -154,18 +154,18 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
             "status": "SUCCESS",
             "score": score,
             "cost": time.time() - start_time,
-            "fidelity": trial_config["number_of_epochs"],
+            "fidelity": number_of_epochs,
             "config": trial_config
         }
     except Exception as e:
         print(f"Error in pipeline: {e}")
-        traceback.print_exc()  # Now traceback is imported
+        traceback.print_exc()
         return {
             "config-id": trial["config-id"],
             "status": "FAILED",
             "score": float("-inf"),
             "cost": float("inf"),
-            "fidelity": trial["fidelity"],
+            "fidelity": number_of_epochs if 'number_of_epochs' in locals() else 4,
             "config": trial["config"]
         }
 
@@ -225,7 +225,8 @@ def main(config: DictConfig) -> None:
             logging.error(f"Failed to write configuration file {filename}: {e}")
 
     # if config.searcher == "quicktune_medical":
-    if True:
+    if config.use_medical_portfolio:
+        print("\n\nUse medical Portfolio\n\n")
         # Load portfolio data
         portfolio = PortfolioManager.load(config.portfolio_dir)
     
@@ -242,6 +243,7 @@ def main(config: DictConfig) -> None:
         optimizer.reset_path(abs_experiment_path)  # Explicitly reset path to ensure it propagates to predictors
     else:
         # Initialize the optimizer with pretrained model
+        print("\n\nUse default Metaalbum\n\n")
         optimizer = get_pretrained_optimizer("mtlbm/full")
         optimizer.reset_path(abs_experiment_path)  # Explicitly reset path for pretrained optimizer
 
