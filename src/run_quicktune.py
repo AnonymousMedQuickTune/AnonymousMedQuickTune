@@ -235,7 +235,7 @@ def main(config: DictConfig) -> None:
 
         optimizer = QuickOptimizer(
             cs=configspace,
-            max_fidelity=50,  # Using the max_budget value as max_fidelity
+            max_fidelity=50,
             cost_aware=True,
             path=abs_experiment_path  # Set the path during initialization
         )
