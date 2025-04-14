@@ -260,7 +260,7 @@ def test_run_pipeline(
     # Analyze validation-test generalization
     # analyze_validation_test_generalization(neps_output_dir, avg_metrics, k_folds)
 
-    return avg_metrics
+    return avg_metrics, num_classes
 
 @hydra.main(
     version_base=None, 
@@ -288,7 +288,7 @@ def main(config: DictConfig) -> None:
     test_dir.mkdir(parents=True, exist_ok=True)
 
     # Run evaluation on the test set with configuration that achieved the best performance on the validation set
-    avg_metrics = test_run_pipeline(
+    avg_metrics, num_classes = test_run_pipeline(
         _pipeline_directory=str(test_dir),
         _previous_pipeline_directory=None,
         config=config,
@@ -315,6 +315,7 @@ def main(config: DictConfig) -> None:
     plot_confusion_matrix(
         conf_matrix=avg_metrics['confusion_matrix'],
         metrics=avg_metrics,
+        class_names=[f"Class {i}" for i in range(num_classes)],  # Add class names dynamically
         save_path=test_dir / "confusion_matrix.pdf"
     )
 
