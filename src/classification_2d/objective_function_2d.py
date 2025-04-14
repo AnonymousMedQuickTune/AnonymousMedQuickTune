@@ -12,7 +12,7 @@ import yaml
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-from src.classification_2d.models_2d import get_model
+from src.classification_2d.models_2d import get_2d_model
 from src.classification_2d.preprocess_data_2d import \
     get_brain_tumor_kfold_loaders, load_brain_tumor_dataset
 from src.utils.common_utils import set_seed
@@ -73,7 +73,7 @@ def run_2d_pipeline(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Initialize model and move it to the appropriate device
-    model = get_model(
+    model = get_2d_model(
         {
             "type": config.model.type,
             "task": config.model.task,

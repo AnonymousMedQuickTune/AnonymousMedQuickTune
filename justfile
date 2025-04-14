@@ -151,13 +151,12 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
 
 # Evaluate NePS optimization results
-eval-neps-local DATASET EXPERIMENT_NAME SEED FOLDS:
+eval-neps-local DATASET EXPERIMENT_NAME SEED:
   python -m src.evaluate_neps \
-    --experiment_dir experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}} \
-    --hydra_config configs/main_experiment_config.yaml \
-    --dataset {{DATASET}} \
-    --data_dir datasets \
-    --k_folds {{FOLDS}}
+    experiment_name={{EXPERIMENT_NAME}} \
+    data.dataset={{DATASET}} \
+    seed={{SEED}} \
+    data.path=datasets
 
 # Submit a NePS evaluation to the cluster
 eval-neps-cluster DATASET EXPERIMENT_NAME SEED FOLDS:

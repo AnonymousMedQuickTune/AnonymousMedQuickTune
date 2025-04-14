@@ -2,7 +2,7 @@ from torch import nn
 from torchvision import models
 
 
-def get_model(
+def get_3d_model(
     model_config,
 ):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
     """

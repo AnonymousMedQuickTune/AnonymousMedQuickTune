@@ -3,8 +3,7 @@ import os
 import numpy as np
 import torch
 
-from src.classification_2d.models_2d import \
-    get_model  # TODO: change to 3d models
+from src.classification_3d.models_3d import get_3d_model  # TODO: change to 3d models
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -59,7 +58,7 @@ def run_3d_pipeline(
     train_time = 20
     eval_time = 10
     epoch_time = 30
-    model = get_model(
+    model = get_3d_model(
         {
             "type": config.model.type,
             "task": config.model.task,
