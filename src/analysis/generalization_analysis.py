@@ -3,8 +3,8 @@ Module for analyzing generalization performance of machine learning models.
 """
 
 import argparse
-from pathlib import Path
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,51 +17,56 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
     # Read the summary CSV
     summary_path = os.path.join(neps_output_dir, "summary", "full.csv")
     df = pd.read_csv(summary_path)
-    
-    print("\nAnalyzing training-validation generalization across all configurations and folds:")
-    
+
+    print(
+        "\nAnalyzing training-validation generalization across all configurations and folds:"
+    )
+
     # Create output file
     output_file = Path(neps_output_dir).parent / "validation_train_generalization.txt"
-    
+
     def log_print(message, file):
         print(message)
         file.write(message + "\n")
-    
+
     with open(output_file, "w") as f:
         log_print(f"Analyzed {len(df)} configurations:", f)
         log_print("\n=== Final Metrics ===", f)
-        
+
         # For each configuration
         for _, row in df.iterrows():
-            config_id = row['id']
+            config_id = row["id"]
             config_dir = Path(neps_output_dir) / "configs" / f"config_{config_id}"
-            
+
             # Skip if config directory doesn't exist
             if not config_dir.exists():
                 continue
-                
+
             log_print(f"\nConfiguration {config_id}:", f)
             # Log all configuration parameters dynamically
             for column in df.columns:
-                if column.startswith('config.'):
-                    param_name = column.replace('config.', '').replace('_', ' ').title()
+                if column.startswith("config."):
+                    param_name = column.replace("config.", "").replace("_", " ").title()
                     log_print(f"{param_name}: {row[column]}", f)
             log_print(f"Performance: {-row['objective_to_minimize']:.2f}%", f)
-            
+
             # Get metrics for each fold if available
             for fold in range(k_folds):
                 fold_dir = config_dir / f"fold_{fold}"
                 metrics_file = fold_dir / "metrics.csv"
-                
+
                 if metrics_file.exists():
                     fold_metrics = pd.read_csv(metrics_file)
                     if not fold_metrics.empty:
                         final_metrics = fold_metrics.iloc[-1]
                         log_print(f"\nFold {fold} Final Metrics:", f)
-                        for metric in ['accuracy', 'loss', 'f1', 'precision', 'recall']:
+                        for metric in ["accuracy", "loss", "f1", "precision", "recall"]:
                             if metric in final_metrics:
-                                log_print(f"{metric.capitalize()}: {final_metrics[metric]:.2f}", f)
-    
+                                log_print(
+                                    f"{metric.capitalize()}: {final_metrics[metric]:.2f}",
+                                    f,
+                                )
+
     print(f"\nGeneralization analysis saved to: {output_file}")
 
 
@@ -72,21 +77,21 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_fold
     # Read the summary CSV to get the best configuration
     summary_path = os.path.join(neps_output_dir, "summary", "full.csv")
     df = pd.read_csv(summary_path)
-    
+
     # Get the best configuration (minimum objective_to_minimize)
-    best_row = df.loc[df['objective_to_minimize'].idxmin()]
-    best_config_id = best_row['id']
-    
+    best_row = df.loc[df["objective_to_minimize"].idxmin()]
+    best_config_id = best_row["id"]
+
     analysis_file = Path(neps_output_dir).parent / "validation_test_generalization.txt"
-    
+
     def log_print(message, file):
         print(message)
         file.write(message + "\n")
-    
+
     with open(analysis_file, "w") as f:
         log_print("\n=== Validation to Test Set Generalization Analysis ===", f)
         log_print(f"\nBest Configuration (ID: {best_config_id})", f)
-        
+
         # Get validation metrics from the best configuration's results
         config_dir = Path(neps_output_dir) / "configs" / f"config_{best_config_id}"
         val_metrics = {
@@ -94,9 +99,9 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_fold
             "loss": [],
             "f1": [],
             "precision": [],
-            "recall": []
+            "recall": [],
         }
-        
+
         # Collect validation metrics from each fold
         for fold in range(k_folds):
             metrics_file = config_dir / f"fold_{fold}" / "metrics.csv"
@@ -107,24 +112,24 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_fold
                     for metric in val_metrics:
                         if metric in final_metrics:
                             val_metrics[metric].append(final_metrics[metric])
-        
+
         # Calculate average validation metrics
         avg_val_metrics = {
             metric: np.mean(values) if values else 0.0
             for metric, values in val_metrics.items()
         }
-        
+
         # Compare with test metrics
         for metric in ["accuracy", "loss", "f1", "precision", "recall"]:
             val_value = avg_val_metrics[metric]
             test_value = test_metrics.get(metric, 0.0)
             gap = val_value - test_value
-            
+
             log_print(f"\n{metric.capitalize()}:", f)
             log_print(f"Validation: {val_value:.2f}", f)
             log_print(f"Test: {test_value:.2f}", f)
             log_print(f"Gap (Val-Test): {gap:.2f}", f)
-    
+
     print(f"\nValidation-Test generalization analysis saved to: {analysis_file}")
 
 
@@ -171,14 +176,23 @@ def compare_validation_test_generalization(dataset, exp1, seed1, exp2, seed2):
                         metrics["precision_gap"] = value
                     elif current_metric == "Recall":
                         metrics["recall_gap"] = value
-                elif any(metric in line for metric in ["Accuracy:", "Loss:", "F1:", "Precision:", "Recall:"]):
+                elif any(
+                    metric in line
+                    for metric in ["Accuracy:", "Loss:", "F1:", "Precision:", "Recall:"]
+                ):
                     current_metric = line.split(":")[0].strip()
-        
+
         # Ensure all metrics exist with default value of 0.0
-        for metric in ["accuracy_gap", "loss_gap", "f1_gap", "precision_gap", "recall_gap"]:
+        for metric in [
+            "accuracy_gap",
+            "loss_gap",
+            "f1_gap",
+            "precision_gap",
+            "recall_gap",
+        ]:
             if metric not in metrics:
                 metrics[metric] = 0.0
-            
+
         return metrics
 
     exp1_metrics = extract_metrics(exp1_file)
@@ -282,16 +296,21 @@ def compare_validation_train_generalization(dataset, exp1, seed1, exp2, seed2):
             lines = f.readlines()
             current_metric = None
             for line in lines:
-                if any(metric in line for metric in ["Accuracy:", "Loss:", "F1:", "Precision:", "Recall:"]):
+                if any(
+                    metric in line
+                    for metric in ["Accuracy:", "Loss:", "F1:", "Precision:", "Recall:"]
+                ):
                     current_metric = line.split(":")[0].strip()
                 elif "Gap (Train-Val):" in line or "Gap (Val-Train):" in line:
                     try:
                         # Handle both ± format and simple format
                         if "±" in line:
-                            value = float(line.split("±")[0].split(":")[1].strip().rstrip("%"))
+                            value = float(
+                                line.split("±")[0].split(":")[1].strip().rstrip("%")
+                            )
                         else:
                             value = float(line.split(":")[1].strip().rstrip("%"))
-                        
+
                         if current_metric == "Accuracy":
                             metrics["accuracy_gap"] = value
                         elif current_metric == "Loss":
@@ -304,12 +323,18 @@ def compare_validation_train_generalization(dataset, exp1, seed1, exp2, seed2):
                             metrics["recall_gap"] = value
                     except (ValueError, IndexError):
                         continue
-        
+
         # Ensure all metrics exist with default value of 0.0
-        for metric in ["accuracy_gap", "loss_gap", "f1_gap", "precision_gap", "recall_gap"]:
+        for metric in [
+            "accuracy_gap",
+            "loss_gap",
+            "f1_gap",
+            "precision_gap",
+            "recall_gap",
+        ]:
             if metric not in metrics:
                 metrics[metric] = 0.0
-            
+
         return metrics
 
     exp1_metrics = extract_metrics(exp1_file)

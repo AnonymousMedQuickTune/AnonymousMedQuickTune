@@ -3,7 +3,8 @@ import os
 import numpy as np
 import torch
 
-from src.classification_3d.models_3d import get_3d_model  # TODO: change to 3d models
+from src.classification_3d.models_3d import \
+    get_3d_model  # TODO: change to 3d models
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -134,5 +135,5 @@ def run_3d_pipeline(
                 metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
-        }
+        },
     }

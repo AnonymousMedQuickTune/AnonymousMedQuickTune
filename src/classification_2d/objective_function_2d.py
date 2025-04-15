@@ -1,20 +1,21 @@
 import os
 import time
+import traceback
 import warnings
 from pathlib import Path
-from typing import Dict, Any, Optional
-from omegaconf import DictConfig
+from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
+from omegaconf import DictConfig
 from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
 from src.classification_2d.models_2d import get_2d_model
-from src.classification_2d.preprocess_data_2d import \
-    get_brain_tumor_kfold_loaders, load_brain_tumor_dataset
+from src.classification_2d.preprocess_data_2d import (
+    get_brain_tumor_kfold_loaders, load_brain_tumor_dataset)
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -26,7 +27,6 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
                                              get_optimizer,
                                              get_warmup_scheduler, set_dropout,
                                              train_epoch)
-import traceback
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", message="torch.meshgrid: in an upcoming release")
@@ -389,5 +389,5 @@ def run_2d_pipeline(
                 metric: np.mean(values)
                 for metric, values in all_folds_final_metrics.items()
             },
-        }
+        },
     }

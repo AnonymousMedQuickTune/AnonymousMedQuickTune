@@ -1,50 +1,33 @@
 import argparse
-import os
-from pathlib import Path
-import json
-
-import pandas as pd
-from omegaconf import OmegaConf
-
-# from src.test_best_config import test_run_pipeline
-from src.analysis.generalization_analysis import (
-    analyze_training_validation_metrics,
-    analyze_validation_test_generalization
-)
-import traceback
-
-
-import argparse
 import ast
+import json
 import os
 import pickle
+import traceback
 from contextlib import redirect_stdout
 from pathlib import Path
 
+import hydra
 import numpy as np
 import pandas as pd
 import torch
-from omegaconf import OmegaConf
+from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader
 
+from src.analysis.confusion_matrix import plot_confusion_matrix
+# from src.test_best_config import test_run_pipeline
 from src.analysis.generalization_analysis import (
     analyze_training_validation_metrics,
     analyze_validation_test_generalization)
 from src.classification_2d.models_2d import get_2d_model
-from src.classification_3d.models_3d import get_3d_model
 from src.classification_2d.preprocess_data_2d import (BrainTumorDataset,
                                                       get_max_batch_size,
                                                       load_brain_tumor_dataset)
+from src.classification_3d.models_3d import get_3d_model
+from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
-
-import hydra
-from omegaconf import DictConfig
-
-from src.classification_3d.preprocess_data_3d import load_3d_dataset
-
-from src.analysis.confusion_matrix import plot_confusion_matrix
 
 
 def parse_neps_results(neps_output_dir: str):
@@ -60,35 +43,36 @@ def parse_neps_results(neps_output_dir: str):
     # Read the summary CSV
     summary_path = os.path.join(neps_output_dir, "summary", "full.csv")
     df = pd.read_csv(summary_path)
-    
+
     # Find the best configuration (minimum objective_to_minimize)
-    best_row = df.loc[df['objective_to_minimize'].idxmin()]
-    
+    best_row = df.loc[df["objective_to_minimize"].idxmin()]
+
     # Extract config parameters dynamically
     config_params = {}
     for column in df.columns:
-        if column.startswith('config.'):
-            param_name = column.replace('config.', '')
+        if column.startswith("config."):
+            param_name = column.replace("config.", "")
             value = best_row[column]
             # Convert to int if the parameter name suggests it should be an integer
-            if any(int_param in param_name for int_param in ['epochs', 'batch_size']):
+            if any(int_param in param_name for int_param in ["epochs", "batch_size"]):
                 value = int(value)
             config_params[param_name] = value
-    
+
     # Get config ID from the 'id' column
-    config_id = best_row['id']
-    
+    config_id = best_row["id"]
+
     print("\nBest configuration found:")
     print(f"Config ID: {config_id}")
     print("Parameters:", config_params)
     print(f"Performance: {-best_row['objective_to_minimize']:.2f}%\n")
-    
+
     return config_params, config_id
+
 
 def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
     """
     Print detailed evaluation results including metrics and confusion matrix.
-    
+
     Args:
         fold_metrics (dict): Dictionary containing evaluation metrics and confusion matrix
         num_classes (int): Number of classes in the dataset
@@ -102,7 +86,9 @@ def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
             else:
                 # For the average metrics, we don't need to multiply by 100
                 if metric_name == "accuracy":  # TODO: fix hardcoding for accuracy
-                    print(f"{metric_name.capitalize()}: {np.mean(metric_value)*100:.2f}%")
+                    print(
+                        f"{metric_name.capitalize()}: {np.mean(metric_value)*100:.2f}%"
+                    )
                 else:
                     print(f"{metric_name.capitalize()}: {np.mean(metric_value):.2f}%")
         if metric_name == "loss":
@@ -112,25 +98,25 @@ def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
     conf_matrix = np.array(fold_metrics["confusion_matrix"])
     total_samples = np.sum(conf_matrix)
     print(f"\nConfusion Matrix (Total samples: {total_samples:.1f}):")
-    
+
     # Header
     header = "Predicted →"
     for i in range(num_classes):
         header += f"    Class {i:2d}"
     print(header)
     print("Actual ↓")
-    
+
     # Matrix rows with class totals
     for i in range(num_classes):
         row = f"Class {i:2d}   "
         for j in range(num_classes):
             row += f" {conf_matrix[i,j]:8.1f}"
-        class_total = conf_matrix[i,:].sum()
+        class_total = conf_matrix[i, :].sum()
         row += f"    | {class_total:5.1f} total"
         print(row)
-        
+
     print("          " + "-" * (10 * num_classes))
-    
+
     # Column totals
     total_row = "Total      "
     for j in range(num_classes):
@@ -142,11 +128,16 @@ def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
     for i in range(num_classes):
         for j in range(num_classes):
             if i == j:
-                print(f"True Class {i} (T{i})     : {conf_matrix[i,i]:.1f} "
-                      f"(Correctly predicted Class {i})")
+                print(
+                    f"True Class {i} (T{i})     : {conf_matrix[i,i]:.1f} "
+                    f"(Correctly predicted Class {i})"
+                )
             else:
-                print(f"Class {i} as Class {j}    : {conf_matrix[i,j]:.1f} "
-                      f"(Class {i} wrongly predicted as Class {j})")
+                print(
+                    f"Class {i} as Class {j}    : {conf_matrix[i,j]:.1f} "
+                    f"(Class {i} wrongly predicted as Class {j})"
+                )
+
 
 def test_run_pipeline(
     _pipeline_directory,
@@ -191,7 +182,9 @@ def test_run_pipeline(
     pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
 
     # Create a single test loader for the complete test set
-    test_dataset = BrainTumorDataset(dataset_dict["test_data"], dataset_dict["test_labels"])
+    test_dataset = BrainTumorDataset(
+        dataset_dict["test_data"], dataset_dict["test_labels"]
+    )
     test_loader = DataLoader(
         test_dataset,
         batch_size=get_max_batch_size(pipeline_space),
@@ -265,7 +258,9 @@ def test_run_pipeline(
     avg_metrics = {}
     for metric_name in all_fold_metrics[0].keys():
         if metric_name == "confusion_matrix":
-            avg_metrics[metric_name] = np.mean([m[metric_name] for m in all_fold_metrics], axis=0)
+            avg_metrics[metric_name] = np.mean(
+                [m[metric_name] for m in all_fold_metrics], axis=0
+            )
         else:
             # Handle both scalar and array metrics
             values = [m[metric_name] for m in all_fold_metrics]
@@ -280,15 +275,16 @@ def test_run_pipeline(
 
     return avg_metrics, num_classes
 
+
 @hydra.main(
-    version_base=None, 
-    config_path="../configs", 
-    config_name="main_experiment_config.yaml"
+    version_base=None,
+    config_path="../configs",
+    config_name="main_experiment_config.yaml",
 )
 def main(config: DictConfig) -> None:
     """
     Main entry point for evaluating NePS optimization results.
-    
+
     Args:
         config (DictConfig): Hydra configuration object
     """
@@ -297,7 +293,7 @@ def main(config: DictConfig) -> None:
 
     # Get NePS output directory from config
     neps_output_dir = os.path.join(config.experiment_base_dir, "NePS_output")
-    
+
     # Create directory for evaluation results on the test set
     test_dir = Path(config.experiment_base_dir) / "evaluation_results"
     test_dir.mkdir(parents=True, exist_ok=True)
@@ -322,22 +318,24 @@ def main(config: DictConfig) -> None:
     # Convert NumPy arrays to lists for JSON serialization
     json_compatible_metrics = {}
     for key, value in avg_metrics.items():
-        if key == 'confusion_matrix':
+        if key == "confusion_matrix":
             json_compatible_metrics[key] = value.tolist()
         else:
             json_compatible_metrics[key] = float(value)
-            
+
     # Save the evaluation results to a JSON file
     results_path = test_dir / "evaluation_results.json"
     with open(results_path, "w") as f:
         json.dump(json_compatible_metrics, f, indent=4)
-    
+
     # Plot and save confusion matrix
     plot_confusion_matrix(
-        conf_matrix=avg_metrics['confusion_matrix'],
+        conf_matrix=avg_metrics["confusion_matrix"],
         metrics=avg_metrics,
-        class_names=[f"Class {i}" for i in range(num_classes)],  # Add class names dynamically
-        save_path=test_dir / "confusion_matrix.pdf"
+        class_names=[
+            f"Class {i}" for i in range(num_classes)
+        ],  # Add class names dynamically
+        save_path=test_dir / "confusion_matrix.pdf",
     )
 
     # Analyze generalization across all configurations

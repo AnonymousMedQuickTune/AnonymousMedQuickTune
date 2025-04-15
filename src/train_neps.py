@@ -13,7 +13,8 @@ from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
                                                       load_brain_tumor_dataset)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
-from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space, neps_space_to_dict
+from src.utils.common_utils import (neps_space_to_dict, set_seed,
+                                    yaml_to_neps_pipeline_space)
 
 
 def run_pipeline(
@@ -107,7 +108,10 @@ def main(config: DictConfig) -> None:
     pipeline_space_dict = neps_space_to_dict(pipeline_space)
     config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
-        ("pipeline_space.yaml", yaml.dump(pipeline_space_dict, default_flow_style=False)),
+        (
+            "pipeline_space.yaml",
+            yaml.dump(pipeline_space_dict, default_flow_style=False),
+        ),
         (
             "pipeline_space_compact.yaml",
             yaml.dump(original_pipeline_space, default_flow_style=False),
