@@ -306,7 +306,7 @@ def evaluate_model(model, data_loader, criterion, device):
     all_targets = np.array(all_targets)
 
     # Calculate basic metrics
-    accuracy = 100.0 * np.mean(all_predictions == all_targets)
+    accuracy = np.mean(all_predictions == all_targets)
     avg_loss = total_loss / len(data_loader)
 
     # Calculate additional metrics

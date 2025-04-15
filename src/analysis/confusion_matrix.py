@@ -8,7 +8,7 @@ def plot_confusion_matrix(conf_matrix, metrics, class_names, save_path):
     
     Args:
         conf_matrix (np.ndarray): The confusion matrix to plot
-        metrics (dict): Dictionary containing accuracy, precision, recall, and f1 metrics
+        metrics (dict): Dictionary containing various metrics (e.g., accuracy, precision, etc.)
         class_names (list): List of class names for labels
         save_path (Path): Path where to save the confusion matrix plot
     """
@@ -30,21 +30,20 @@ def plot_confusion_matrix(conf_matrix, metrics, class_names, save_path):
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
     
-    # Format metrics text
-    metrics_text = f'Accuracy: {metrics["accuracy"]:.2f}%\n'
+    # Format metrics text dynamically
+    metrics_text = ""
     
-    # Add per-class metrics if available
-    if isinstance(metrics["precision"], (list, np.ndarray)):
-        for i, class_name in enumerate(class_names):
-            metrics_text += f'\n{class_name}:\n'
-            metrics_text += f'Precision: {metrics["precision"][i]*100:.2f}%\n'
-            metrics_text += f'Recall: {metrics["recall"][i]*100:.2f}%\n'
-            metrics_text += f'F1-Score: {metrics["f1"][i]*100:.2f}%\n'
-    else:
-        # Add average metrics if per-class metrics are not available
-        metrics_text += f'Precision: {metrics["precision"]:.2f}%\n'
-        metrics_text += f'Recall: {metrics["recall"]:.2f}%\n'
-        metrics_text += f'F1-Score: {metrics["f1"]:.2f}%'
+    # Process all metrics except confusion matrix
+    for metric_name, metric_value in metrics.items():
+        if metric_name != "confusion_matrix":
+            if isinstance(metric_value, (list, np.ndarray)):
+                # Handle per-class metrics
+                metrics_text += f'\n{metric_name.capitalize()}:\n'
+                for i, class_name in enumerate(class_names):
+                    metrics_text += f'{class_name}: {metric_value[i]*100:.2f}%\n'
+            else:
+                # Handle global metrics
+                metrics_text += f'{metric_name.capitalize()}: {metric_value:.2f}%\n'
     
     # Adjust text position based on figure size
     plt.figtext(0.02, -0.15 - (num_classes * 0.02), 

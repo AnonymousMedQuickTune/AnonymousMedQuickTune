@@ -85,6 +85,69 @@ def parse_neps_results(neps_output_dir: str):
     
     return config_params, config_id
 
+def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
+    """
+    Print detailed evaluation results including metrics and confusion matrix.
+    
+    Args:
+        fold_metrics (dict): Dictionary containing evaluation metrics and confusion matrix
+        num_classes (int): Number of classes in the dataset
+        fold_number (int, optional): Current fold number for fold-specific output
+    """
+    # Print metrics
+    for metric_name, metric_value in fold_metrics.items():
+        if metric_name != "confusion_matrix" and metric_name != "loss":
+            if fold_number is not None:
+                print(f"{metric_name.capitalize()}: {np.mean(metric_value)*100:.2f}%")
+            else:
+                # For the average metrics, we don't need to multiply by 100
+                if metric_name == "accuracy":  # TODO: fix hardcoding for accuracy
+                    print(f"{metric_name.capitalize()}: {np.mean(metric_value)*100:.2f}%")
+                else:
+                    print(f"{metric_name.capitalize()}: {np.mean(metric_value):.2f}%")
+        if metric_name == "loss":
+            print(f"{metric_name.capitalize()}: {metric_value:.2f}")
+
+    # Print confusion matrix
+    conf_matrix = np.array(fold_metrics["confusion_matrix"])
+    total_samples = np.sum(conf_matrix)
+    print(f"\nConfusion Matrix (Total samples: {total_samples:.1f}):")
+    
+    # Header
+    header = "Predicted →"
+    for i in range(num_classes):
+        header += f"    Class {i:2d}"
+    print(header)
+    print("Actual ↓")
+    
+    # Matrix rows with class totals
+    for i in range(num_classes):
+        row = f"Class {i:2d}   "
+        for j in range(num_classes):
+            row += f" {conf_matrix[i,j]:8.1f}"
+        class_total = conf_matrix[i,:].sum()
+        row += f"    | {class_total:5.1f} total"
+        print(row)
+        
+    print("          " + "-" * (10 * num_classes))
+    
+    # Column totals
+    total_row = "Total      "
+    for j in range(num_classes):
+        total_row += f" {conf_matrix[:,j].sum():8.1f}"
+    print(total_row)
+
+    # Detailed interpretation
+    print("\nDetailed Interpretation:")
+    for i in range(num_classes):
+        for j in range(num_classes):
+            if i == j:
+                print(f"True Class {i} (T{i})     : {conf_matrix[i,i]:.1f} "
+                      f"(Correctly predicted Class {i})")
+            else:
+                print(f"Class {i} as Class {j}    : {conf_matrix[i,j]:.1f} "
+                      f"(Class {i} wrongly predicted as Class {j})")
+
 def test_run_pipeline(
     _pipeline_directory,
     _previous_pipeline_directory,
@@ -140,7 +203,7 @@ def test_run_pipeline(
 
     # Initialize storage for metrics across folds
     all_fold_metrics = []
-    all_fold_f1_scores = []
+    all_fold_objective_metric = []
 
     # Evaluate each fold's model on the complete test set
     for fold in range(k_folds):
@@ -192,73 +255,28 @@ def test_run_pipeline(
         # Test evaluation for this fold's model on complete test set
         fold_metrics = evaluate_model(model, test_loader, criterion, device)
         all_fold_metrics.append(fold_metrics)
-        all_fold_f1_scores.append(np.mean(fold_metrics["f1"]))
+        objective_metric = config.metric.lower()
+        all_fold_objective_metric.append(np.mean(fold_metrics[objective_metric]))
 
-        # Print fold results
-        print(f"\nFold {fold + 1} Results:")
-        print(f"Loss: {fold_metrics['loss']:.4f}")
-        print(f"Accuracy: {fold_metrics['accuracy']:.2f}%")
-        print(f"Precision: {np.mean(fold_metrics['precision'])*100:.2f}%")
-        print(f"Recall: {np.mean(fold_metrics['recall'])*100:.2f}%")
-        print(f"F1-Score: {np.mean(fold_metrics['f1'])*100:.2f}%")
+        # Print fold results using the new function
+        print_evaluation_results(fold_metrics, num_classes, fold)
 
-        # Detailed output of the confusion matrix
-        conf_matrix = np.array(fold_metrics["confusion_matrix"])
-        total_samples = np.sum(conf_matrix)
-        print(f"\nConfusion Matrix (Total samples: {total_samples}):")
-        print("Predicted →      Class 0    Class 1")
-        print("Actual ↓")
-        class0_total = conf_matrix[0, 0] + conf_matrix[0, 1]
-        class1_total = conf_matrix[1, 0] + conf_matrix[1, 1]
-        print(
-            f"Class 0      {conf_matrix[0,0]:>10d} {conf_matrix[0,1]:>10d}    | "
-            f"{class0_total:>3d} total"
-        )
-        print(
-            f"Class 1      {conf_matrix[1,0]:>10d} {conf_matrix[1,1]:>10d}    | "
-            f"{class1_total:>3d} total"
-        )
-        print("            ----------------------")
-        print(
-            f"Total        {conf_matrix[:,0].sum():>10d} {conf_matrix[:,1].sum():>10d}"
-        )
+    # Calculate average metrics across folds dynamically
+    avg_metrics = {}
+    for metric_name in all_fold_metrics[0].keys():
+        if metric_name == "confusion_matrix":
+            avg_metrics[metric_name] = np.mean([m[metric_name] for m in all_fold_metrics], axis=0)
+        else:
+            # Handle both scalar and array metrics
+            values = [m[metric_name] for m in all_fold_metrics]
+            if isinstance(values[0], (list, np.ndarray)):
+                avg_metrics[metric_name] = np.mean([np.mean(v) for v in values]) * 100
+            else:
+                avg_metrics[metric_name] = np.mean(values)
 
-        print("\nDetailed Interpretation:")
-        print(
-            f"True Negatives (TN)  : {conf_matrix[0,0]} (Correctly predicted Class 0)"
-        )
-        print(
-            f"False Positives (FP) : {conf_matrix[0,1]} (Class 0 wrongly predicted as Class 1)"
-        )
-        print(
-            f"False Negatives (FN) : {conf_matrix[1,0]} (Class 1 wrongly predicted as Class 0)"
-        )
-        print(
-            f"True Positives (TP)  : {conf_matrix[1,1]} (Correctly predicted Class 1)"
-        )
-
-    # Calculate average metrics across folds
-    avg_metrics = {
-        "loss": np.mean([m["loss"] for m in all_fold_metrics]),
-        "accuracy": np.mean([m["accuracy"] for m in all_fold_metrics]),
-        "precision": np.mean([np.mean(m["precision"]) for m in all_fold_metrics]) * 100,
-        "recall": np.mean([np.mean(m["recall"]) for m in all_fold_metrics]) * 100,
-        "f1": np.mean(all_fold_f1_scores) * 100,
-        "confusion_matrix": np.mean(
-            [m["confusion_matrix"] for m in all_fold_metrics], axis=0
-        ),
-    }
-
-    # Print average results
+    # Print average results using the same function
     print("\n=== Average Results Across All Folds ===")
-    print(f"Loss: {avg_metrics['loss']:.4f}")
-    print(f"Accuracy: {avg_metrics['accuracy']:.2f}%")
-    print(f"Precision: {avg_metrics['precision']:.2f}%")
-    print(f"Recall: {avg_metrics['recall']:.2f}%")
-    print(f"F1-Score: {avg_metrics['f1']:.2f}%")
-
-    # Analyze validation-test generalization
-    # analyze_validation_test_generalization(neps_output_dir, avg_metrics, k_folds)
+    print_evaluation_results(avg_metrics, num_classes)
 
     return avg_metrics, num_classes
 
@@ -280,23 +298,26 @@ def main(config: DictConfig) -> None:
     # Get NePS output directory from config
     neps_output_dir = os.path.join(config.experiment_base_dir, "NePS_output")
     
-    # Get the best hyperparameters and config ID
-    best_hyperparameters, config_id = parse_neps_results(neps_output_dir)
-
     # Create directory for evaluation results on the test set
     test_dir = Path(config.experiment_base_dir) / "evaluation_results"
     test_dir.mkdir(parents=True, exist_ok=True)
 
-    # Run evaluation on the test set with configuration that achieved the best performance on the validation set
-    avg_metrics, num_classes = test_run_pipeline(
-        _pipeline_directory=str(test_dir),
-        _previous_pipeline_directory=None,
-        config=config,
-        neps_output_dir=neps_output_dir,
-        config_id=config_id,
-        k_folds=config.data.k_folds,
-        **best_hyperparameters,
-    )
+    # Open text file for console output
+    with open(test_dir / "evaluation_output.txt", "w") as f:
+        with redirect_stdout(f):
+            # Get the best hyperparameters and config ID
+            best_hyperparameters, config_id = parse_neps_results(neps_output_dir)
+
+            # Run evaluation on the test set
+            avg_metrics, num_classes = test_run_pipeline(
+                _pipeline_directory=str(test_dir),
+                _previous_pipeline_directory=None,
+                config=config,
+                neps_output_dir=neps_output_dir,
+                config_id=config_id,
+                k_folds=config.data.k_folds,
+                **best_hyperparameters,
+            )
 
     # Convert NumPy arrays to lists for JSON serialization
     json_compatible_metrics = {}
