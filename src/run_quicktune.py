@@ -16,6 +16,7 @@ from omegaconf import DictConfig, OmegaConf
 from qtt import QuickOptimizer, QuickTuner, QuickImageCLSTuner, get_pretrained_optimizer
 
 from src.classification_2d.objective_function_2d import run_2d_pipeline
+from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset, get_max_batch_size
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.quicktune_utils import custom_extract_image_dataset_metafeat
@@ -135,16 +136,31 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
         hyperparameters = trial["config"]
         print("\n\n Hyperparameters: ", hyperparameters, "\n\n")
 
-        # TODO: Add option for run_3d_pipeline()
-        result = run_2d_pipeline(
-            pipeline_directory=pipeline_dir,
-            previous_pipeline_directory=prev_pipeline_dir,
-            config=config,
-            dataset_dict=dataset_dict,
-            num_classes=num_classes,
-            **hyperparameters,
-        )
+        dimensionality = config.data.dimensionality.lower()
 
+        if dimensionality == "2d":
+            result = run_2d_pipeline(
+                pipeline_directory=pipeline_dir,
+                previous_pipeline_directory=prev_pipeline_dir,
+                config=config,
+                dataset_dict=dataset_dict,
+                num_classes=num_classes,
+                **hyperparameters,
+            )
+        elif dimensionality == "3d":
+            # TODO: add model selection (see update in run_2d_pipeline)
+            result = run_3d_pipeline(  
+                pipeline_directory=pipeline_dir,
+                previous_pipeline_directory=prev_pipeline_dir,
+                config=config,
+                dataset_dict=dataset_dict,
+                num_classes=num_classes,
+                **hyperparameters,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
+            )
         # Extract metrics safely
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
