@@ -377,7 +377,6 @@ def main(config: DictConfig) -> None:
         if config.qt.use_custom_objective:
             print("\nUse custom objective\n")
             # Replace the default objective function with our custom one
-            # TODO: Model needs to be in the sampled_config?
             # TODO: check seeding - sampling should be deterministic
             # TODO: config needs to change for each trial > optimizer.ask()
             tuner.f = lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, config)
