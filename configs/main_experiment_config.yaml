@@ -4,7 +4,7 @@
 hydra:
   output_subdir: null
   run:
-    dir: ${experiment_base_dir}/hydra_output
+    dir: ${experiment_base_dir}/hydra_output  # TODO: Adapt for QuickTune
 
 seed: 42
 experiment_base_dir: experiments/${data.dataset}/${experiment_name}/seed_${seed}
@@ -14,8 +14,13 @@ experiment_name: test_desmoid
 #------------------------------------------------------------------------------
 # QuickTune Settings
 #------------------------------------------------------------------------------
-portfolio_dir: experiments/portfolio
-use_medical_portfolio: true
+qt:
+  experiment_base_dir: experiments/quicktune/${data.dataset}/${experiment_name}/seed_${seed}
+  portfolio_dir: experiments/portfolio
+  use_medical_portfolio: true
+  use_custom_metafeat_extraction: true  # TODO: delete this, but keep it for now as a reference
+  use_quick_image_cls_tuner: true
+  use_custom_objective: true
 
 #------------------------------------------------------------------------------
 # NePS Optimization Settings

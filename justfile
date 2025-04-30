@@ -146,9 +146,9 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
-    portfolio_dir={{PORTFOLIO_DIR}} \
+    qt.portfolio_dir={{PORTFOLIO_DIR}} \
     data.path=datasets \
-    use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
 
 # Evaluate NePS optimization results
 eval-neps-local DATASET EXPERIMENT_NAME SEED:
