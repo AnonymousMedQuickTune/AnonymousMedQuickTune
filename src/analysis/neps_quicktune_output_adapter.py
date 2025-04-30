@@ -320,8 +320,8 @@ def merge_neps_runs(
 
     Args:
         base_dir: Base directory containing all experiments (e.g., experiments/brain_tumor)
-        experiment_names: List of experiment names to merge
-        seeds: List of seeds to merge
+        experiment_names: List of experiment names to merge (can contain duplicates for multiple seeds)
+        seeds: List of seeds to merge (must match length of experiment_names)
         output_dir: Directory to save the merged portfolio
 
     Raises:
@@ -336,32 +336,36 @@ def merge_neps_runs(
     base_path = Path(base_dir)
     processed_runs = set()  # Track which runs we've already processed
 
-    for exp_name in experiment_names:
-        for seed in seeds:
-            run_id = f"{exp_name}_{seed}"
-            if run_id in processed_runs:
-                continue
-            processed_runs.add(run_id)
+    # Verify lengths match
+    if len(experiment_names) != len(seeds):
+        raise ValueError(f"Number of experiments ({len(experiment_names)}) must match number of seeds ({len(seeds)})")
 
-            # Updated path: use experiment directory path
-            exp_dir = base_path / exp_name / f"seed_{seed}"
+    # Process each experiment-seed pair
+    for exp_name, seed in zip(experiment_names, seeds):
+        run_id = f"{exp_name}_{seed}"
+        if run_id in processed_runs:
+            continue
+        processed_runs.add(run_id)
 
-            # Debug logging
-            logging.info(f"Looking for experiment at: {exp_dir}")
-            if exp_dir.exists():
-                logging.info(f"Found experiment at: {exp_dir}")
-            else:
-                logging.warning(f"No experiment found at {exp_dir}")
-                continue
+        # Updated path: use experiment directory path
+        exp_dir = base_path / exp_name / f"seed_{seed}"
 
-            adapter = NePSQuickTuneAdapter(str(exp_dir), output_dir)
-            results = adapter.parse_neps_output()
-            config_df, curves_df, cost_df, meta_df = adapter.create_dataframes(results)
+        # Debug logging
+        logging.info(f"Looking for experiment at: {exp_dir}")
+        if exp_dir.exists():
+            logging.info(f"Found experiment at: {exp_dir}")
+        else:
+            logging.warning(f"No experiment found at {exp_dir}")
+            continue
 
-            all_configs.append(config_df)
-            all_curves.append(curves_df)
-            all_costs.append(cost_df)
-            all_meta.append(meta_df)
+        adapter = NePSQuickTuneAdapter(str(exp_dir), output_dir)
+        results = adapter.parse_neps_output()
+        config_df, curves_df, cost_df, meta_df = adapter.create_dataframes(results)
+
+        all_configs.append(config_df)
+        all_curves.append(curves_df)
+        all_costs.append(cost_df)
+        all_meta.append(meta_df)
 
     if not all_configs:
         raise ValueError("No valid NePS runs found to merge")
