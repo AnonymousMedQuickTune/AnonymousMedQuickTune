@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import traceback
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -222,6 +223,17 @@ def main(config: DictConfig) -> None:
         print("\n\nUse medical Portfolio\n\n")
         # Load portfolio data
         portfolio = PortfolioManager.load(config.qt.portfolio_dir)
+        
+        # Extract unique model types from the portfolio
+        model_types = portfolio.pipeline_df['model_type'].unique().tolist()
+        print(f"\nAvailable models in portfolio: {model_types}\n")
+        
+        # Add model as a categorical hyperparameter to the configspace
+        model_param = CategoricalHyperparameter(
+            name="model",
+            choices=model_types
+        )
+        configspace.add_hyperparameter(model_param)
 
         # TODO: delete prints for debugging (after fixing bug that occurs when using CostPredictor)
         print("\nShape of data before merge:")
