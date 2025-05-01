@@ -3,8 +3,7 @@ import os
 import numpy as np
 import torch
 
-from src.classification_3d.models_3d import \
-    get_3d_model  # TODO: change to 3d models
+from src.classification_3d.models_3d import get_3d_model 
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -64,9 +63,18 @@ def run_3d_pipeline(
             "type": config.model.type,
             "task": config.model.task,
             "num_classes": num_classes,
+            # How to deal with the model config?
+            # "config": config.model.search_space,
         }
     ).to(device)
     epoch = 10
+
+    # Initialize metrics storage for all folds
+    all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
+
+    # Initialize TensorBoard writer
+    tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
+    writer = SummaryWriter(tensorboard_dir)
 
     # Example: How to access hyperparameters from a configuration
     # For more details on the search spaces: pls see configs/pipeline_configs/
@@ -94,14 +102,213 @@ def run_3d_pipeline(
 
         # ... Training ...
 
-        # Log all metrics and information at the end of the epoch
-        log_timing(log_files["timing"], epoch, train_time, eval_time, epoch_time)
-        log_learning_rate(log_files["lr"], epoch, optimizer)
-        log_resources(log_files["resource"], epoch)
-        # ...
-    print("\nTraining completed!")
+        # Get data loaders for this fold
+        train_loader, val_loader = get_brain_tumor_kfold_loaders(
+            data=dataset_dict["train_val_data"],
+            labels=dataset_dict["train_val_labels"],
+            k_folds=k_folds,
+            batch_size=hyperparameters.get("batch_size", 32),
+            num_workers=config.data.num_workers,
+            fold_idx=fold,
+            normalization_stats=normalization_stats,  # Will be None if not using autonorm
+            augmentation_type=config.data.augmentation_type,
+        )
+
+        # Setup loss function with optional label smoothing
+        criterion = nn.CrossEntropyLoss(
+            label_smoothing=hyperparameters.get("label_smoothing", 0.0)
+        )
+
+        # Initialize optimizer with specified parameters
+        optimizer = get_optimizer(
+            model=model,
+            optimizer_type=hyperparameters.get("optimizer_type", "adam"),
+            learning_rate=hyperparameters.get("learning_rate", 1e-3),
+            weight_decay=hyperparameters.get("weight_decay", 0.0),
+        )
+
+        # Setup warmup scheduler if warmup epochs > 0
+        warmup_epochs = hyperparameters.get("warmup_epochs", 0)
+        scheduler = (
+            get_warmup_scheduler(
+                optimizer,
+                warmup_epochs,
+                len(train_loader),
+                hyperparameters.get("learning_rate", 1e-3),
+            )
+            if warmup_epochs > 0
+            else None
+        )
+
+        # Initialize training components
+        checkpoint_manager = CheckpointManager(
+            fold_directory, previous_pipeline_directory
+        )
+        # Load checkpoint and initialize training state
+        start_epoch = checkpoint_manager.initialize_training(
+            model, optimizer, scheduler, metrics
+        )
+
+        # Setup logging
+        model.log_gradients = lambda epoch: log_gradients(
+            model, epoch, log_files["gradients"]
+        )
+
+        log_initial_state(
+            log_files=log_files,
+            hyperparameters={
+                "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
+                **hyperparameters,  # Include all other hyperparameters
+            },
+            config=config,
+            model=model,
+            epochs=epoch,
+            pipeline_dir=fold_directory,
+            prev_pipeline_dir=previous_pipeline_directory,
+        )
+
+        # Main training loop
+        for epoch in range(start_epoch, epochs):
+            epoch_start_time = time.time()
+
+            # Apply warmup scheduler at the beginning of each epoch
+            adjust_learning_rate(scheduler)
+
+            # Training phase
+            train_start_time = time.time()
+            train_metrics = train_epoch(
+                model,
+                train_loader,
+                criterion,
+                optimizer,
+                scaler,
+                device,
+                metrics,
+                epoch,
+                hyperparameters.get("mixup_alpha", 0.0),
+            )
+            train_time = time.time() - train_start_time
+            
+            # Validation phase
+            eval_start_time = time.time()
+            val_metrics = None  # Initialize val_metrics as None
+            if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
+                val_metrics = evaluate_and_log_metrics(
+                    model,
+                    val_loader,
+                    criterion,
+                    device,
+                    metrics,
+                    phase="val",
+                    epoch=epoch,
+                )
+            eval_time = time.time() - eval_start_time
+
+            # Calculate total epoch time
+            epoch_time = time.time() - epoch_start_time
+
+
+            # Log all metrics and information at the end of the epoch
+            log_timing(log_files["timing"], epoch, train_time, eval_time, epoch_time)
+            log_learning_rate(log_files["lr"], epoch, optimizer)
+            log_resources(log_files["resource"], epoch)
+
+            # Log training metrics
+            log_metrics(log_files["metrics"], epoch, "train", train_metrics)
+
+            # Log validation metrics if available
+            if val_metrics is not None:
+                log_metrics(log_files["metrics"], epoch, "val", val_metrics)
+
+            # Save progress
+            checkpoint_manager.save(
+                model,
+                optimizer,
+                scheduler,
+                (
+                    val_metrics["accuracy"] if val_metrics is not None else 0.0
+                ),  # Default to 0.0 if no validation
+                config,
+                num_classes,
+                hyperparameters,
+                device,
+                epoch,
+                metrics,
+            )
+            
+            # Store final metrics for all folds
+            if epoch == epochs - 1:
+                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+                all_folds_final_metrics["precision"].append(
+                    np.mean(val_metrics["precision"]) * 100
+                )
+                all_folds_final_metrics["recall"].append(
+                    np.mean(val_metrics["recall"]) * 100
+                )
+                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+
+            # Log metrics to TensorBoard
+            writer.add_scalar(f"Loss/train/fold_{fold}", train_metrics["loss"], epoch)
+            writer.add_scalar(
+                f"Accuracy/train/fold_{fold}", train_metrics["accuracy"], epoch
+            )
+            writer.add_scalar(
+                f"Precision/train/fold_{fold}",
+                np.mean(train_metrics["precision"]),
+                epoch,
+            )
+            writer.add_scalar(
+                f"Recall/train/fold_{fold}", np.mean(train_metrics["recall"]), epoch
+            )
+            writer.add_scalar(
+                f"F1/train/fold_{fold}", np.mean(train_metrics["f1"]), epoch
+            )
+
+            # Log learning rate (moved outside the val_metrics check)
+            writer.add_scalar(
+                f"Learning_Rate/fold_{fold}", optimizer.param_groups[0]["lr"], epoch
+            )
+
+            if val_metrics is not None:
+                writer.add_scalar(f"Loss/val/fold_{fold}", val_metrics["loss"], epoch)
+                writer.add_scalar(
+                    f"Accuracy/val/fold_{fold}", val_metrics["accuracy"], epoch
+                )
+                writer.add_scalar(
+                    f"Precision/val/fold_{fold}",
+                    np.mean(val_metrics["precision"]),
+                    epoch,
+                )
+                writer.add_scalar(
+                    f"Recall/val/fold_{fold}", np.mean(val_metrics["recall"]), epoch
+                )
+                writer.add_scalar(
+                    f"F1/val/fold_{fold}", np.mean(val_metrics["f1"]), epoch
+                )
+
+                # Add confusion matrix as image
+                if "confusion_matrices" in val_metrics:
+                    fig = plt.figure(figsize=(8, 8))
+                    plt.imshow(val_metrics["confusion_matrices"][-1], cmap="Blues")
+                    plt.colorbar()
+                    plt.title(f"Confusion Matrix - Epoch {epoch}")
+                    writer.add_figure(f"Confusion_Matrix/fold_{fold}", fig, epoch)
+                    plt.close()
+
+            # Log sample images with predictions (every N epochs or at the end)
+            if (
+                epoch + 1
+            ) % config.logging.viz_images_every == 0 or epoch == epochs - 1:
+                log_validation_images(writer, model, val_loader, device, fold, epoch
+
+
+        print("\nTraining completed!")
+    
+    # Close TensorBoard writer
+    writer.close()
 
     # Placeholder for metric values: The metrics from each of the 5 folds in the last epoch
+    # Testing?
     all_folds_final_metrics = {
         "accuracy": [90, 87, 85, 89, 88],
         "precision": [90, 87, 86, 89, 88],
