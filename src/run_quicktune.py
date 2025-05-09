@@ -199,8 +199,6 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
     config_name="main_experiment_config.yaml",
 )
 def main(config: DictConfig) -> None:
-    # TODO: Override hydra output directory for QuickTune
-    
     # Set seed for reproducibility
     set_seed(config.seed)
 
