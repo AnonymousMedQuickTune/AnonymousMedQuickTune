@@ -52,15 +52,16 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
     # TODO: fix hardcoding
     data_dir = Path(trial_info["data-dir"]).parent
     dataset_dict = load_brain_tumor_dataset(data_dir)
-    num_classes = 2
+    # num_classes = 2
 
     try:
         # TODO: fix hardcoding
         number_of_epochs = 1  # TODO: trial["fidelity"]
-        print("\n\nTrial: ", trial, "\n\n")
 
         hyperparameters = trial["config"]
-        print("\n\n Hyperparameters: ", hyperparameters, "\n\n")
+        hyperparameters["number_of_epochs"] = 2  # Add number of epochs to hyperparameters
+        print("\n\nHyperparameters: ", hyperparameters, "\n\n")
+        
 
         dimensionality = config.data.dimensionality.lower()
 
@@ -70,7 +71,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
                 previous_pipeline_directory=prev_pipeline_dir,
                 config=config,
                 dataset_dict=dataset_dict,
-                num_classes=num_classes,
+                num_classes=trial_info["num-classes"],
                 **hyperparameters,
             )
         elif dimensionality == "3d":
@@ -80,7 +81,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
                 previous_pipeline_directory=prev_pipeline_dir,
                 config=config,
                 dataset_dict=dataset_dict,
-                num_classes=num_classes,
+                num_classes=trial_info["num-classes"],
                 **hyperparameters,
             )
         else:
@@ -188,6 +189,10 @@ def main(config: DictConfig) -> None:
         # Remove dataset identifier as it's no longer needed
         merged_df = merged_df.drop(columns=["dataset"])
 
+        # Remove number_of_epochs from merged_df as it's not a hyperparameter and will be set later
+        # Number_of_epochs is a fidelity parameter that was needed in the configspace for NePS
+        merged_df = merged_df.drop(columns=["number_of_epochs"])
+
         # Convert learning curves and cost data to numpy arrays for model training
         curve = portfolio.curve_df.values
         cost = portfolio.cost_df.values
@@ -276,7 +281,6 @@ def main(config: DictConfig) -> None:
             # Create wrapper that tracks configurations
             def objective_wrapper(trial, trial_info):
                 # Get new configuration from optimizer
-                print(f"\nTrial: {trial}")
                 config_id = trial.get("config-id", 0)
                 print(f"\nSampling configuration {config_id} from optimizer")
 
