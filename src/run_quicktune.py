@@ -339,12 +339,16 @@ def main(config: DictConfig) -> None:
             path=config.experiment_base_dir,
             perf_predictor=perf_predictor,
             # cost_predictor=cost_predictor,
+            seed=config.seed,
         )
         # Explicitly reset path for pretrained optimizer
         optimizer.reset_path(config.experiment_base_dir)
     else:
         # Initialize the optimizer with pretrained model
         print("\n\nUse default Metaalbum\n\n")
+
+        raise NotImplementedError("Not implemented. Use medical portfolio instead.")
+    
         optimizer = get_pretrained_optimizer("mtlbm/full")
         # Explicitly reset path for pretrained optimizer
         optimizer.reset_path(
@@ -393,7 +397,6 @@ def main(config: DictConfig) -> None:
         if config.qt.use_custom_objective:
             print("\nUse custom objective\n")
             # Replace the default objective function with our custom one
-            # TODO: check seeding - sampling should be deterministic
             
             # Create wrapper that tracks configurations
             def objective_wrapper(trial, trial_info):
