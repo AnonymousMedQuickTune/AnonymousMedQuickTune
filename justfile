@@ -58,14 +58,14 @@ preprocess-brain-tumor-cluster:
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run an HPO experiment on the local machine
-run-hpo-local DATASET EXPERIMENT_NAME SEED:
+run-neps-local DATASET EXPERIMENT_NAME SEED:
   python -m src.train_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
 
 # Submit an HPO experiment to the cluster
-run-hpo-cluster DATASET EXPERIMENT_NAME SEED:
+run-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu19 \
@@ -132,13 +132,15 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     cluster_scripts/analyze_fidelity_correlation.sh
 
 # Merge multiple NePS runs into a single QuickTune portfolio
-merge-neps2qt-local DATASET EXPERIMENT_NAMES SEEDS OUTPUT_DIR:
-  python src/analysis/neps_quicktune_output_adapter.py \
-    experiments/{{DATASET}} \
-    --merge-runs \
-    --experiment-names "{{EXPERIMENT_NAMES}}" \
-    --seeds "{{SEEDS}}" \
-    --output-dir {{OUTPUT_DIR}}
+create-portfolio-local DATASET EXPERIMENT_NAMES SEEDS:
+  python -m src.analysis.neps_quicktune_output_adapter \
+    data.dataset="{{DATASET}}" \
+    experiment_names="'{{EXPERIMENT_NAMES}}'" \
+    seeds="'{{SEEDS}}'" \
+    portfolio_dir=experiments/Portfolio \
+    merge_runs=true \
+    run_mode=Portfolio \
+    experiment_dir_suffix=""
 
 # Run QuickTune on a portfolio of NePS runs
 run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
@@ -146,8 +148,9 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
-    qt.portfolio_dir={{PORTFOLIO_DIR}} \
+    portfolio_dir={{PORTFOLIO_DIR}} \
     data.path=datasets \
+    run_mode=QuickTune \
     qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
 
 # Evaluate NePS optimization results

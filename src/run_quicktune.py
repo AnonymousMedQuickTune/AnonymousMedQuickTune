@@ -205,7 +205,7 @@ def main(config: DictConfig) -> None:
     set_seed(config.seed)
 
     # Create quicktune output directory with full path structure
-    Path(config.qt.experiment_base_dir).mkdir(parents=True, exist_ok=True)
+    Path(config.experiment_base_dir).mkdir(parents=True, exist_ok=True)
 
     # Load original pipeline space configuration
     with open(config.pipeline_space, "r", encoding="utf-8") as f:
@@ -218,7 +218,7 @@ def main(config: DictConfig) -> None:
     print("\nconfig: ", config, "\nconfigspace: ", configspace, "\n")
 
     # Create directory for configuration files and logs
-    output_dir = Path(config.qt.experiment_base_dir) / "hydra_output"
+    output_dir = Path(config.experiment_base_dir) / "hydra_output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save configurations
@@ -238,7 +238,7 @@ def main(config: DictConfig) -> None:
     if config.qt.use_medical_portfolio:
         print("\n\nUse medical Portfolio\n\n")
         # Load portfolio data
-        portfolio = PortfolioManager.load(config.qt.portfolio_dir)
+        portfolio = PortfolioManager.load(config.portfolio_dir)
         
         # Extract unique model types from the portfolio
         model_types = portfolio.pipeline_df['model_type'].unique().tolist()
@@ -322,7 +322,7 @@ def main(config: DictConfig) -> None:
         """
 
         # Save predictors for later evaluation
-        predictor_path = Path(config.qt.experiment_base_dir) / "predictors"
+        predictor_path = Path(config.experiment_base_dir) / "predictors"
         predictor_path.mkdir(parents=True, exist_ok=True)
         
         perf_predictor.reset_path(str(predictor_path / "perf"))
@@ -336,19 +336,19 @@ def main(config: DictConfig) -> None:
             cs=configspace,
             max_fidelity=50,  # TODO: fix hardcoding
             cost_aware=True,
-            path=config.qt.experiment_base_dir,
+            path=config.experiment_base_dir,
             perf_predictor=perf_predictor,
             # cost_predictor=cost_predictor,
         )
         # Explicitly reset path for pretrained optimizer
-        optimizer.reset_path(config.qt.experiment_base_dir)
+        optimizer.reset_path(config.experiment_base_dir)
     else:
         # Initialize the optimizer with pretrained model
         print("\n\nUse default Metaalbum\n\n")
         optimizer = get_pretrained_optimizer("mtlbm/full")
         # Explicitly reset path for pretrained optimizer
         optimizer.reset_path(
-            config.qt.experiment_base_dir
+            config.experiment_base_dir
         ) 
 
     print("\nOptimizer created\n")
@@ -387,7 +387,7 @@ def main(config: DictConfig) -> None:
         data_path = Path(config.data.path) / config.data.dataset
         tuner = QuickImageCLSTuner(
             data_path=str(data_path),  # QuickImageCLSTuner expects string path
-            path=config.qt.experiment_base_dir,
+            path=config.experiment_base_dir,
             n=n_of_configs_to_create
         )
         if config.qt.use_custom_objective:
@@ -406,7 +406,7 @@ def main(config: DictConfig) -> None:
         tuner = QuickTuner(
             optimizer=optimizer,
             f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, config),
-            path=config.qt.experiment_base_dir,
+            path=config.experiment_base_dir,
         )
         tuner.run(fevals=config.max_evaluations, time_budget=None, trial_info=trial_info)
 

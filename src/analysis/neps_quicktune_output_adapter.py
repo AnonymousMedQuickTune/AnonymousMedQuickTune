@@ -10,16 +10,20 @@ It creates four CSV files:
 - meta.csv: Meta-features of the dataset
 """
 
+import logging
+from pathlib import Path
+
+import hydra
+from omegaconf import DictConfig
+import pandas as pd
+import yaml
+
 import argparse
 import ast
-import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
-import yaml
 
 
 class NePSQuickTuneAdapter:
@@ -397,52 +401,41 @@ def merge_neps_runs(
     )
 
 
-def main():
+@hydra.main(
+    version_base=None,
+    config_path="../../configs",
+    config_name="main_experiment_config.yaml",
+)
+def main(config: DictConfig) -> None:  # TODO: adapt script for multiple datasets
     """Main entry point of the script."""
-    parser = argparse.ArgumentParser(
-        description="Convert NePS output to QuickTune input format"
-    )
-    parser.add_argument(
-        "input_path",
-        help="Path to the experiment directory (e.g., experiments/brain_tumor/test_8/seed_42)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="experiments/quicktune_input",
-        help="Directory to save the output CSV files (default: experiments/quicktune_input)",
-    )
-    parser.add_argument(
-        "--merge-runs",
-        action="store_true",
-        help="Merge multiple NePS runs into a single portfolio",
-    )
-    parser.add_argument(
-        "--experiment-names",
-        help="Comma-separated list of experiment names to merge",
-        type=str,
-    )
-    parser.add_argument(
-        "--seeds", help="Comma-separated list of seeds to merge", type=str
-    )
-
-    args = parser.parse_args()
-
     try:
-        if args.merge_runs:
-            if not args.experiment_names or not args.seeds:
+        if config.get("merge_runs", False):
+            # Get experiment names and seeds from config
+            experiment_names = config.get("experiment_names", "").split(",")
+            seeds = config.get("seeds", "").split(",")
+            
+            if not experiment_names or not seeds:
                 raise ValueError(
-                    "Both --experiment-names and --seeds are required when using --merge-runs"
+                    "Both experiment_names and seeds must be specified in config when merging runs"
                 )
-            experiment_names = args.experiment_names.split(",")
-            seeds = args.seeds.split(",")
-            merge_neps_runs(args.input_path, experiment_names, seeds, args.output_dir)
+                
+            merge_neps_runs(
+                base_dir=config.base_dir,
+                experiment_names=experiment_names,
+                seeds=seeds,
+                output_dir=config.portfolio_dir
+            )
         else:
-            adapter = NePSQuickTuneAdapter(args.input_path, args.output_dir)
+            adapter = NePSQuickTuneAdapter(
+                input_path=config.experiment_base_dir,
+                output_dir=config.quicktune_directory
+            )
             adapter.convert()
+            
     except Exception as e:
         logging.error("Conversion failed: %s", str(e))
         raise
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pylint: disable=no-value-for-parameter
