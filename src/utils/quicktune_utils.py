@@ -5,15 +5,24 @@ import pandas as pd
 from PIL import Image
 from torchvision import transforms  # type: ignore
 from torchvision.datasets import ImageFolder  # type: ignore
-from omegaconf import DictConfig  # Add this import at the top
+from omegaconf import DictConfig
 from ConfigSpace import ConfigurationSpace
-from qtt.predictors import PerfPredictor, CostPredictor
+from qtt.predictors import PerfPredictor, CostPredictor, Predictor
+from qtt.optimizers.quick import QuickOptimizer
+from qtt.optimizers.optimizer import Optimizer
+from qtt.tuners.image.classification.tuner import QuickImageCLSTuner
+from qtt.tuners.quick import QuickTuner 
+from dataclasses import dataclass
+import logging
+from qtt.utils import set_logger_verbosity
+from qtt.predictors.perf import DEFAULT_FIT_PARAMS as PERF_DEFAULT_FIT_PARAMS
+from qtt.predictors.cost import DEFAULT_FIT_PARAMS as COST_DEFAULT_FIT_PARAMS
 
 from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
                          UniformFloatHyperparameter,
                          UniformIntegerHyperparameter)
-from dataclasses import dataclass
 
+logger = logging.getLogger(__name__)  # Add this line to create logger instance
 
 def custom_extract_image_dataset_metafeat(
     path_root: str | Path, train_split: str = "train", val_split: str = "val"
@@ -113,9 +122,12 @@ def custom_extract_image_dataset_metafeat(
 class CustomCostPredictor(CostPredictor):
     """Custom CostPredictor with modified default parameters"""
     
-    def __init__(self, **kwargs):
+    def __init__(self, path: str | None = None):
+        # Initialize Predictor first with our name
+        Predictor.__init__(self, name="medical_cost_predictor", path=path)
+        
         # Override default parameters
-        # Batch size needs to be reducedto avoid division by zero for small datasets
+        # Batch size needs to be reduced to avoid division by zero for small datasets
         custom_defaults = {
             "learning_rate_init": 0.0001,
             "batch_size": 1,  # default: 1024
@@ -125,13 +137,21 @@ class CustomCostPredictor(CostPredictor):
             "validation_fraction": 0.1,
             "tol": 1e-4,
         }
-        super().__init__(fit_params=custom_defaults, **kwargs)
+        
+        # Initialize CostPredictor without calling Predictor.__init__ again
+        self.fit_params = self._validate_fit_params(custom_defaults, COST_DEFAULT_FIT_PARAMS)
+        self.seed = None
+        self.verbosity = 2
+        set_logger_verbosity(2, logger)
 
 
 class CustomPerfPredictor(PerfPredictor):
     """Custom PerfPredictor with modified default parameters"""
     
-    def __init__(self, **kwargs):
+    def __init__(self, path: str | None = None):
+        # Initialize Predictor first with our name
+        Predictor.__init__(self, name="medical_perf_predictor", path=path)
+        
         # Override default parameters
         custom_defaults = {
             "learning_rate_init": 0.0001,
@@ -142,7 +162,12 @@ class CustomPerfPredictor(PerfPredictor):
             "validation_fraction": 0.1,
             "tol": 1e-4,
         }
-        super().__init__(fit_params=custom_defaults, **kwargs)
+        
+        # Initialize PerfPredictor without calling Predictor.__init__ again
+        self.fit_params = self._validate_fit_params(custom_defaults, PERF_DEFAULT_FIT_PARAMS)
+        self.seed = None
+        self.verbosity = 2
+        set_logger_verbosity(2, logger)
 
 @dataclass
 class PortfolioData:
@@ -231,4 +256,51 @@ class PortfolioManager:
         portfolio.curve_df.to_csv(f"{output_dir}/curve.csv", index=True)
         portfolio.cost_df.to_csv(f"{output_dir}/cost.csv", index=True)
         portfolio.meta_df.to_csv(f"{output_dir}/meta.csv", index=True)
+
+def save_config_files(output_dir: Path, config_files: list) -> None:
+    """Save configuration files to the specified directory.
+    
+    Args:
+        output_dir (Path): Directory to save the configuration files
+        config_files (list): List of tuples containing (filename, data)
+    """
+    for filename, data in config_files:
+        config_path = output_dir / filename
+        try:
+            config_path.write_text(data, encoding="utf-8")
+        except IOError as e:
+            logging.error(f"Failed to write configuration file {filename}: {e}")
+            raise RuntimeError(f"Configuration saving failed: {e}") from e
+    
+class CustomQuickImageCLSTuner(QuickImageCLSTuner):
+    """Custom QuickImageCLSTuner that uses our optimizer instead of loading MetaAlbum"""
+    
+    def __init__(
+        self,
+        data_path: str,
+        optimizer: QuickOptimizer,
+        n: int = 512,
+        path: str | None = None,
+        verbosity: int = 2,
+    ):
+        # Override the default initialization to prevent MetaAlbum loading
+        self.verbosity = verbosity
+        set_logger_verbosity(verbosity, logger)
+        
+        # Use our custom metafeature extraction
+        trial_info, metafeat = custom_extract_image_dataset_metafeat(data_path)
+        self.trial_info = trial_info
+        
+        # Setup optimizer with our metafeatures
+        optimizer.setup(n, metafeat=metafeat)
+        
+        # Initialize parent class but skip its optimizer initialization
+        super(QuickImageCLSTuner, self).__init__(  # Note: Call QuickTuner's init
+            optimizer=optimizer,
+            f=None,
+            path=path,
+            verbosity=verbosity
+        )
+        
+    
     

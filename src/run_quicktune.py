@@ -19,7 +19,15 @@ from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.utils.common_utils import set_seed
-from src.utils.quicktune_utils import custom_extract_image_dataset_metafeat, CustomCostPredictor, CustomPerfPredictor, PortfolioManager, ConfigSpaceBuilder
+from src.utils.quicktune_utils import (
+    CustomQuickImageCLSTuner,
+    CustomCostPredictor,
+    CustomPerfPredictor,
+    PortfolioManager,
+    ConfigSpaceBuilder,
+    save_config_files,
+    custom_extract_image_dataset_metafeat,
+)
 
 # For debugging purposes:
 # from qtt.predictors import PerfPredictor, CostPredictor
@@ -117,42 +125,40 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
     config_name="main_experiment_config.yaml",
 )
 def main(config: DictConfig) -> None:
+    """
+    Main entry point for the QuickTune training script.
+
+    Args:
+        config (DictConfig): Hydra configuration object
+    """
     # Set seed for reproducibility
     set_seed(config.seed)
 
-    # Create quicktune output directory with full path structure
-    Path(config.experiment_base_dir).mkdir(parents=True, exist_ok=True)
-
-    # Load original pipeline space configuration
-    with open(config.pipeline_space, "r", encoding="utf-8") as f:
-        pipeline_space = yaml.safe_load(f)
-
-    # Create ConfigurationSpace directly from the original YAML
-    configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
-
-    # Print main experiment configuration and pipeline space
-    print("\nconfig: ", config, "\nconfigspace: ", configspace, "\n")
-
     # Create directory for configuration files and logs
-    output_dir = Path(config.experiment_base_dir) / "hydra_output"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    exp_base_dir = Path(config.experiment_base_dir)
+    output_dir = exp_base_dir / "hydra_output"
+    for directory in [exp_base_dir, output_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
 
-    # Save configurations
+    # Load and create configuration space
+    try:
+        with open(config.pipeline_space, "r", encoding="utf-8") as f:
+            pipeline_space = yaml.safe_load(f)
+        configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
+    except (yaml.YAMLError, IOError) as e:
+        logging.error(f"Failed to load pipeline space configuration: {e}")
+        raise
+
+    # Prepare and save configurations
     config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
     ]
+    save_config_files(output_dir, config_files)
 
-    for filename, data in config_files:
-        config_path = output_dir / filename
-        try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                f.write(data)
-        except IOError as e:
-            logging.error(f"Failed to write configuration file {filename}: {e}")
-
+    # Create optimizer
     if config.qt.use_medical_portfolio:
-        print("\n\nUse medical Portfolio\n\n")
+        print("\nUse medical Portfolio\n")
         # Load portfolio data
         portfolio = PortfolioManager.load(config.portfolio_dir)
         
@@ -189,42 +195,36 @@ def main(config: DictConfig) -> None:
         # TODO: check parameters like learning_rate_init, batchsize for predictors
         # TODO: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
         # Note: batchsize is set to 1 for now to avoid division by zero for small portfolio
-        perf_predictor = CustomPerfPredictor().fit(X=merged_df, y=curve)
-        cost_predictor = CustomCostPredictor().fit(X=merged_df, y=cost)
-
-        # Save predictors for later evaluation
+        # Create predictors with proper paths in experiment_base_dir
         predictor_path = Path(config.experiment_base_dir) / "predictors"
         predictor_path.mkdir(parents=True, exist_ok=True)
-        
-        perf_predictor.reset_path(str(predictor_path / "perf"))
-        cost_predictor.reset_path(str(predictor_path / "cost"))
-        
+
+        perf_predictor = CustomPerfPredictor(
+            path=str(predictor_path / "medical_perf_predictor")
+        ).fit(X=merged_df, y=curve)
+
+        cost_predictor = CustomCostPredictor(
+            path=str(predictor_path / "medical_cost_predictor")
+        ).fit(X=merged_df, y=cost)
+
+        # Save predictors (no need to reset paths anymore)
         perf_predictor.save(verbose=True)
         cost_predictor.save(verbose=True)
 
-        # Initialize optimizer with both predictors
+        # Initialize optimizer
         optimizer = QuickOptimizer(
             cs=configspace,
-            max_fidelity=50,  # TODO: fix hardcoding
+            max_fidelity=50,
             cost_aware=True,
             path=config.experiment_base_dir,
             perf_predictor=perf_predictor,
             cost_predictor=cost_predictor,
             seed=config.seed,
         )
-        # Explicitly reset path for pretrained optimizer
-        optimizer.reset_path(config.experiment_base_dir)
     else:
-        # Initialize the optimizer with pretrained model
-        print("\n\nUse default Metaalbum\n\n")
-
-        raise NotImplementedError("Not implemented. Use medical portfolio instead.")
-    
+        # Use default MetaAlbum implementation
+        print("\nUse default Metaalbum\n")
         optimizer = get_pretrained_optimizer("mtlbm/full")
-        # Explicitly reset path for pretrained optimizer
-        optimizer.reset_path(
-            config.experiment_base_dir
-        ) 
 
     print("\nOptimizer created\n")
 
@@ -233,7 +233,7 @@ def main(config: DictConfig) -> None:
     # while metafeat contains metadata like number of samples, classes, features and channels.
     # Note: QuickTune's default extract_image_dataset_metafeat() not working for all datasets:
     # https://github.com/automl/quicktunetool/blob/main/src/qtt/finetune/image/classification/utils.py
-    # Therefore we use our custom implementation.
+    # Therefore we use our custom implementation. It's currently hardcoded for the brain_tumor dataset.
     if config.data.dataset == "brain_tumor":
         # TODO: update custom_extract_image_dataset_metafeat() to work for all datasets
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
@@ -242,6 +242,7 @@ def main(config: DictConfig) -> None:
             val_split="val",  # Note: overwrite if train / val split is provided
         )
     else:
+        # TODO: Update custom_extract_image_dataset_metafeat() to work for all our 3D datasets
         raise NotImplementedError(f"Unknown dataset: {config.data.dataset}")
 
     # Add output directory to trial info
@@ -260,8 +261,11 @@ def main(config: DictConfig) -> None:
     if config.qt.use_quick_image_cls_tuner:
         print("\nUse QuickImageCLSTuner\n")
         data_path = Path(config.data.path) / config.data.dataset
-        tuner = QuickImageCLSTuner(
+        # Using CustomQuickImageCLSTuner with our medical portfolio optimizer
+        # instead of default QuickImageCLSTuner which uses MetaAlbum pretrained model
+        tuner = CustomQuickImageCLSTuner(
             data_path=str(data_path),  # QuickImageCLSTuner expects string path
+            optimizer=optimizer,  # Use our CustomQuickOptimizer
             path=config.experiment_base_dir,
             n=n_of_configs_to_create
         )

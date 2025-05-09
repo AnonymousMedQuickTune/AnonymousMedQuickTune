@@ -76,7 +76,7 @@ def run_pipeline(
 )
 def main(config: DictConfig) -> None:
     """
-    Main entry point for the training script.
+    Main entry point for the NePStraining script.
 
     Args:
         config (DictConfig): Hydra configuration object
