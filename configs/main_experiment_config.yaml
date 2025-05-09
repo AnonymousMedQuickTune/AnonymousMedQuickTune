@@ -4,19 +4,20 @@
 hydra:
   output_subdir: null
   run:
-    dir: ${experiment_base_dir}/hydra_output  # TODO: Adapt for QuickTune
+    dir: ${experiment_base_dir}/hydra_output
 
 seed: 42
-experiment_base_dir: experiments/${data.dataset}/${experiment_name}/seed_${seed}
-root_directory: ${experiment_base_dir}/NePS_output
-experiment_name: test_desmoid
+experiment_base_dir: experiments/${run_mode}/${data.dataset}/${experiment_dir_suffix}
+experiment_dir_suffix: ${experiment_name}/seed_${seed}
+neps_directory: ${experiment_base_dir}/NePS_output
+quicktune_directory: ${experiment_base_dir}/QuickTune_output
+experiment_name: test
+run_mode: NePS  # Options: 'NePS', 'QuickTune', 'Baseline', 'Portfolio'
 
 #------------------------------------------------------------------------------
-# QuickTune Settings
+# QuickTune Optimization Settings
 #------------------------------------------------------------------------------
 qt:
-  experiment_base_dir: experiments/quicktune/${data.dataset}/${experiment_name}/seed_${seed}
-  portfolio_dir: experiments/portfolio
   use_medical_portfolio: true
   use_custom_metafeat_extraction: true  # TODO: delete this, but keep it for now as a reference
   use_quick_image_cls_tuner: true
@@ -28,7 +29,7 @@ qt:
 pipeline_space: configs/pipeline_spaces/pipeline_space_without_user_priors.yaml
 max_evaluations: 10       # Maximum number of configurations to evaluate
 metric: f1                # Metric to optimize: 'f1' (default), 'accuracy', 'precision', or 'recall'
-searcher: hyperband       # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
+searcher: random_search       # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
 
 #------------------------------------------------------------------------------
 # Model Architecture
@@ -57,3 +58,12 @@ logging:
   eval_every: 1           # Evaluate model every N epochs
   save_every: 100         # Save model checkpoint every N epochs
   viz_images_every: 100   # Save TensorBoard images every N epochs for visualization
+
+#------------------------------------------------------------------------------
+# Portfolio Creation Settings
+#------------------------------------------------------------------------------
+merge_runs: true  # Set to true when merging multiple runs
+experiment_names: "test"  # Comma-separated list of experiment names to merge
+seeds: "42"  # Comma-separated list of seeds to merge
+base_dir: experiments/NePS/${data.dataset}
+portfolio_dir: experiments/Portfolio
