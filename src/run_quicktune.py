@@ -394,8 +394,32 @@ def main(config: DictConfig) -> None:
             print("\nUse custom objective\n")
             # Replace the default objective function with our custom one
             # TODO: check seeding - sampling should be deterministic
-            # TODO: config needs to change for each trial > optimizer.ask()
-            tuner.f = lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, config)
+            
+            # Create wrapper that tracks configurations
+            def objective_wrapper(trial, trial_info):
+                # Get new configuration from optimizer
+                print(f"\nTrial: {trial}")
+                config_id = trial.get("config-id", 0)
+                print(f"\nSampling configuration {config_id} from optimizer")
+
+                # Get configuration from optimizer
+                configuration = optimizer.ask()
+                print(f"\nConfiguration {config_id}: {configuration}")
+
+                # Run quicktune_wrapper with configuration
+                result = quicktune_wrapper(configuration, trial_info, config)
+
+                # Tell the optimizer about the result
+                if result is not None:
+                    optimizer.tell(result)
+                else:
+                    print(f"\nTrial {config_id} failed")
+                    optimizer.tell(float("-inf"))
+
+                return result
+                
+            # Use the wrapped objective
+            tuner.f = objective_wrapper    
             tuner.run(fevals=config.max_evaluations, trial_info=trial_info)
         else:
             print("\nUse default objective\n")
