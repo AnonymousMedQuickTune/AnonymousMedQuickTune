@@ -17,10 +17,17 @@ from qtt import QuickOptimizer, QuickTuner, QuickImageCLSTuner, get_pretrained_o
 
 from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_3d.objective_function_3d import run_3d_pipeline
-from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset, get_max_batch_size
-from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
-from src.utils.quicktune_utils import custom_extract_image_dataset_metafeat
-from qtt.predictors import PerfPredictor, CostPredictor
+from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
+from src.utils.common_utils import set_seed
+from src.utils.quicktune_utils import custom_extract_image_dataset_metafeat, CustomCostPredictor, CustomPerfPredictor
+
+# For debugging purposes:
+# from qtt.predictors import PerfPredictor, CostPredictor
+# from external.quicktunetool.src.qtt.predictors import PerfPredictor, CostPredictor
+# from external.quicktunetool.src.qtt.optimizers import QuickOptimizer
+# from external.quicktunetool.src.qtt.tuners import QuickTuner
+# from external.quicktunetool.src.qtt.tuners.image.classification.tuner import QuickImageCLSTuner
+# from external.quicktunetool.src.qtt.utils.pretrained import get_pretrained_optimizer
 
 
 @dataclass
@@ -93,10 +100,10 @@ class PortfolioManager:
         """Load portfolio data from CSV files"""
         try:
             return PortfolioData(
-                pipeline_df=pd.read_csv(f"{portfolio_dir}/config.csv"),
-                curve_df=pd.read_csv(f"{portfolio_dir}/curve.csv"),
-                cost_df=pd.read_csv(f"{portfolio_dir}/cost.csv"),
-                meta_df=pd.read_csv(f"{portfolio_dir}/meta.csv"),
+                pipeline_df=pd.read_csv(f"{portfolio_dir}/config.csv", index_col=0),
+                curve_df=pd.read_csv(f"{portfolio_dir}/curve.csv", index_col=0),
+                cost_df=pd.read_csv(f"{portfolio_dir}/cost.csv", index_col=0),
+                meta_df=pd.read_csv(f"{portfolio_dir}/meta.csv", index_col=0),
             )
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Portfolio file not found in {portfolio_dir}: {e}")
@@ -106,10 +113,10 @@ class PortfolioManager:
         """Save portfolio data to CSV files"""
         os.makedirs(output_dir, exist_ok=True)
 
-        portfolio.pipeline_df.to_csv(f"{output_dir}/config.csv", index=False)
+        portfolio.pipeline_df.to_csv(f"{output_dir}/config.csv", index=True)
         portfolio.curve_df.to_csv(f"{output_dir}/curve.csv", index=True)
-        portfolio.cost_df.to_csv(f"{output_dir}/cost.csv", index=False)
-        portfolio.meta_df.to_csv(f"{output_dir}/meta.csv", index=False)
+        portfolio.cost_df.to_csv(f"{output_dir}/cost.csv", index=True)
+        portfolio.meta_df.to_csv(f"{output_dir}/meta.csv", index=True)
 
 
 def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict:
@@ -247,87 +254,42 @@ def main(config: DictConfig) -> None:
             name="model",
             choices=model_types
         )
-        configspace.add_hyperparameter(model_param)
+        configspace.add(model_param)
 
-        # TODO: delete prints for debugging (after fixing bug that occurs when using CostPredictor)
-        print("\nShape of data before merge:")
-        print(f"Pipeline DF shape: {portfolio.pipeline_df.shape}")
-        print(f"Meta DF shape: {portfolio.meta_df.shape}")
-        print(f"Curve shape: {portfolio.curve_df.shape}")
-        print(f"Cost shape: {portfolio.cost_df.shape}\n")
-
-        # Debug dataset values
-        print("\nUnique datasets in pipeline_df:", portfolio.pipeline_df['dataset'].unique())
-        print("Unique datasets in meta_df:", portfolio.meta_df['dataset'].unique())
-
-        # Get max batch size from pipeline space
-        pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
-        max_batch_size = get_max_batch_size(pipeline_space)
-        print(f"\nUsing max batch size: {max_batch_size}")
-
-        # Prepare data - ensure we don't duplicate rows
+        # Merge pipeline configurations with their corresponding metadata
+        # Note: Each dataset must have exactly one metadata entry to maintain data integrity
+        # and ensure merged_df has the same number of rows as curve/cost data
         merged_df = pd.merge(
             portfolio.pipeline_df, 
-            portfolio.meta_df.drop_duplicates(subset=['dataset']), 
-            on="dataset",
-            how='left'  # Use left merge to keep pipeline_df rows
+            portfolio.meta_df.drop_duplicates(subset=['dataset']),
+            how='left',  # Left join ensures:
+                        # 1. All pipeline configurations are preserved
+                        # 2. Metadata is added only for matching datasets
+                        # 3. NaN values for datasets without metadata
+                        # This maintains all pipeline configurations for training
         )
+        # Remove dataset identifier as it's no longer needed
         merged_df = merged_df.drop(columns=["dataset"])
-        
-        # Drop any unnamed columns
-        merged_df = merged_df.loc[:, ~merged_df.columns.str.contains('^Unnamed')]
-        
-        print(f"\nAfter cleaning:")
-        print(f"Merged DF shape: {merged_df.shape}")
-        print(f"Merged DF columns: {merged_df.columns.tolist()}\n")
 
-        # Convert curve and cost to correct format
+        # Convert learning curves and cost data to numpy arrays for model training
         curve = portfolio.curve_df.values
-        cost = portfolio.cost_df['cost'].values.reshape(-1, 1)
+        cost = portfolio.cost_df.values
 
-        print(f"Final shapes:")
-        print(f"merged_df: {merged_df.shape}")
-        print(f"curve: {curve.shape}")
-        print(f"cost: {cost.shape}\n")
-
-        # Define separate fit parameters for perf and cost predictors
-        # TODO: check parameters like learning_rate_init for PerfPredictor
-        perf_predictor = PerfPredictor().fit(
-            X=merged_df, 
-            y=curve,
-            batch_size=max(1, min(max_batch_size, merged_df.shape[0])),
-            epochs=4,
-            patience=5,
-            validation_fraction=0.1,
-            early_stop=True,
-            learning_rate_init=0.001
-        )
-        
-        # CostPredictor with identical parameters to PerfPredictor
-        # TODO: fix Bug that occurs when using CostPredictor
-        # TODO: check parameters like learning_rate_init for CostPredictor
-        """
-        cost_predictor = CostPredictor().fit(
-            X=merged_df, 
-            y=cost,
-            batch_size=max(1, min(max_batch_size, merged_df.shape[0])),  # Same as PerfPredictor
-            epochs=100,
-            patience=5,
-            validation_fraction=0.1,  # Same as PerfPredictor
-            early_stop=True,  # Same as PerfPredictor
-            learning_rate_init=0.001
-        )
-        """
+        # TODO: check parameters like learning_rate_init, batchsize for predictors
+        # TODO: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
+        # Note: batchsize is set to 1 for now to avoid division by zero for small portfolio
+        perf_predictor = CustomPerfPredictor().fit(X=merged_df, y=curve)
+        cost_predictor = CustomCostPredictor().fit(X=merged_df, y=cost)
 
         # Save predictors for later evaluation
         predictor_path = Path(config.experiment_base_dir) / "predictors"
         predictor_path.mkdir(parents=True, exist_ok=True)
         
         perf_predictor.reset_path(str(predictor_path / "perf"))
-        # cost_predictor.reset_path(str(predictor_path / "cost"))
+        cost_predictor.reset_path(str(predictor_path / "cost"))
         
         perf_predictor.save(verbose=True)
-        # cost_predictor.save(verbose=True)
+        cost_predictor.save(verbose=True)
 
         # Initialize optimizer with both predictors
         optimizer = QuickOptimizer(
@@ -336,7 +298,7 @@ def main(config: DictConfig) -> None:
             cost_aware=True,
             path=config.experiment_base_dir,
             perf_predictor=perf_predictor,
-            # cost_predictor=cost_predictor,
+            cost_predictor=cost_predictor,
             seed=config.seed,
         )
         # Explicitly reset path for pretrained optimizer

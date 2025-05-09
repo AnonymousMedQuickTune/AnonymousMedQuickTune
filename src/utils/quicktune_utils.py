@@ -7,6 +7,7 @@ from torchvision import transforms  # type: ignore
 from torchvision.datasets import ImageFolder  # type: ignore
 from omegaconf import DictConfig  # Add this import at the top
 from ConfigSpace import ConfigurationSpace
+from qtt.predictors import PerfPredictor, CostPredictor
 
 
 def custom_extract_image_dataset_metafeat(
@@ -102,4 +103,39 @@ def custom_extract_image_dataset_metafeat(
     }
 
     return trial_info, metafeat
+
+
+class CustomCostPredictor(CostPredictor):
+    """Custom CostPredictor with modified default parameters"""
+    
+    def __init__(self, **kwargs):
+        # Override default parameters
+        # Batch size needs to be reducedto avoid division by zero for small datasets
+        custom_defaults = {
+            "learning_rate_init": 0.0001,
+            "batch_size": 1,  # default: 1024
+            "max_iter": 100,
+            "early_stop": True,
+            "patience": 5,
+            "validation_fraction": 0.1,
+            "tol": 1e-4,
+        }
+        super().__init__(fit_params=custom_defaults, **kwargs)
+
+
+class CustomPerfPredictor(PerfPredictor):
+    """Custom PerfPredictor with modified default parameters"""
+    
+    def __init__(self, **kwargs):
+        # Override default parameters
+        custom_defaults = {
+            "learning_rate_init": 0.0001,
+            "batch_size": 1,  # default: 1024
+            "max_iter": 100,
+            "early_stop": True,
+            "patience": 5,
+            "validation_fraction": 0.1,
+            "tol": 1e-4,
+        }
+        super().__init__(fit_params=custom_defaults, **kwargs)
     
