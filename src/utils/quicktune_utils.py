@@ -9,6 +9,11 @@ from omegaconf import DictConfig  # Add this import at the top
 from ConfigSpace import ConfigurationSpace
 from qtt.predictors import PerfPredictor, CostPredictor
 
+from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
+                         UniformFloatHyperparameter,
+                         UniformIntegerHyperparameter)
+from dataclasses import dataclass
+
 
 def custom_extract_image_dataset_metafeat(
     path_root: str | Path, train_split: str = "train", val_split: str = "val"
@@ -138,4 +143,92 @@ class CustomPerfPredictor(PerfPredictor):
             "tol": 1e-4,
         }
         super().__init__(fit_params=custom_defaults, **kwargs)
+
+@dataclass
+class PortfolioData:
+    """Container for portfolio data files"""
+
+    pipeline_df: pd.DataFrame
+    curve_df: pd.DataFrame
+    cost_df: pd.DataFrame
+    meta_df: pd.DataFrame
+
+
+class ConfigSpaceBuilder:
+    """Handles creation of ConfigurationSpace from YAML"""
+
+    @staticmethod
+    def from_yaml(config_dict: dict) -> ConfigurationSpace:
+        cs = ConfigurationSpace()
+
+        type_to_param = {
+            "float": UniformFloatHyperparameter,
+            "int": UniformIntegerHyperparameter,
+            "categorical": CategoricalHyperparameter,
+        }
+
+        for param_name, param_config in config_dict.items():
+            param_type = param_config["type"]
+            param_class = type_to_param.get(param_type)
+
+            if not param_class:
+                raise ValueError(f"Unknown parameter type: {param_type}")
+
+            # Convert scientific notation strings to float
+            if param_type in ["float", "int"]:
+                lower = (
+                    float(param_config["lower"])
+                    if isinstance(param_config["lower"], str)
+                    else param_config["lower"]
+                )
+                upper = (
+                    float(param_config["upper"])
+                    if isinstance(param_config["upper"], str)
+                    else param_config["upper"]
+                )
+
+                if param_type == "float":
+                    param = param_class(
+                        name=param_name,
+                        lower=lower,
+                        upper=upper,
+                        log=param_config.get("log", False),
+                    )
+                else:  # int
+                    param = param_class(
+                        name=param_name, lower=int(lower), upper=int(upper)
+                    )
+            else:  # categorical
+                param = param_class(name=param_name, choices=param_config["choices"])
+
+            cs.add_hyperparameter(param)
+
+        return cs
+
+
+class PortfolioManager:
+    """Handles loading and saving of portfolio data"""
+
+    @staticmethod
+    def load(portfolio_dir: str) -> PortfolioData:
+        """Load portfolio data from CSV files"""
+        try:
+            return PortfolioData(
+                pipeline_df=pd.read_csv(f"{portfolio_dir}/config.csv", index_col=0),
+                curve_df=pd.read_csv(f"{portfolio_dir}/curve.csv", index_col=0),
+                cost_df=pd.read_csv(f"{portfolio_dir}/cost.csv", index_col=0),
+                meta_df=pd.read_csv(f"{portfolio_dir}/meta.csv", index_col=0),
+            )
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Portfolio file not found in {portfolio_dir}: {e}")
+
+    @staticmethod
+    def save(portfolio: PortfolioData, output_dir: str):
+        """Save portfolio data to CSV files"""
+        os.makedirs(output_dir, exist_ok=True)
+
+        portfolio.pipeline_df.to_csv(f"{output_dir}/config.csv", index=True)
+        portfolio.curve_df.to_csv(f"{output_dir}/curve.csv", index=True)
+        portfolio.cost_df.to_csv(f"{output_dir}/cost.csv", index=True)
+        portfolio.meta_df.to_csv(f"{output_dir}/meta.csv", index=True)
     
