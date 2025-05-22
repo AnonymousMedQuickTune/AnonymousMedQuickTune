@@ -17,6 +17,7 @@ import logging
 from qtt.utils import set_logger_verbosity
 from qtt.predictors.perf import DEFAULT_FIT_PARAMS as PERF_DEFAULT_FIT_PARAMS
 from qtt.predictors.cost import DEFAULT_FIT_PARAMS as COST_DEFAULT_FIT_PARAMS
+from src.utils.ftpfn import FTPFNSurrogateModel  # , FTPFN, FTPFNSurrogateModel2
 
 from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
                          UniformFloatHyperparameter,
@@ -122,7 +123,7 @@ def custom_extract_image_dataset_metafeat(
 class CustomCostPredictor(CostPredictor):
     """Custom CostPredictor with modified default parameters"""
     
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: str | None = None, seed: int | None = None):
         # Initialize Predictor first with our name
         Predictor.__init__(self, name="medical_cost_predictor", path=path)
         
@@ -137,23 +138,24 @@ class CustomCostPredictor(CostPredictor):
             "validation_fraction": 0.1,
             "tol": 1e-4,
         }
+        verbosity = 2
         
         # Initialize CostPredictor without calling Predictor.__init__ again
         self.fit_params = self._validate_fit_params(custom_defaults, COST_DEFAULT_FIT_PARAMS)
-        self.seed = None
-        self.verbosity = 2
-        set_logger_verbosity(2, logger)
+        self.seed = seed
+        self.verbosity = verbosity
+        set_logger_verbosity(verbosity, logger)
 
 
 class CustomPerfPredictor(PerfPredictor):
     """Custom PerfPredictor with modified default parameters"""
     
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: str | None = None, seed: int | None = None):
         # Initialize Predictor first with our name
         Predictor.__init__(self, name="medical_perf_predictor", path=path)
         
         # Override default parameters
-        custom_defaults = {
+        custom_fit_params = {
             "learning_rate_init": 0.0001,
             "batch_size": 1,  # default: 1024
             "max_iter": 100,
@@ -162,12 +164,84 @@ class CustomPerfPredictor(PerfPredictor):
             "validation_fraction": 0.1,
             "tol": 1e-4,
         }
+        custom_refit_params = {
+            "learning_rate_init": 0.001,
+            "batch_size": 2048,  # TODO: check if this works
+            "max_iter": 50,
+            "early_stop": True,
+            "patience": 5,
+            "tol": 1e-4,
+        }
+        verbosity = 2
         
-        # Initialize PerfPredictor without calling Predictor.__init__ again
-        self.fit_params = self._validate_fit_params(custom_defaults, PERF_DEFAULT_FIT_PARAMS)
-        self.seed = None
-        self.verbosity = 2
-        set_logger_verbosity(2, logger)
+        # Initialize performance predictor attributes
+        self.fit_params = self._validate_fit_params(custom_fit_params, PERF_DEFAULT_FIT_PARAMS)
+        self.refit_params = self._validate_fit_params(custom_refit_params, PERF_DEFAULT_FIT_PARAMS)
+        self.seed = seed
+        self.verbosity = verbosity
+        set_logger_verbosity(verbosity, logger)
+
+
+class FTPFNPerfPredictor(PerfPredictor):
+    """Performance predictor using FT-PFN (like in IfBO) instead of Gaussian Process regression."""
+
+    def __init__(self, path: str | None = None, seed: int | None = None):
+        # Initialize Predictor first with our name
+        Predictor.__init__(self, name="ft_pfn_medical_perf_predictor", path=path)
+
+        # Override default parameters
+        custom_fit_params = {
+            "learning_rate_init": 0.0001,
+            "batch_size": 1,  # default: 1024
+            "max_iter": 100,
+            "early_stop": True,
+            "patience": 5,
+            "validation_fraction": 0.1,
+            "tol": 1e-4,
+        }
+        custom_refit_params = {
+            "learning_rate_init": 0.001,
+            "batch_size": 2048,  # TODO: check if this works
+            "max_iter": 50,
+            "early_stop": True,
+            "patience": 5,
+            "tol": 1e-4,
+        }
+        verbosity = 2
+
+        # Initialize performance predictor attributes
+        self.fit_params = self._validate_fit_params(custom_fit_params, PERF_DEFAULT_FIT_PARAMS)
+        self.refit_params = self._validate_fit_params(custom_refit_params, PERF_DEFAULT_FIT_PARAMS)
+        self.seed = seed
+        self.verbosity = verbosity
+        set_logger_verbosity(verbosity, logger)
+
+    def _get_model(self):
+        """Override _get_model to return FTPFNSurrogateModel instead of default GP model"""    
+        params = {
+            "in_dim": [
+                len(self.types_of_features["continuous"]),
+                len(self.types_of_features["categorical"]) + len(self.types_of_features["bool"]),
+            ],
+            "in_curve_dim": self._curve_dim,
+        }
+        return FTPFNSurrogateModel(**params)
+        # ------------------------------------------------------------------------------------------
+        print("Parameters being passed to FTPFN:")
+        print(params)
+        
+        # FTPFN expects different parameters than FTPFNSurrogateModel
+        ftpfn_params = {
+            "target_path": None,  # or specify a path
+            "version": "0.0.1",
+            "device": None  # will default to CPU or available GPU
+        }
+        print("\nActual FTPFN parameters:")
+        print(ftpfn_params)
+        
+        return FTPFN(**ftpfn_params)  # Use the correct parameters for FTPFN
+        # return FTPFNSurrogateModel(**params)
+    
 
 @dataclass
 class PortfolioData:

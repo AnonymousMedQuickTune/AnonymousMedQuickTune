@@ -27,6 +27,7 @@ from src.utils.quicktune_utils import (
     ConfigSpaceBuilder,
     save_config_files,
     custom_extract_image_dataset_metafeat,
+    FTPFNPerfPredictor,
 )
 
 # For debugging purposes:
@@ -204,12 +205,24 @@ def main(config: DictConfig) -> None:
         predictor_path = Path(config.experiment_base_dir) / "predictors"
         predictor_path.mkdir(parents=True, exist_ok=True)
 
-        perf_predictor = CustomPerfPredictor(
-            path=str(predictor_path / "medical_perf_predictor")
-        ).fit(X=merged_df, y=curve)
+        if config.qt.use_ftpfn_perf_predictor:
+            # Use FT-PFN performance predictor like in IfBO
+            print("\nUse FT-PFN performance predictor\n")
+            perf_predictor = FTPFNPerfPredictor(
+                path=str(predictor_path / "ftpfn_medical_perf_predictor"),
+                seed=config.seed
+            ).fit(X=merged_df, y=curve)
+        else:
+            # Use Quicktune's default SurrogateModel that contains GPRegressionModel
+            print("\nUse Quicktune's default SurrogateModel that contains GPRegressionModel\n")
+            perf_predictor = CustomPerfPredictor(
+                path=str(predictor_path / "medical_perf_predictor"),
+                seed=config.seed
+            ).fit(X=merged_df, y=curve)
 
         cost_predictor = CustomCostPredictor(
-            path=str(predictor_path / "medical_cost_predictor")
+            path=str(predictor_path / "medical_cost_predictor"),
+            seed=config.seed
         ).fit(X=merged_df, y=cost)
 
         # Save predictors (no need to reset paths anymore)
@@ -283,6 +296,9 @@ def main(config: DictConfig) -> None:
                 # Get new configuration from optimizer
                 config_id = trial.get("config-id", 0)
                 print(f"\nSampling configuration {config_id} from optimizer")
+
+                # TODO: check if this is needed
+                optimizer.ante()
 
                 # Get configuration from optimizer
                 configuration = optimizer.ask()
