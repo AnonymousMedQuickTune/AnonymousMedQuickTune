@@ -86,7 +86,8 @@ def get_paths(data_path, name):
 def natural_key(string_):
     return [int(s) if s.isdigit() else s for s in re.split(r'(\d+)', string_)]
 
-def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run.
+def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run. This is not active as no cache is needed. 
+    # Cache is used if there are multiple options of voxel size and they are calculated separately. If not, then just the trasnformations are needed.
     """
     Preprocess and cache brain tumor datasets for faster experiment initialization.
 
@@ -102,9 +103,10 @@ def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel siz
 
     if not os.path.exists(os.path.join(raw_dataset_path + "cache")): # If using voxel size for preprocessing this will change
         print("Processing raw dataset...")
-        preprocess_dataset(raw_dataset_path, processed_dataset_path)
+        # get_dataloaders(raw_dataset_path, processed_dataset_path)
     else:
         print("Raw dataset already processed, skipping...")
+        
 
 def get_dataloaders(
     data,
@@ -113,8 +115,6 @@ def get_dataloaders(
     batch_size,
     num_workers,
     fold_idx,
-    dataset_name,
-    output_path,
 ):
 
     """
@@ -134,11 +134,11 @@ def get_dataloaders(
         tuple: (train_loader, val_loader) for the current fold
     """
     # Create output directory if it doesn't exist
-    Path(output_path).mkdir(parents=True, exist_ok=True)
+    #Path(output_path).mkdir(parents=True, exist_ok=True)
 
     # Here is all the catched value of the paths for the specific voxel size. 
 
-    X_train, y_train, _, _, = load_3d_dataset(dataset_name)
+    #X_train, y_train, _, _, = load_3d_dataset(dataset_name)
 
     # Create k-fold splitter
     kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -151,7 +151,7 @@ def get_dataloaders(
     
     # Combine images and labels into a list of dictionaries
     train_data_images = [{"index": idx, "image": img, "label": label} 
-                    for idx, (img, label) in enumerate(zip(X_train, y_train))]
+                    for idx, (img, label) in enumerate(zip(data, labels))]
  
     # Split data for current fold
     train_data = [train_data_images[i] for i in train_idx]
@@ -181,7 +181,6 @@ def get_dataloaders(
     )
 
     return train_loader, val_loader
-
 
 def FullTransform(voxel):
     transforms = [

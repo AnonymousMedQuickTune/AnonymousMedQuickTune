@@ -217,7 +217,8 @@ def test_run_pipeline(
                     "type": config.model.type,
                     "task": config.model.task,
                     "num_classes": num_classes,
-                }
+                }, 
+                hyperparameters
             )
         else:
             raise ValueError(
