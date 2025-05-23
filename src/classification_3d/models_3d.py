@@ -9,6 +9,7 @@ from densenet import DenseModel
 
 def get_3d_model(
     model_config,
+    hyperparameters,
 ):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
     """
     Create and initialize a model based on the model configuration.
@@ -32,7 +33,7 @@ def get_3d_model(
 
     elif model_type == "densenetv2":
         # how will the config be added?
-        model = DenseModel(model_config["config"])
+        model = DenseModel(hyperparameters)
 
     else:
         raise ValueError("Unknown model type: " + model_type)

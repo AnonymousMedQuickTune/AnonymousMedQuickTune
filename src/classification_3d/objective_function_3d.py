@@ -65,7 +65,7 @@ def run_3d_pipeline(
             "num_classes": num_classes,
             # How to deal with the model config?
             # "config": config.model.search_space,
-        }
+        }, hyperparameters
     ).to(device)
     epoch = 10
 
@@ -103,7 +103,7 @@ def run_3d_pipeline(
         # ... Training ...
 
         # Get data loaders for this fold
-        train_loader, val_loader = get_brain_tumor_kfold_loaders(
+        train_loader, val_loader = get_kfold_loaders(
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
             k_folds=k_folds,
@@ -140,10 +140,24 @@ def run_3d_pipeline(
             else None
         )
 
+        # Initialize metrics dynamically based on all_folds_final_metrics
+        base_metrics = list(all_folds_final_metrics.keys()) + ["loss"]
+        metrics = {
+            "train": {metric: [] for metric in base_metrics},
+            "val": {
+                **{metric: [] for metric in base_metrics},
+                "confusion_matrices": [],  # Additional metric specific to validation
+            },
+        }
+
         # Initialize training components
         checkpoint_manager = CheckpointManager(
             fold_directory, previous_pipeline_directory
         )
+
+        # Modified scaler initialization to be more robust
+        scaler = torch.amp.GradScaler() if device == "cuda" else None
+
         # Load checkpoint and initialize training state
         start_epoch = checkpoint_manager.initialize_training(
             model, optimizer, scheduler, metrics

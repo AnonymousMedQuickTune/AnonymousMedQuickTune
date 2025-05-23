@@ -1,13 +1,34 @@
 import os
 import numpy as np
-from sklearn.model_selection import train_test_split
+import pandas as pd
+from pathlib import Path
+from sklearn.model_selection import StratifiedKFold, train_test_split
+
+from monai.transforms import (
+    Compose,
+    LoadImaged,
+    Spacingd,
+    NormalizeIntensityd,
+    EnsureChannelFirstd,
+    RandRotated,
+    RandZoomd,
+    RandFlipd,
+)
+from monai.data import Dataset
+from torch.utils.data import DataLoader
 
 
-# global variables
 
-IMAGE_NAME = "/image.nii.gz"
-SEGMENTATION_NAME = "/segmentation.nii.gz"
+# Global variables
+# These names can change depending in the dataset, format of the scans, segmentations, etc. 
+# What else should be added as a global variable? Should this be part of the config file? 
+IMAGE_NAME = "image.nii.gz"
+SEGMENTATION_NAME = "segmentation.nii.gz"
 MODALITY = "MRI"
+MEDIAN_VOXEL = (0.68, 0.68, 5.0)
+
+# Possible
+DATASET_NAME = "lipo"
 
 def load_3d_dataset(name, data_path="datasets", seed=42):
     """
@@ -23,7 +44,7 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
 
     # TODO: Implement 3D dataset loading
 
-    images, segmentations, csv_path = get_paths(data_path, name)
+    images, segmentations, csv_path = get_paths(data_path, name) # Segmentation will be added in the next run. 
 
     # Load labels
     labels_csv = pd.read_csv(csv_path)
@@ -52,8 +73,8 @@ def get_paths(data_path, name):
     full_path = os.path.join(data_path, name)
     directory_names = sorted(os.listdir(full_path), key=natural_key)
 
-    image_name = configuration.IMAGE_NAME
-    segmentation_name = configuration.SEGMENTATION_NAME
+    image_name = IMAGE_NAME
+    segmentation_name = SEGMENTATION_NAME
 
     images_path = [os.path.join(full_path, d, image_name) for d in directory_names]
     segmentations_path = [os.path.join(full_path, d, segmentation_name) for d in directory_names]
@@ -65,7 +86,7 @@ def get_paths(data_path, name):
 def natural_key(string_):
     return [int(s) if s.isdigit() else s for s in re.split(r'(\d+)', string_)]
 
-def cache_datastes(config: DictConfig) -> None:
+def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run.
     """
     Preprocess and cache brain tumor datasets for faster experiment initialization.
 
@@ -76,87 +97,14 @@ def cache_datastes(config: DictConfig) -> None:
 
 
     # First, process the raw dataset
-    raw_dataset_path = os.path.join(config.data.path, "Lipo/raw")
-    processed_dataset_path = os.path.join(config.data.path, "Lipo/cache")
+    raw_dataset_path = os.path.join(data_path + name, "/raw") # If there is a config path this could be changed. 
+    processed_dataset_path = os.path.join(data_path + name, "/cache")
 
-    if not os.path.exists(os.path.join(raw_dataset_path + "cache" + voxel_key)):
+    if not os.path.exists(os.path.join(raw_dataset_path + "cache")): # If using voxel size for preprocessing this will change
         print("Processing raw dataset...")
-        preprocess_dataset(raw_dataset_path, processed_dataset_path, voxel_key)
+        preprocess_dataset(raw_dataset_path, processed_dataset_path)
     else:
         print("Raw dataset already processed, skipping...")
-
-
-def preprocess_dataset(dataset_path, output_path):
-
-    # Create output directory if it doesn't exist
-    Path(output_path).mkdir(parents=True, exist_ok=True)
-
-    # Here is all the catched value of the paths for the specific voxel size. 
-
-    X_train, y_train, _, _, seg_train, _ = prepare_data()
-
-    # Combine images and labels into a list of dictionaries
-    train_data_images = [{"index": idx, "image": img, "label": label} 
-                    for idx, (img, label) in enumerate(zip(X_train, y_train))]
-    
-    train_data_segmentations = [{"index": idx, "seg": seg} 
-                            for idx, seg in enumerate(seg_train)]
-
-    # Prepare train and validation sets
-    train_data = [train_data_images[i] for i in train_idx]
-    valid_data = [train_data_images[i] for i in val_idx]
-
-    # Segmentation
-    train_seg = [train_data_segmentations[i] for i in train_idx]
-    valid_seg = [train_data_segmentations[i] for i in val_idx]
-
-    stats = compute_voxel_sizes()
-
-    median_spacing = stats["median_voxel"]
-    mean_spacing = stats["mean_voxel"]
-    isotropic_spacing = stats["isotropic_voxel"]
-    isovolumetric_spacing = stats["isotropic_volume_voxel"]
-    
-    # Define target spacing values for each voxel option
-    target_spacing_options = {
-        "Median": median_spacing,
-        "Mean": mean_spacing,
-        "Isotropic": isotropic_spacing,
-        "IsoVolumetric": isovolumetric_spacing
-    }
-
-    default_spacing = median_spacing
-
-    # Get the corresponding target spacing based on the selected voxel option
-    target_spacing = target_spacing_options.get(selected_voxel, default_spacing)
-
-    # Print or use the target spacing
-    print("Selected Target Spacing:", target_spacing)
-
-    # First preprocess part:
-    train_set_images = Dataset(train_data, transform=PreImgTransform(target_spacing))
-    train_set_segmentations = Dataset(train_seg, transform=PreSegTransform(target_spacing))
-    valid_set_images = Dataset(valid_data, transform=PreImgTransform(target_spacing))
-    valid_set_segmentations = Dataset(valid_seg, transform=PreSegTransform(target_spacing))
-
-    # First for training data
-    train_roi_start, train_roi_end = cropping_padding(train_set_images, train_set_segmentations)
-    
-    train_set = Dataset(train_data, transform=FullTransform(target_spacing, train_roi_start, train_roi_end))
-
-    # Loop through dataset and check shapes
-    print(len(train_set_images))
-
-    # Cropping for validation data
-    valid_roi_start, valid_roi_end = cropping_padding(valid_set_images, valid_set_segmentations)
-    valid_set = Dataset(valid_data, transform=ValidTransform(target_spacing, valid_roi_start, valid_roi_end))
-
-    with open(train_path, "wb") as f:
-        pickle.dump(train_set, f)
-    with open(val_path, "wb") as f:
-        pickle.dump(valid_set, f)
-
-    return train_set, valid_set
 
 def get_dataloaders(
     data,
@@ -165,11 +113,11 @@ def get_dataloaders(
     batch_size,
     num_workers,
     fold_idx,
-    normalization_stats=None,
-    augmentation_type="medical",
+    dataset_name,
+    output_path,
 ):
 
- """
+    """
     Create data loaders for k-fold cross validation of brain tumor dataset.
 
     Args:
@@ -185,6 +133,12 @@ def get_dataloaders(
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
+    # Create output directory if it doesn't exist
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+
+    # Here is all the catched value of the paths for the specific voxel size. 
+
+    X_train, y_train, _, _, = load_3d_dataset(dataset_name)
 
     # Create k-fold splitter
     kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -194,14 +148,20 @@ def get_dataloaders(
     for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
         if i == fold_idx:
             break
-
+    
+    # Combine images and labels into a list of dictionaries
+    train_data_images = [{"index": idx, "image": img, "label": label} 
+                    for idx, (img, label) in enumerate(zip(X_train, y_train))]
+ 
     # Split data for current fold
-    train_data = [data[i] for i in train_idx]
-    train_labels = labels[train_idx]
-    val_data = [data[i] for i in val_idx]
-    val_labels = labels[val_idx]
+    train_data = [train_data_images[i] for i in train_idx]
+    valid_data = [train_data_images[i] for i in val_idx]
 
-    # here should come everything that has to be about the train set
+    # First preprocess part:
+    train_dataset = Dataset(train_data, transform=FullTransform(MEDIAN_VOXEL))
+    val_dataset = Dataset(valid_data, transform=FullTransform(MEDIAN_VOXEL))
+ 
+    # Try without cropping and padding if it is possible, if not need to add cropping.
 
     # Create data loaders
     train_loader = DataLoader(
@@ -221,3 +181,17 @@ def get_dataloaders(
     )
 
     return train_loader, val_loader
+
+
+def FullTransform(voxel):
+    transforms = [
+        LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+        EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+        Spacingd(keys="image", pixdim=voxel, mode="bilinear"),  # Resample to target spacing
+        NormalizeIntensityd(keys=["image"]),
+        RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+        RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+        RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+    ]
+
+    return Compose(transforms)
