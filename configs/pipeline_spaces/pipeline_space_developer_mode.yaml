@@ -6,8 +6,8 @@ learning_rate:
 
 batch_size:
   type: int
-  lower: 2
-  upper: 32
+  lower: 1
+  upper: 2
 
 optimizer_type:
   type: categorical
@@ -44,8 +44,8 @@ mixup_alpha:
 
 number_of_epochs:  # for multifidelity
   type: int
-  lower: 49
-  upper: 50
+  lower: 4
+  upper: 5
   is_fidelity: true  # explicitly marked as fidelity parameter
 
 

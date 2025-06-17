@@ -58,11 +58,24 @@ preprocess-brain-tumor-cluster:
 # NEPS EXPERIMENTS ---------------------------------------------------------------------------------
 
 # Run an HPO experiment on the local machine
-run-neps-local DATASET EXPERIMENT_NAME SEED:
+run-2d-hpo-local DATASET EXPERIMENT_NAME SEED:
   python -m src.train_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
+    model.type=resnet \
+    data.dimensionality=2d \
+    developer_mode=true
+
+# Run an HPO experiment on a 3D dataset on the local machine
+run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
+  python -m src.train_neps \
+    data.dataset={{DATASET}} \
+    experiment_name={{EXPERIMENT_NAME}} \
+    seed={{SEED}} \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
 
 # Submit an HPO experiment to the cluster
 run-neps-cluster DATASET EXPERIMENT_NAME SEED:
