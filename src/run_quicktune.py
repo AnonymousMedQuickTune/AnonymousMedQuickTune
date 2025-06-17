@@ -76,7 +76,6 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
                 **hyperparameters,
             )
         elif dimensionality == "3d":
-            # TODO: add model selection (see update in run_2d_pipeline)
             result = run_3d_pipeline(  
                 pipeline_directory=pipeline_dir,
                 previous_pipeline_directory=prev_pipeline_dir,

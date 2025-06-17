@@ -4,6 +4,7 @@ import time
 import numpy as np
 import torch
 from torch import nn
+import yaml
 
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
@@ -60,35 +61,36 @@ def run_3d_pipeline(
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # Initialize model and move it to the appropriate device
+    if "model" in hyperparameters:
+        model_type = hyperparameters["model"]  # For QuickTune
+        print(f"\nQuickTune selected model: {model_type}\n")
+    else:
+        model_type = config.model.type  # For NePS
+        print(f"\nNePS selected model: {model_type}\n")
 
-    # TODO: Add 3D trainings pipeline -------------------------------------------------------------
-    # Reference implementation available in: src/classification_2d/objective_function_2d.py
-
-    # Placeholder:
-    num_classes = 2
-    train_time = 20
-    eval_time = 10
-    epoch_time = 30
     model = get_3d_model(
         {
             "type": config.model.type,
             "task": config.model.task,
             "num_classes": num_classes,
-            # How to deal with the model config?
-            # "config": config.model.search_space,
-        }, hyperparameters
+        }, hyperparameters  # TODO @Both: Check how to handle model specific hyperparameters for portfolio
     ).to(device)
-    epoch = 10
 
-    # Initialize metrics storage for all folds
+    # Get k-fold parameter from config or default to 5
+    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
+
+    # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics?
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
 
     # Initialize TensorBoard writer
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
+    
+    # TODO @Diane: Add code for normalization stats. Either set them to None or use AutoNorm.
 
-    # Example: Logging 5-fold cross validation for NePS
-    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
+    # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}\n... training...")
 
@@ -110,14 +112,23 @@ def run_3d_pipeline(
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
             fold_idx=fold,
+            # normalization_stats=None,  # TODO @Diane: Add code for normalization stats. Either set them to None or use AutoNorm.
+            # augmentation_type=config.data.augmentation.type,  # TODO @Diane: Implement data augmentation for get_dataloaders.
             developer_mode=config.developer_mode,
         )
+
+        # TODO @Natalia: Do we need this?
+        # Apply dropout rate to all applicable layers in the model
+        # model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
+        
+        print(f"Model initialized: {model_type}\n")
 
         # Setup loss function with optional label smoothing
         criterion = nn.CrossEntropyLoss(
             label_smoothing=hyperparameters.get("label_smoothing", 0.0)
         )
 
+        # Initialize optimizer with specified parameters
         optimizer = get_optimizer(
             model=model,
             optimizer_type=hyperparameters.get("optimizer_type", "adam"),
@@ -150,6 +161,29 @@ def run_3d_pipeline(
             },
         }
 
+        # Training setup: number of epochs
+        with open(config.pipeline_space, "r") as f:
+            pipeline_config = yaml.safe_load(f)
+
+        if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly
+            if config.searcher == "random_search":
+                print(f"\nRandom Search with a multi-fidelity searchspace.\nNon-multi-fidelity optimization: Train model over {config.training.number_of_epochs} epochs!\n")
+                # For random search:
+                # The maximum number of epochs from the pipeline space is used for all evaluations.
+                epochs = pipeline_config["number_of_epochs"]["upper"]
+                print(f"Random Search: Using maximum epochs value: {epochs}")
+            else:
+                print(f"\nMulti-fidelity optimization:\nUsing number_of_epochs ({hyperparameters['number_of_epochs']}) as fidelity parameter!\n")
+                # For multi-fidelity compatible searchers (e.g., PriorBand, HyperBand):
+                # 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
+                # Early optimization runs use fewer epochs for rapid exploration,
+                # while promising hyperparameter configurations get more epochs later.
+                epochs = pipeline_config["number_of_epochs"]
+        else:
+            # For non-multi-fidelity search spaces: Use the number of epochs from the config
+            print(f"\nNon-multi-fidelity optimization:\nTrain model over {config.training.number_of_epochs} epochs!")
+            epochs = config.training.number_of_epochs
+            
         # Initialize training components
         checkpoint_manager = CheckpointManager(
             fold_directory, previous_pipeline_directory
@@ -176,13 +210,13 @@ def run_3d_pipeline(
             },
             config=config,
             model=model,
-            epochs=epoch,
+            epochs=epochs,
             pipeline_dir=fold_directory,
             prev_pipeline_dir=previous_pipeline_directory,
         )
 
         # Main training loop
-        for training_epochs in range(start_epoch, epoch):
+        for training_epochs in range(start_epoch, epochs):
             epoch_start_time = time.time()
 
             # Apply warmup scheduler at the beginning of each epoch
@@ -206,7 +240,7 @@ def run_3d_pipeline(
             # Validation phase
             eval_start_time = time.time()
             val_metrics = None  # Initialize val_metrics as None
-            if (training_epochs + 1) % config.logging.eval_every == 0 or training_epochs == epoch - 1:
+            if (training_epochs + 1) % config.logging.eval_every == 0 or training_epochs == epochs - 1:
                 val_metrics = evaluate_and_log_metrics(
                     model,
                     val_loader,
@@ -251,7 +285,7 @@ def run_3d_pipeline(
             )
             
             # Store final metrics for all folds
-            if training_epochs == epoch - 1:
+            if training_epochs == epochs - 1:
                 all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
                 all_folds_final_metrics["precision"].append(
                     np.mean(val_metrics["precision"]) * 100
@@ -312,7 +346,7 @@ def run_3d_pipeline(
             # Log sample images with predictions (every N epochs or at the end)
             if (
                 training_epochs + 1
-            ) % config.logging.viz_images_every == 0 or training_epochs == epoch - 1:
+            ) % config.logging.viz_images_every == 0 or training_epochs == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
 
@@ -321,21 +355,13 @@ def run_3d_pipeline(
     # Close TensorBoard writer
     writer.close()
 
-    # Placeholder for metric values: The metrics from each of the 5 folds in the last epoch
-    # Testing?
-    #all_folds_final_metrics = {
-    #    "accuracy": [90, 87, 85, 89, 88],
-    #    "precision": [90, 87, 86, 89, 88],
-    #    "recall": [90, 87, 82, 89, 88],
-    #    "f1": [90, 87, 83, 89, 88],
-    #}
     # --------------------------------------------------------------------------------------------
 
     # For NePS:
     # NePS requires a single objective (loss) to minimize. We use the negative of one selected
     # metric (e.g., f1-score) as the loss. Additional metrics are logged in 'info_dict'.
 
-    # Get the average of the selected metric across all K-folds
+    # Get the specified metric from final metrics for NePS
     selected_metric = np.mean(all_folds_final_metrics[config.metric])
     print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
 
