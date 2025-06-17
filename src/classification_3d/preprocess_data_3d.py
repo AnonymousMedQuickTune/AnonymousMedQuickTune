@@ -52,16 +52,16 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
     labels_csv = pd.read_csv(csv_path)
     labels = labels_csv['Diagnosis_binary'].to_numpy()
 
-    # Filter out all samples with label -1 (e.g., invalid or insufficient class samples)
+    # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
     # TODO @Natalia: This is a hack to get the dataset to work. We should find a better way to handle this.
-    if name == "lipo":
-        # Create a list of indices for which the label is not -1
-        filtered_indices = [i for i, label in enumerate(labels) if label != -1]
+    if name in ["lipo", "desmoid", "gist"]:
+        # Create a list of indices for which the label is not -1 and not NaN
+        filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
         # Keep only the images corresponding to valid indices
         images = [images[i] for i in filtered_indices]
         # Keep only the segmentations corresponding to valid indices
         segmentations = [segmentations[i] for i in filtered_indices]
-        # Keep only the labels that are not -1
+        # Keep only the labels that are not -1 and not NaN
         labels = [labels[i] for i in filtered_indices]
 
     # Recheck class distribution after filtering
