@@ -77,15 +77,25 @@ run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
     data.dimensionality=3d \
     developer_mode=true
 
-# Submit an HPO experiment to the cluster
-run-neps-cluster DATASET EXPERIMENT_NAME SEED:
+# Submit an HPO experiment for a 2D dataset to the cluster
+run-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu19 \
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
-    cluster_scripts/train_neps.sh
+    cluster_scripts/train_neps_2d.sh
+
+# Submit an HPO experiment for a 3D dataset to the cluster
+run-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  sbatch --exclude=dlcgpu19 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
+    cluster_scripts/train_neps_3d.sh
 
 # TEST EXPERIMENTS ---------------------------------------------------------------------------------
 

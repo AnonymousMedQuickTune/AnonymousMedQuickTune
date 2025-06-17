@@ -21,4 +21,7 @@ python -m src.train_neps \
     seed=$SEED \
     experiment_base_dir=$EXP_DIR \
     data.path=$DATA_DIR \
-    pipeline_space=$PIPELINE_SPACE
+    pipeline_space=$PIPELINE_SPACE \
+    model.type=resnet \
+    data.dimensionality=2d \
+    # developer_mode=true
