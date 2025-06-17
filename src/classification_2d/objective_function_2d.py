@@ -73,9 +73,15 @@ def run_2d_pipeline(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Initialize model and move it to the appropriate device
+    if "model" in hyperparameters:
+        model_type = hyperparameters["model"]  # For QuickTune
+        print(f"\nQuickTune selected model: {model_type}\n")
+    else:
+        model_type = config.model.type  # For NePS
+        print(f"\nNePS selected model: {model_type}\n")
     model = get_2d_model(
         {
-            "type": config.model.type,
+            "type": model_type,
             "task": config.model.task,
             "num_classes": num_classes,
         }
@@ -144,7 +150,7 @@ def run_2d_pipeline(
 
         # Apply dropout rate to all applicable layers in the model
         model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
-        print(f"Model initialized: {config.model.type}\n")
+        print(f"Model initialized: {model_type}\n")
 
         # Setup loss function with optional label smoothing
         criterion = nn.CrossEntropyLoss(

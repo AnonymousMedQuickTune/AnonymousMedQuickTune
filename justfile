@@ -78,7 +78,7 @@ run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
     developer_mode=true
 
 # Submit an HPO experiment to the cluster
-run-hpo-cluster DATASET EXPERIMENT_NAME SEED:
+run-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu19 \
@@ -145,13 +145,15 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     cluster_scripts/analyze_fidelity_correlation.sh
 
 # Merge multiple NePS runs into a single QuickTune portfolio
-merge-neps2qt-local DATASET EXPERIMENT_NAMES SEEDS OUTPUT_DIR:
-  python src/analysis/neps_quicktune_output_adapter.py \
-    experiments/{{DATASET}} \
-    --merge-runs \
-    --experiment-names "{{EXPERIMENT_NAMES}}" \
-    --seeds "{{SEEDS}}" \
-    --output-dir {{OUTPUT_DIR}}
+create-portfolio-local DATASET EXPERIMENT_NAMES SEEDS:
+  python -m src.analysis.neps_quicktune_output_adapter \
+    data.dataset="{{DATASET}}" \
+    experiment_names="'{{EXPERIMENT_NAMES}}'" \
+    seeds="'{{SEEDS}}'" \
+    portfolio_dir=experiments/Portfolio \
+    merge_runs=true \
+    run_mode=Portfolio \
+    experiment_dir_suffix=""
 
 # Run QuickTune on a portfolio of NePS runs
 run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
@@ -161,7 +163,8 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     seed={{SEED}} \
     portfolio_dir={{PORTFOLIO_DIR}} \
     data.path=datasets \
-    use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
+    run_mode=QuickTune \
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
 
 # Evaluate NePS optimization results
 eval-neps-local DATASET EXPERIMENT_NAME SEED:

@@ -10,16 +10,20 @@ It creates four CSV files:
 - meta.csv: Meta-features of the dataset
 """
 
+import logging
+from pathlib import Path
+
+import hydra
+from omegaconf import DictConfig
+import pandas as pd
+import yaml
+
 import argparse
 import ast
-import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
-import pandas as pd
-import yaml
 
 
 class NePSQuickTuneAdapter:
@@ -320,8 +324,8 @@ def merge_neps_runs(
 
     Args:
         base_dir: Base directory containing all experiments (e.g., experiments/brain_tumor)
-        experiment_names: List of experiment names to merge
-        seeds: List of seeds to merge
+        experiment_names: List of experiment names to merge (can contain duplicates for multiple seeds)
+        seeds: List of seeds to merge (must match length of experiment_names)
         output_dir: Directory to save the merged portfolio
 
     Raises:
@@ -336,32 +340,36 @@ def merge_neps_runs(
     base_path = Path(base_dir)
     processed_runs = set()  # Track which runs we've already processed
 
-    for exp_name in experiment_names:
-        for seed in seeds:
-            run_id = f"{exp_name}_{seed}"
-            if run_id in processed_runs:
-                continue
-            processed_runs.add(run_id)
+    # Verify lengths match
+    if len(experiment_names) != len(seeds):
+        raise ValueError(f"Number of experiments ({len(experiment_names)}) must match number of seeds ({len(seeds)})")
 
-            # Updated path: use experiment directory path
-            exp_dir = base_path / exp_name / f"seed_{seed}"
+    # Process each experiment-seed pair
+    for exp_name, seed in zip(experiment_names, seeds):
+        run_id = f"{exp_name}_{seed}"
+        if run_id in processed_runs:
+            continue
+        processed_runs.add(run_id)
 
-            # Debug logging
-            logging.info(f"Looking for experiment at: {exp_dir}")
-            if exp_dir.exists():
-                logging.info(f"Found experiment at: {exp_dir}")
-            else:
-                logging.warning(f"No experiment found at {exp_dir}")
-                continue
+        # Updated path: use experiment directory path
+        exp_dir = base_path / exp_name / f"seed_{seed}"
 
-            adapter = NePSQuickTuneAdapter(str(exp_dir), output_dir)
-            results = adapter.parse_neps_output()
-            config_df, curves_df, cost_df, meta_df = adapter.create_dataframes(results)
+        # Debug logging
+        logging.info(f"Looking for experiment at: {exp_dir}")
+        if exp_dir.exists():
+            logging.info(f"Found experiment at: {exp_dir}")
+        else:
+            logging.warning(f"No experiment found at {exp_dir}")
+            continue
 
-            all_configs.append(config_df)
-            all_curves.append(curves_df)
-            all_costs.append(cost_df)
-            all_meta.append(meta_df)
+        adapter = NePSQuickTuneAdapter(str(exp_dir), output_dir)
+        results = adapter.parse_neps_output()
+        config_df, curves_df, cost_df, meta_df = adapter.create_dataframes(results)
+
+        all_configs.append(config_df)
+        all_curves.append(curves_df)
+        all_costs.append(cost_df)
+        all_meta.append(meta_df)
 
     if not all_configs:
         raise ValueError("No valid NePS runs found to merge")
@@ -393,52 +401,41 @@ def merge_neps_runs(
     )
 
 
-def main():
+@hydra.main(
+    version_base=None,
+    config_path="../../configs",
+    config_name="main_experiment_config.yaml",
+)
+def main(config: DictConfig) -> None:  # TODO: adapt script for multiple datasets
     """Main entry point of the script."""
-    parser = argparse.ArgumentParser(
-        description="Convert NePS output to QuickTune input format"
-    )
-    parser.add_argument(
-        "input_path",
-        help="Path to the experiment directory (e.g., experiments/brain_tumor/test_8/seed_42)",
-    )
-    parser.add_argument(
-        "--output-dir",
-        default="experiments/quicktune_input",
-        help="Directory to save the output CSV files (default: experiments/quicktune_input)",
-    )
-    parser.add_argument(
-        "--merge-runs",
-        action="store_true",
-        help="Merge multiple NePS runs into a single portfolio",
-    )
-    parser.add_argument(
-        "--experiment-names",
-        help="Comma-separated list of experiment names to merge",
-        type=str,
-    )
-    parser.add_argument(
-        "--seeds", help="Comma-separated list of seeds to merge", type=str
-    )
-
-    args = parser.parse_args()
-
     try:
-        if args.merge_runs:
-            if not args.experiment_names or not args.seeds:
+        if config.get("merge_runs", False):
+            # Get experiment names and seeds from config
+            experiment_names = config.get("experiment_names", "").split(",")
+            seeds = config.get("seeds", "").split(",")
+            
+            if not experiment_names or not seeds:
                 raise ValueError(
-                    "Both --experiment-names and --seeds are required when using --merge-runs"
+                    "Both experiment_names and seeds must be specified in config when merging runs"
                 )
-            experiment_names = args.experiment_names.split(",")
-            seeds = args.seeds.split(",")
-            merge_neps_runs(args.input_path, experiment_names, seeds, args.output_dir)
+                
+            merge_neps_runs(
+                base_dir=config.base_dir,
+                experiment_names=experiment_names,
+                seeds=seeds,
+                output_dir=config.portfolio_dir
+            )
         else:
-            adapter = NePSQuickTuneAdapter(args.input_path, args.output_dir)
+            adapter = NePSQuickTuneAdapter(
+                input_path=config.experiment_base_dir,
+                output_dir=config.quicktune_directory
+            )
             adapter.convert()
+            
     except Exception as e:
         logging.error("Conversion failed: %s", str(e))
         raise
 
 
 if __name__ == "__main__":
-    main()
+    main()  # pylint: disable=no-value-for-parameter

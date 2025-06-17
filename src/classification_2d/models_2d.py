@@ -31,6 +31,9 @@ def get_2d_model(
     elif model_type == "resnet":  # Classic, reliable architecture
         model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
+    elif model_type == "resnet_copy":  # For testing QuickTune stuff...
+        model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)    
     elif model_type == "swin":  # Modern hierarchical ViT
         model = models.swin_v2_b(weights=models.Swin_V2_B_Weights.DEFAULT)
         model.head = nn.Linear(model.head.in_features, num_classes)

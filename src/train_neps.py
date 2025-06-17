@@ -76,7 +76,7 @@ def run_pipeline(
 )
 def main(config: DictConfig) -> None:
     """
-    Main entry point for the training script.
+    Main entry point for the NePStraining script.
 
     Args:
         config (DictConfig): Hydra configuration object
@@ -215,11 +215,12 @@ def main(config: DictConfig) -> None:
             **kwargs,
         ),
         optimizer=config.searcher,  # HPO algorithm
-        root_directory=config.root_directory,
+        root_directory=config.neps_directory,
         max_evaluations_total=(
             1 if "baseline" in str(config.pipeline_space) else config.max_evaluations
         ),
         overwrite_working_directory=False,
+        ignore_errors=True,
         # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
     )
 

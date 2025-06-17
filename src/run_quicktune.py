@@ -2,6 +2,7 @@ import logging
 import os
 import time
 import traceback
+import copy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,106 +13,30 @@ from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
                          UniformFloatHyperparameter,
                          UniformIntegerHyperparameter)
 from omegaconf import DictConfig, OmegaConf
-from qtt import QuickOptimizer, QuickTuner, get_pretrained_optimizer
-from qtt.finetune.image.classification.utils import \
-    extract_image_dataset_metafeat
+from qtt import QuickOptimizer, QuickTuner, QuickImageCLSTuner, get_pretrained_optimizer
 
 from src.classification_2d.objective_function_2d import run_2d_pipeline
+from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.utils.common_utils import set_seed
+from src.utils.quicktune_utils import (
+    CustomQuickImageCLSTuner,
+    CustomCostPredictor,
+    CustomPerfPredictor,
+    PortfolioManager,
+    ConfigSpaceBuilder,
+    save_config_files,
+    custom_extract_image_dataset_metafeat,
+    FTPFNPerfPredictor,
+)
 
-# Constants
-CONFIG_PATH = Path("configs/pipeline_spaces/pipeline_space_without_user_priors.yaml")
-PORTFOLIO_FILES = ["config.csv", "curve.csv", "cost.csv", "meta.csv"]
-
-
-@dataclass
-class PortfolioData:
-    """Container for portfolio data files"""
-
-    pipeline_df: pd.DataFrame
-    curve_df: pd.DataFrame
-    cost_df: pd.DataFrame
-    meta_df: pd.DataFrame
-
-
-class ConfigSpaceBuilder:
-    """Handles creation of ConfigurationSpace from YAML"""
-
-    @staticmethod
-    def from_yaml(config_dict: dict) -> ConfigurationSpace:
-        cs = ConfigurationSpace()
-
-        type_to_param = {
-            "float": UniformFloatHyperparameter,
-            "int": UniformIntegerHyperparameter,
-            "categorical": CategoricalHyperparameter,
-        }
-
-        for param_name, param_config in config_dict.items():
-            param_type = param_config["type"]
-            param_class = type_to_param.get(param_type)
-
-            if not param_class:
-                raise ValueError(f"Unknown parameter type: {param_type}")
-
-            # Convert scientific notation strings to float
-            if param_type in ["float", "int"]:
-                lower = (
-                    float(param_config["lower"])
-                    if isinstance(param_config["lower"], str)
-                    else param_config["lower"]
-                )
-                upper = (
-                    float(param_config["upper"])
-                    if isinstance(param_config["upper"], str)
-                    else param_config["upper"]
-                )
-
-                if param_type == "float":
-                    param = param_class(
-                        name=param_name,
-                        lower=lower,
-                        upper=upper,
-                        log=param_config.get("log", False),
-                    )
-                else:  # int
-                    param = param_class(
-                        name=param_name, lower=int(lower), upper=int(upper)
-                    )
-            else:  # categorical
-                param = param_class(name=param_name, choices=param_config["choices"])
-
-            cs.add_hyperparameter(param)
-
-        return cs
-
-
-class PortfolioManager:
-    """Handles loading and saving of portfolio data"""
-
-    @staticmethod
-    def load(portfolio_dir: str) -> PortfolioData:
-        """Load portfolio data from CSV files"""
-        try:
-            return PortfolioData(
-                pipeline_df=pd.read_csv(f"{portfolio_dir}/config.csv"),
-                curve_df=pd.read_csv(f"{portfolio_dir}/curve.csv"),
-                cost_df=pd.read_csv(f"{portfolio_dir}/cost.csv"),
-                meta_df=pd.read_csv(f"{portfolio_dir}/meta.csv"),
-            )
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"Portfolio file not found in {portfolio_dir}: {e}")
-
-    @staticmethod
-    def save(portfolio: PortfolioData, output_dir: str):
-        """Save portfolio data to CSV files"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        portfolio.pipeline_df.to_csv(f"{output_dir}/config.csv", index=False)
-        portfolio.curve_df.to_csv(f"{output_dir}/curve.csv", index=True)
-        portfolio.cost_df.to_csv(f"{output_dir}/cost.csv", index=False)
-        portfolio.meta_df.to_csv(f"{output_dir}/meta.csv", index=False)
+# For debugging purposes:
+# from qtt.predictors import PerfPredictor, CostPredictor
+# from external.quicktunetool.src.qtt.predictors import PerfPredictor, CostPredictor
+# from external.quicktunetool.src.qtt.optimizers import QuickOptimizer
+# from external.quicktunetool.src.qtt.tuners import QuickTuner
+# from external.quicktunetool.src.qtt.tuners.image.classification.tuner import QuickImageCLSTuner
+# from external.quicktunetool.src.qtt.utils.pretrained import get_pretrained_optimizer
 
 
 def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict:
@@ -121,36 +46,49 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
     start_time = time.time()
 
     # Prepare directories
-    pipeline_dir = os.path.join(trial_info["output-dir"], str(trial["config-id"]))
+    pipeline_dir = Path(trial_info["output-dir"]) / str(trial["config-id"])
     prev_pipeline_dir = None
 
     # Load dataset
-    data_dir = os.path.dirname(trial_info["data-dir"])
+    # TODO: fix hardcoding
+    data_dir = Path(trial_info["data-dir"]).parent
     dataset_dict = load_brain_tumor_dataset(data_dir)
-    num_classes = 2
+    # num_classes = 2
 
     try:
-        # Ensure number_of_epochs is set
-        if "fidelity" in trial:
-            number_of_epochs = trial["fidelity"]
+        # TODO: fix hardcoding
+        number_of_epochs = 1  # TODO: trial["fidelity"]
+
+        hyperparameters = trial["config"]
+        hyperparameters["number_of_epochs"] = 2  # Add number of epochs to hyperparameters
+        print("\n\nHyperparameters: ", hyperparameters, "\n\n")
+        
+
+        dimensionality = config.data.dimensionality.lower()
+
+        if dimensionality == "2d":
+            result = run_2d_pipeline(
+                pipeline_directory=pipeline_dir,
+                previous_pipeline_directory=prev_pipeline_dir,
+                config=config,
+                dataset_dict=dataset_dict,
+                num_classes=trial_info["num-classes"],
+                **hyperparameters,
+            )
+        elif dimensionality == "3d":
+            # TODO: add model selection (see update in run_2d_pipeline)
+            result = run_3d_pipeline(  
+                pipeline_directory=pipeline_dir,
+                previous_pipeline_directory=prev_pipeline_dir,
+                config=config,
+                dataset_dict=dataset_dict,
+                num_classes=trial_info["num-classes"],
+                **hyperparameters,
+            )
         else:
-            number_of_epochs = 4  # Default value if fidelity is not provided
-
-        # Merge trial config with number_of_epochs
-        trial_config = trial["config"].copy()
-        trial_config["number_of_epochs"] = number_of_epochs
-
-        print(f"\n\nTrial config: {trial_config}\n\n")
-
-        result = run_2d_pipeline(
-            pipeline_directory=pipeline_dir,
-            previous_pipeline_directory=prev_pipeline_dir,
-            config=config,
-            dataset_dict=dataset_dict,
-            num_classes=num_classes,
-            **trial_config,
-        )
-
+            raise ValueError(
+                f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
+            )
         # Extract metrics safely
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
@@ -168,7 +106,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
             "score": score,
             "cost": time.time() - start_time,
             "fidelity": number_of_epochs,
-            "config": trial_config,
+            "config": hyperparameters,
         }
     except Exception as e:
         print(f"Error in pipeline: {e}")
@@ -179,7 +117,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
             "score": float("-inf"),
             "cost": float("inf"),
             "fidelity": number_of_epochs if "number_of_epochs" in locals() else 4,
-            "config": trial["config"],
+            "config": hyperparameters,
         }
 
 
@@ -190,7 +128,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
 )
 def main(config: DictConfig) -> None:
     """
-    Main entry point for QuickTune optimization.
+    Main entry point for the QuickTune training script.
 
     Args:
         config (DictConfig): Hydra configuration object
@@ -198,97 +136,201 @@ def main(config: DictConfig) -> None:
     # Set seed for reproducibility
     set_seed(config.seed)
 
-    # Create quicktune output directory with full path structure
-    experiment_path = os.path.join(
-        "experiments",
-        "quicktune",
-        config.data.dataset,
-        config.experiment_name,
-        f"seed_{config.seed}",
-    )
-    os.makedirs(experiment_path, exist_ok=True)
-    abs_experiment_path = os.path.abspath(experiment_path)
-
-    # Load original pipeline space configuration
-    with open(config.pipeline_space, "r", encoding="utf-8") as f:
-        pipeline_space = yaml.safe_load(f)
-
-    # Create ConfigurationSpace directly from the original YAML
-    configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
-
-    # Print main experiment configuration and pipeline space
-    print("\nconfig: ", config, "\npipeline space: ", pipeline_space, "\n")
-
     # Create directory for configuration files and logs
-    output_dir = os.path.join(config.experiment_base_dir, "hydra_output")
-    os.makedirs(output_dir, exist_ok=True)
+    exp_base_dir = Path(config.experiment_base_dir)
+    output_dir = exp_base_dir / "hydra_output"
+    for directory in [exp_base_dir, output_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
 
-    # Save configurations
+    # Load and create configuration space
+    try:
+        with open(config.pipeline_space, "r", encoding="utf-8") as f:
+            pipeline_space = yaml.safe_load(f)
+        configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
+    except (yaml.YAMLError, IOError) as e:
+        logging.error(f"Failed to load pipeline space configuration: {e}")
+        raise
+
+    # Prepare and save configurations
     config_files = [
         ("config.yaml", OmegaConf.to_yaml(config)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
     ]
+    save_config_files(output_dir, config_files)
 
-    for filename, data in config_files:
-        config_path = os.path.join(output_dir, filename)
-        try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                f.write(data)
-        except IOError as e:
-            logging.error(f"Failed to write configuration file {filename}: {e}")
-
-    # if config.searcher == "quicktune_medical":
-    if config.use_medical_portfolio:
-        print("\n\nUse medical Portfolio\n\n")
+    # Create optimizer
+    if config.qt.use_medical_portfolio:
+        print("\nUse medical Portfolio\n")
         # Load portfolio data
         portfolio = PortfolioManager.load(config.portfolio_dir)
+        
+        # Extract unique model types from the portfolio
+        model_types = portfolio.pipeline_df['model_type'].unique().tolist()
+        print(f"\nAvailable models in portfolio: {model_types}\n")
+        
+        # Add model as a categorical hyperparameter to the configspace
+        model_param = CategoricalHyperparameter(
+            name="model",
+            choices=model_types
+        )
+        configspace.add(model_param)
 
-        # Initialize optimizer with portfolio
-        merged_df = pd.merge(portfolio.pipeline_df, portfolio.meta_df, on="dataset")
+        # Merge pipeline configurations with their corresponding metadata
+        # Note: Each dataset must have exactly one metadata entry to maintain data integrity
+        # and ensure merged_df has the same number of rows as curve/cost data
+        merged_df = pd.merge(
+            portfolio.pipeline_df, 
+            portfolio.meta_df.drop_duplicates(subset=['dataset']),
+            how='left',  # Left join ensures:
+                        # 1. All pipeline configurations are preserved
+                        # 2. Metadata is added only for matching datasets
+                        # 3. NaN values for datasets without metadata
+                        # This maintains all pipeline configurations for training
+        )
+        # Remove dataset identifier as it's no longer needed
         merged_df = merged_df.drop(columns=["dataset"])
 
+        # Remove number_of_epochs from merged_df as it's not a hyperparameter and will be set later
+        # Number_of_epochs is a fidelity parameter that was needed in the configspace for NePS
+        merged_df = merged_df.drop(columns=["number_of_epochs"])
+
+        # Convert learning curves and cost data to numpy arrays for model training
+        curve = portfolio.curve_df.values
+        cost = portfolio.cost_df.values
+
+        # TODO: check parameters like learning_rate_init, batchsize for predictors
+        # TODO: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
+        # Note: batchsize is set to 1 for now to avoid division by zero for small portfolio
+        # Create predictors with proper paths in experiment_base_dir
+        predictor_path = Path(config.experiment_base_dir) / "predictors"
+        predictor_path.mkdir(parents=True, exist_ok=True)
+
+        if config.qt.use_ftpfn_perf_predictor:
+            # Use FT-PFN performance predictor like in IfBO
+            print("\nUse FT-PFN performance predictor\n")
+            perf_predictor = FTPFNPerfPredictor(
+                path=str(predictor_path / "ftpfn_medical_perf_predictor"),
+                seed=config.seed
+            ).fit(X=merged_df, y=curve)
+        else:
+            # Use Quicktune's default SurrogateModel that contains GPRegressionModel
+            print("\nUse Quicktune's default SurrogateModel that contains GPRegressionModel\n")
+            perf_predictor = CustomPerfPredictor(
+                path=str(predictor_path / "medical_perf_predictor"),
+                seed=config.seed
+            ).fit(X=merged_df, y=curve)
+
+        cost_predictor = CustomCostPredictor(
+            path=str(predictor_path / "medical_cost_predictor"),
+            seed=config.seed
+        ).fit(X=merged_df, y=cost)
+
+        # Save predictors (no need to reset paths anymore)
+        perf_predictor.save(verbose=True)
+        cost_predictor.save(verbose=True)
+
+        # Initialize optimizer
         optimizer = QuickOptimizer(
             cs=configspace,
             max_fidelity=50,
             cost_aware=True,
-            path=abs_experiment_path,  # Set the path during initialization
+            path=config.experiment_base_dir,
+            perf_predictor=perf_predictor,
+            cost_predictor=cost_predictor,
+            seed=config.seed,
         )
-        optimizer.reset_path(
-            abs_experiment_path
-        )  # Explicitly reset path to ensure it propagates to predictors
     else:
-        # Initialize the optimizer with pretrained model
-        print("\n\nUse default Metaalbum\n\n")
+        # Use default MetaAlbum implementation
+        print("\nUse default Metaalbum\n")
         optimizer = get_pretrained_optimizer("mtlbm/full")
-        optimizer.reset_path(
-            abs_experiment_path
-        )  # Explicitly reset path for pretrained optimizer
 
     print("\nOptimizer created\n")
 
-    # Extract meta-features from the dataset directory
+    # Extract trial info and meta-features from the dataset directory
+    # trial_info contains dataset directory and split information,
+    # while metafeat contains metadata like number of samples, classes, features and channels.
+    # Note: QuickTune's default extract_image_dataset_metafeat() not working for all datasets:
+    # https://github.com/automl/quicktunetool/blob/main/src/qtt/finetune/image/classification/utils.py
+    # Therefore we use our custom implementation. It's currently hardcoded for the brain_tumor dataset.
     if config.data.dataset == "brain_tumor":
-        trial_info, metafeat = extract_image_dataset_metafeat(
-            path_root=os.path.join(config.data.path, "brain_tumor"),
-            train_split="train",
-            val_split="val",
+        # TODO: update custom_extract_image_dataset_metafeat() to work for all datasets
+        trial_info, metafeat = custom_extract_image_dataset_metafeat( 
+            path_root=Path(config.data.path) / "brain_tumor",
+            train_split="train",  # Note: overwrite if train / val split is provided   
+            val_split="val",  # Note: overwrite if train / val split is provided
         )
     else:
-        raise ValueError(f"Unknown dataset: {config.data.dataset}")
+        # TODO: Update custom_extract_image_dataset_metafeat() to work for all our 3D datasets
+        raise NotImplementedError(f"Unknown dataset: {config.data.dataset}")
 
-    print("\nMeta-features extracted\n")
+    # Add output directory to trial info
+    print("\nTrial info:\n", trial_info, "\n")
+    print("\nMeta-features:\n", metafeat, "\n")
 
     # Setup optimizer with target dataset
-    optimizer.setup(n=128, metafeat=metafeat)
-    print("\nOptimizer setup complete\n")
+    n_of_configs_to_create = 128
+    optimizer.setup(n=n_of_configs_to_create, metafeat=metafeat)
+    # TODO: check deeper how metafeat is used in optimizer.setup() + maybe add class distribution?
 
-    # Create QuickTuner instance with experiment-specific output path
-    qt = QuickTuner(
-        optimizer=optimizer,
-        f=lambda trial, trial_info: quicktune_wrapper(trial, trial_info, config),
-        path=experiment_path,  # Use the experiment-specific path
-    )
-    qt.run(fevals=config.max_evaluations, time_budget=None, trial_info=trial_info)
+    print("\nOptimizer setup completed\n")
+
+    # Create and run tuner instance - either QuickImageCLSTuner for image classification
+    # or standard QuickTuner for general optimization tasks
+    if config.qt.use_quick_image_cls_tuner:
+        print("\nUse QuickImageCLSTuner\n")
+        data_path = Path(config.data.path) / config.data.dataset
+        # Using CustomQuickImageCLSTuner with our medical portfolio optimizer
+        # instead of default QuickImageCLSTuner which uses MetaAlbum pretrained model
+        tuner = CustomQuickImageCLSTuner(
+            data_path=str(data_path),  # QuickImageCLSTuner expects string path
+            optimizer=optimizer,  # Use our CustomQuickOptimizer
+            path=config.experiment_base_dir,
+            n=n_of_configs_to_create
+        )
+        if config.qt.use_custom_objective:
+            print("\nUse custom objective\n")
+            # Replace the default objective function with our custom one
+            
+            # Create wrapper that tracks configurations
+            def objective_wrapper(trial, trial_info):
+                # Get new configuration from optimizer
+                config_id = trial.get("config-id", 0)
+                print(f"\nSampling configuration {config_id} from optimizer")
+
+                # TODO: check if this is needed
+                optimizer.ante()
+
+                # Get configuration from optimizer
+                configuration = optimizer.ask()
+                print(f"\nConfiguration {config_id}: {configuration}")
+
+                # Run quicktune_wrapper with configuration
+                result = quicktune_wrapper(configuration, trial_info, config)
+
+                # Tell the optimizer about the result
+                if result is not None:
+                    optimizer.tell(result)
+                else:
+                    print(f"\nTrial {config_id} failed")
+                    optimizer.tell(float("-inf"))
+
+                return result
+                
+            # Use the wrapped objective
+            tuner.f = objective_wrapper    
+            tuner.run(fevals=config.max_evaluations, trial_info=trial_info)
+        else:
+            print("\nUse default objective\n")
+            tuner.run(fevals=config.max_evaluations)
+        
+    else:
+        print("\nUse QuickTuner\n")
+        tuner = QuickTuner(
+            optimizer=optimizer,
+            f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, config),
+            path=config.experiment_base_dir,
+        )
+        tuner.run(fevals=config.max_evaluations, time_budget=None, trial_info=trial_info)
 
 
 if __name__ == "__main__":
