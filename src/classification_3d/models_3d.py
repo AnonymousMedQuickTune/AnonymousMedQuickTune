@@ -3,8 +3,11 @@ from torchvision import models
 
 import monai
 
-# local import
-from densenet import DenseModel
+try:
+    # local import
+    from densenet import DenseModel
+except ImportError:
+    from src.classification_3d.densenet import DenseModel
 
 
 def get_3d_model(

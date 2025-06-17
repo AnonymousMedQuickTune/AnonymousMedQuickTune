@@ -166,7 +166,14 @@ def train_epoch(
     model.train()
 
     # Training loop
-    for inputs, targets in train_loader:
+    for batch in train_loader:
+        if isinstance(batch, dict):
+            # Batch is a dict for 3D datasets
+            inputs = batch.get("image")
+            targets = batch.get("label")
+        else:
+            # Batch is a tuple for 2D datasets
+            inputs, targets = batch
         # Move data to device
         inputs, targets = inputs.to(device), targets.to(device)
 
@@ -290,7 +297,14 @@ def evaluate_model(model, data_loader, criterion, device):
     all_targets = []
 
     with torch.no_grad():
-        for inputs, targets in data_loader:
+        for batch in data_loader:
+            if isinstance(batch, dict):
+                # Batch is a dict for 3D datasets
+                inputs = batch.get("image")
+                targets = batch.get("label")
+            else:
+                # Batch is a tuple for 2D datasets
+                inputs, targets = batch
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
             loss = criterion(outputs, targets)

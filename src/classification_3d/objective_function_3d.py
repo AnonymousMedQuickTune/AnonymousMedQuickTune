@@ -110,7 +110,7 @@ def run_3d_pipeline(
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
             fold_idx=fold,
-           
+            developer_mode=config.developer_mode,
         )
 
         # Setup loss function with optional label smoothing

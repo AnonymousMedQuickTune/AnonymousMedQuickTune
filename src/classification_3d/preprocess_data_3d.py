@@ -13,9 +13,11 @@ from monai.transforms import (
     RandRotated,
     RandZoomd,
     RandFlipd,
+    ResizeWithPadOrCropd,
 )
 from monai.data import Dataset
 from torch.utils.data import DataLoader
+import re
 
 
 
@@ -49,6 +51,18 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
     # Load labels
     labels_csv = pd.read_csv(csv_path)
     labels = labels_csv['Diagnosis_binary'].to_numpy()
+
+    # Filter out all samples with label -1 (e.g., invalid or insufficient class samples)
+    # TODO @Natalia: This is a hack to get the dataset to work. We should find a better way to handle this.
+    if name == "lipo":
+        # Create a list of indices for which the label is not -1
+        filtered_indices = [i for i, label in enumerate(labels) if label != -1]
+        # Keep only the images corresponding to valid indices
+        images = [images[i] for i in filtered_indices]
+        # Keep only the segmentations corresponding to valid indices
+        segmentations = [segmentations[i] for i in filtered_indices]
+        # Keep only the labels that are not -1
+        labels = [labels[i] for i in filtered_indices]
 
     # Recheck class distribution after filtering
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -115,6 +129,7 @@ def get_dataloaders(
     batch_size,
     num_workers,
     fold_idx,
+    developer_mode=False,
 ):
 
     """
@@ -158,8 +173,8 @@ def get_dataloaders(
     valid_data = [train_data_images[i] for i in val_idx]
 
     # First preprocess part:
-    train_dataset = Dataset(train_data, transform=FullTransform(MEDIAN_VOXEL))
-    val_dataset = Dataset(valid_data, transform=FullTransform(MEDIAN_VOXEL))
+    train_dataset = Dataset(train_data, transform=FullTransform(MEDIAN_VOXEL, developer_mode=developer_mode))
+    val_dataset = Dataset(valid_data, transform=FullTransform(MEDIAN_VOXEL, developer_mode=developer_mode))
  
     # Try without cropping and padding if it is possible, if not need to add cropping.
 
@@ -182,11 +197,21 @@ def get_dataloaders(
 
     return train_loader, val_loader
 
-def FullTransform(voxel):
+def FullTransform(voxel, developer_mode=False):
+    if developer_mode:
+        target_shape = (64, 64, 32)  # Smaller shape for faster training on the laptop
+    else:
+        target_shape = (256, 256, 32)  # Original shape
+
     transforms = [
         LoadImaged(keys="image", image_only=True),  # Load NIfTI images
         EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
         Spacingd(keys="image", pixdim=voxel, mode="bilinear"),  # Resample to target spacing
+
+        # Ensure all images have the same shape after resampling
+        # TODO @Natalia: Won't this cause problems? + How to set target shape optimally?
+        ResizeWithPadOrCropd(keys="image", spatial_size=target_shape),  # Pad or crop to fixed shape
+
         NormalizeIntensityd(keys=["image"]),
         RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
         RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
