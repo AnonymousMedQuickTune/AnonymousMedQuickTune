@@ -89,6 +89,7 @@ def main(config: DictConfig) -> None:
         config.max_evaluations = 10
         config.data.k_folds = 2
         config.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"
+        config.training.number_of_epochs = 2
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
