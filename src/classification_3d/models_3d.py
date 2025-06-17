@@ -5,21 +5,21 @@ import monai
 
 try:
     # local import
-    from densenet import DenseModel
+    from utils.densenet import DenseModel
 except ImportError:
-    from src.classification_3d.densenet import DenseModel
+    from src.classification_3d.utils.densenet import DenseModel
 
 
 def get_3d_model(
     model_config,
     hyperparameters,
-):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html
+):  # TODO: Use models from https://docs.monai.io/en/stable/networks.html  -> see densenet.py
     """
     Create and initialize a model based on the model configuration.
 
     Args:
         model_config (dict): Model configuration containing:
-            - type (str): Type of model ('resnet', TODO: Add other models)
+            - type (str): Type of model ('densenetv1', 'densenetv2')
             - task (str): Type of task ('classification', etc.)
             - num_classes (int): Number of output classes
 
@@ -31,11 +31,9 @@ def get_3d_model(
 
     # Modern, widely used architectures
     if model_type == "densenetv1":
-        # model = None  # TODO: Add 3D ResNet
         model = monai.networks.nets.DenseNet121(spatial_dims=3, in_channels=1, out_channels=num_classes)
 
     elif model_type == "densenetv2":
-        # how will the config be added?
         model = DenseModel(hyperparameters)
 
     else:

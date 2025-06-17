@@ -21,7 +21,8 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
                                             get_warmup_scheduler,
                                             train_epoch)
 from src.classification_3d.preprocess_data_3d import (
-    get_dataloaders)
+    get_kfold_dataloaders)
+from src.classification_3d.utils.normalization_stats import autonorm
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -61,11 +62,16 @@ def run_3d_pipeline(
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # TODO @Natalia: Is the search space complete?
+    # TODO @Both: Discuss search space in a meeting
+    print(f"\n\n\nHyperparameters: {hyperparameters}\n\n\n")  
     
     # Initialize model and move it to the appropriate device
     if "model" in hyperparameters:
         model_type = hyperparameters["model"]  # For QuickTune
         print(f"\nQuickTune selected model: {model_type}\n")
+
     else:
         model_type = config.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
@@ -88,7 +94,13 @@ def run_3d_pipeline(
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
     
-    # TODO @Diane: Add code for normalization stats. Either set them to None or use AutoNorm.
+    # Initialize normalization parameters
+    if "autonorm" in str(config.pipeline_space):
+        # Use normalization stats from NePS hyperparameters
+        normalization_stats = autonorm(hyperparameters)
+    else:
+        # For k-fold CV, normalization stats will be calculated per fold
+        normalization_stats = None
 
     # Run k-fold cross validation
     for fold in range(k_folds):
@@ -105,15 +117,16 @@ def run_3d_pipeline(
         # ... Training ...
 
         # Get data loaders for this fold
-        train_loader, val_loader = get_dataloaders(
+        train_loader, val_loader = get_kfold_dataloaders(
+            dataset_name=config.data.dataset,
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
             k_folds=k_folds,
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=config.data.num_workers,
             fold_idx=fold,
-            # normalization_stats=None,  # TODO @Diane: Add code for normalization stats. Either set them to None or use AutoNorm.
-            # augmentation_type=config.data.augmentation.type,  # TODO @Diane: Implement data augmentation for get_dataloaders.
+            normalization_stats=normalization_stats,
+            augmentation_type=config.data.augmentation_type,
             developer_mode=config.developer_mode,
         )
 
@@ -165,7 +178,7 @@ def run_3d_pipeline(
         with open(config.pipeline_space, "r") as f:
             pipeline_config = yaml.safe_load(f)
 
-        if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly
+        if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly (low priority)
             if config.searcher == "random_search":
                 print(f"\nRandom Search with a multi-fidelity searchspace.\nNon-multi-fidelity optimization: Train model over {config.training.number_of_epochs} epochs!\n")
                 # For random search:
@@ -183,6 +196,8 @@ def run_3d_pipeline(
             # For non-multi-fidelity search spaces: Use the number of epochs from the config
             print(f"\nNon-multi-fidelity optimization:\nTrain model over {config.training.number_of_epochs} epochs!")
             epochs = config.training.number_of_epochs
+        
+        # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset?
             
         # Initialize training components
         checkpoint_manager = CheckpointManager(
@@ -373,6 +388,7 @@ def run_3d_pipeline(
     # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one config.
     cost = epoch_time
 
+    # TODO @Natalia: What are the goal performances that need to be achieved to reproduce results for each dataset?
     return {
         "objective_to_minimize": neps_loss,  # Required by NePS
         "cost": cost,

@@ -85,4 +85,4 @@ num_layers_block4:
 conv0_stride:
   type: int
   lower: 1
-  upper: 3
+  upper: 2

@@ -19,18 +19,7 @@ from monai.data import Dataset
 from torch.utils.data import DataLoader
 import re
 
-
-
-# Global variables
-# These names can change depending in the dataset, format of the scans, segmentations, etc. 
-# What else should be added as a global variable? Should this be part of the config file? 
-IMAGE_NAME = "image.nii.gz"
-SEGMENTATION_NAME = "segmentation.nii.gz"
-MODALITY = "MRI"
-MEDIAN_VOXEL = (0.68, 0.68, 5.0)
-
-# Possible
-DATASET_NAME = "lipo"
+from src.classification_3d.utils.normalization_stats import calculate_normalization_stats
 
 def load_3d_dataset(name, data_path="datasets", seed=42):
     """
@@ -43,9 +32,6 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-
-    # TODO: Implement 3D dataset loading
-
     images, segmentations, csv_path = get_paths(data_path, name) # Segmentation will be added in the next run. 
 
     # Load labels
@@ -54,6 +40,7 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
 
     # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
     # TODO @Natalia: This is a hack to get the dataset to work. We should find a better way to handle this.
+    # TODO @Both: Discuss this in a meeting.
     if name in ["lipo", "desmoid", "gist"]:
         # Create a list of indices for which the label is not -1 and not NaN
         filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
@@ -87,8 +74,13 @@ def get_paths(data_path, name):
     full_path = os.path.join(data_path, name)
     directory_names = sorted(os.listdir(full_path), key=natural_key)
 
-    image_name = IMAGE_NAME
-    segmentation_name = SEGMENTATION_NAME
+    if name in ["lipo", "desmoid", "gist"]:
+        # These names can change depending in the dataset, format of the scans, segmentations, etc. 
+        # Please verify this when adding new datasets.
+        image_name = "image.nii.gz"
+        segmentation_name = "segmentation.nii.gz"
+    else:
+        raise NotImplementedError(f"Filename for dataset {name} not specified yet.")
 
     images_path = [os.path.join(full_path, d, image_name) for d in directory_names]
     segmentations_path = [os.path.join(full_path, d, segmentation_name) for d in directory_names]
@@ -102,6 +94,7 @@ def natural_key(string_):
 
 def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run. This is not active as no cache is needed. 
     # Cache is used if there are multiple options of voxel size and they are calculated separately. If not, then just the trasnformations are needed.
+    # TODO @Both: Discuss this in a meeting.
     """
     Preprocess and cache brain tumor datasets for faster experiment initialization.
 
@@ -109,7 +102,6 @@ def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel siz
         config (DictConfig): Hydra configuration object
     """
     print("\nPreprocessing dataset...")
-
 
     # First, process the raw dataset
     raw_dataset_path = os.path.join(data_path + name, "/raw") # If there is a config path this could be changed. 
@@ -121,21 +113,23 @@ def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel siz
     else:
         print("Raw dataset already processed, skipping...")
         
-
-def get_dataloaders(
+def get_kfold_dataloaders(
+    dataset_name,
     data,
     labels,
     k_folds,
     batch_size,
     num_workers,
     fold_idx,
+    normalization_stats=None,
+    augmentation_type="medical",
     developer_mode=False,
 ):
-
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
 
     Args:
+        dataset_name (str): Name of the dataset (e.g., 'lipo', 'desmoid', 'gist')
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
         k_folds (int): Number of folds for cross-validation
@@ -144,16 +138,13 @@ def get_dataloaders(
         fold_idx (int): Current fold index
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
+        developer_mode (bool): If True, uses smaller model target shape for faster development
 
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
-    # Create output directory if it doesn't exist
-    #Path(output_path).mkdir(parents=True, exist_ok=True)
-
-    # Here is all the catched value of the paths for the specific voxel size. 
-
-    #X_train, y_train, _, _, = load_3d_dataset(dataset_name)
+    # Get median voxel size depending on the dataset
+    median_voxel = get_median_voxel(dataset_name)
 
     # Create k-fold splitter
     kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -172,11 +163,16 @@ def get_dataloaders(
     train_data = [train_data_images[i] for i in train_idx]
     valid_data = [train_data_images[i] for i in val_idx]
 
-    # First preprocess part:
-    train_dataset = Dataset(train_data, transform=FullTransform(MEDIAN_VOXEL, developer_mode=developer_mode))
-    val_dataset = Dataset(valid_data, transform=FullTransform(MEDIAN_VOXEL, developer_mode=developer_mode))
+    # Calculate normalization stats from training data if not provided
+    if normalization_stats is None:
+        means, stds = calculate_normalization_stats(train_data)
+        normalization_stats = {"mean": means, "std": stds}
+
+    # First preprocess part:  # TODO @Diane: integratenormalization stats and data augmentation to Dataset class
+    train_dataset = Dataset(train_data, transform=FullTransform(median_voxel, developer_mode=developer_mode))
+    val_dataset = Dataset(valid_data, transform=FullTransform(median_voxel, developer_mode=developer_mode))
  
-    # Try without cropping and padding if it is possible, if not need to add cropping.
+    # Try without cropping and padding if it is possible, if not need to add cropping.  # TODO @Natalia: See FullTransform function
 
     # Create data loaders
     train_loader = DataLoader(
@@ -199,7 +195,7 @@ def get_dataloaders(
 
 def FullTransform(voxel, developer_mode=False):
     if developer_mode:
-        target_shape = (64, 64, 32)  # Smaller shape for faster training on the laptop
+        target_shape = (32, 32, 16)  # Smaller shape for faster training on the laptop
     else:
         target_shape = (256, 256, 32)  # Original shape
 
@@ -219,3 +215,10 @@ def FullTransform(voxel, developer_mode=False):
     ]
 
     return Compose(transforms)
+
+def get_median_voxel(dataset_name):  
+    # TODO @Natalia: Add more datasets and their median voxel sizes.
+    if dataset_name == "lipo":
+        return (0.68, 0.68, 5.0)
+    else:
+        raise NotImplementedError(f"Median voxel for dataset {dataset_name} not specified yet.")

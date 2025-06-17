@@ -88,7 +88,7 @@ def main(config: DictConfig) -> None:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
         config.max_evaluations = 10
         config.data.k_folds = 2
-        config.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"
+        config.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         config.training.number_of_epochs = 2
 
     # Convert YAML pipeline space configuration into NePS-compatible format
