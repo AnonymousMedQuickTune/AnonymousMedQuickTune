@@ -84,6 +84,12 @@ def main(config: DictConfig) -> None:
     # Set seed for NePS reproducibility
     set_seed(config.seed)
 
+    if config.developer_mode:
+        print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
+        config.max_evaluations = 10
+        config.data.k_folds = 2
+        config.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"
+
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
     pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)

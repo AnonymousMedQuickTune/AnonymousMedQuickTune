@@ -88,7 +88,7 @@ def run_3d_pipeline(
     writer = SummaryWriter(tensorboard_dir)
 
     # Example: Logging 5-fold cross validation for NePS
-    k_folds = 5
+    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
     for fold in range(k_folds):
         print(f"\nTraining Fold {fold + 1}/{k_folds}\n... training...")
 

@@ -10,6 +10,7 @@ seed: 42
 experiment_base_dir: experiments/${data.dataset}/${experiment_name}/seed_${seed}
 root_directory: ${experiment_base_dir}/NePS_output
 experiment_name: test_desmoid
+developer_mode: false
 
 #------------------------------------------------------------------------------
 # QuickTune Settings

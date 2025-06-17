@@ -1,0 +1,88 @@
+learning_rate:
+  type: float
+  log: true
+  lower: 1e-5
+  upper: 1e-1
+
+batch_size:
+  type: int
+  lower: 1
+  upper: 2
+
+optimizer_type:
+  type: categorical
+  choices: ["adam", "adamw", "sgd"]
+
+weight_decay:
+  type: float
+  log: true
+  lower: 1e-6
+  upper: 1e-2
+
+dropout_rate:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.5
+
+warmup_epochs:
+  type: int
+  lower: 0
+  upper: 10
+
+label_smoothing:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.2
+
+mixup_alpha:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 1.0
+
+number_of_epochs:  # for multifidelity
+  type: int
+  lower: 4
+  upper: 5
+  is_fidelity: true  # explicitly marked as fidelity parameter
+
+
+# DenseNet 3D hyperparameters 
+init_features:
+  type: int
+  lower: 16
+  upper: 64
+
+bn_size:
+  type: int
+  lower: 1
+  upper: 4
+
+growth_rate:
+  type: int
+  lower: 12
+  upper: 32
+
+num_layers_block1:
+  type: int
+  lower: 4
+  upper: 12
+num_layers_block2:
+  type: int
+  lower: 8
+  upper: 24
+num_layers_block3:
+  type: int
+  lower: 16
+  upper: 48
+num_layers_block4:
+  type: int
+  lower: 8
+  upper: 24
+
+conv0_stride:
+  type: int
+  lower: 1
+  upper: 3
