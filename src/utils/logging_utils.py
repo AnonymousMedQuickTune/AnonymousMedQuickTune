@@ -49,7 +49,7 @@ def initialize_logging_files(logging_dir):
 
 
 def log_initial_state(
-    log_files, hyperparameters, config, model, epochs, pipeline_dir, prev_pipeline_dir
+    log_files, hyperparameters, experimental_setting, model, epochs, pipeline_dir, prev_pipeline_dir
 ):
     """
     Log model architecture information and print basic run configuration.
@@ -59,7 +59,7 @@ def log_initial_state(
                          hyperparameters, learning rates, resources, timing, and model info
         hyperparameters (dict): Dictionary of training hyperparameters including optimizer
                                settings, learning rates, and other training parameters
-        config: Configuration object containing model architecture and training settings
+        experimental_setting: Configuration object containing model architecture and training settings
         model (nn.Module): The initialized PyTorch model to be trained
         epochs (int): Total number of training epochs to run
         pipeline_dir (str): Path to the current pipeline's output directory where
@@ -72,7 +72,7 @@ def log_initial_state(
         and prints the epoch fidelity and directory paths to the console.
     """
     # Log model architecture info
-    log_model_info(log_files["model_info"], model, config, hyperparameters)
+    log_model_info(log_files["model_info"], model, experimental_setting, hyperparameters)
 
     # Print configuration for convenience
     print(f"Epoch fidelity: {epochs}")
@@ -157,14 +157,14 @@ def log_timing(timing_file, epoch, train_time, eval_time, epoch_time):
         f.write(f"{epoch+1},{train_time:.2f},{eval_time:.2f},{epoch_time:.2f}\n")
 
 
-def log_model_info(model_info_file, model, config, hyperparameters):
+def log_model_info(model_info_file, model, experimental_setting, hyperparameters):
     """Log model architecture and parameter statistics."""
 
     def count_parameters(model):
         return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
     model_info = {
-        "model_type": config.model.type,
+        "model_type": experimental_setting.model.type,
         "trainable_parameters": count_parameters(model),
         "layer_sizes": {
             name: list(param.size()) for name, param in model.named_parameters()

@@ -27,7 +27,7 @@ from src.classification_3d.utils.normalization_stats import autonorm
 def run_3d_pipeline(
     pipeline_directory,
     previous_pipeline_directory,
-    config,
+    experimental_setting,
     dataset_dict=None,
     num_classes=None,
     **hyperparameters,
@@ -41,7 +41,7 @@ def run_3d_pipeline(
     Args:
         pipeline_directory (str): Directory where current pipeline results will be saved
         previous_pipeline_directory (str): Directory containing previous pipeline runs
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
         dataset_dict (dict, optional): Combined train+val data and labels dictionary if preloaded
         num_classes (int, optional): Number of classes in the dataset if preloaded
         **hyperparameters: Configuration dictionary containing hyperparameters
@@ -57,8 +57,8 @@ def run_3d_pipeline(
     """
     # Set seed for pipeline reproducibility
     set_seed(
-        config.seed
-    )  # For more details on the config: pls see configs/main_experiment.yaml
+        experimental_setting.seed
+    )  # For more details on the experimental_setting: pls see configs/main_experiment.yaml
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -73,19 +73,19 @@ def run_3d_pipeline(
         print(f"\nQuickTune selected model: {model_type}\n")
 
     else:
-        model_type = config.model.type  # For NePS
+        model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
 
     model = get_3d_model(
         {
-            "type": config.model.type,
-            "task": config.model.task,
+            "type": experimental_setting.model.type,
+            "task": experimental_setting.model.task,
             "num_classes": num_classes,
         }, hyperparameters  # TODO @Diane: Check if hyperparams can be passed the same way for QuickTune as for NePS
     ).to(device)
 
-    # Get k-fold parameter from config or default to 5
-    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
+    # Get k-fold parameter from experimental_setting or default to 5
+    k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
 
     # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics?
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
@@ -95,7 +95,7 @@ def run_3d_pipeline(
     writer = SummaryWriter(tensorboard_dir)
     
     # Initialize normalization parameters
-    if "autonorm" in str(config.pipeline_space):
+    if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         normalization_stats = autonorm(hyperparameters)
     else:
@@ -118,16 +118,16 @@ def run_3d_pipeline(
 
         # Get data loaders for this fold
         train_loader, val_loader = get_kfold_dataloaders(
-            dataset_name=config.data.dataset,
+            dataset_name=experimental_setting.data.dataset,
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
             k_folds=k_folds,
             batch_size=hyperparameters.get("batch_size", 32),
-            num_workers=config.data.num_workers,
+            num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
             normalization_stats=normalization_stats,
-            augmentation_type=config.data.augmentation_type,
-            developer_mode=config.developer_mode,
+            augmentation_type=experimental_setting.data.augmentation_type,
+            developer_mode=experimental_setting.developer_mode,
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
@@ -175,12 +175,12 @@ def run_3d_pipeline(
         }
 
         # Training setup: number of epochs
-        with open(config.pipeline_space, "r") as f:
+        with open(experimental_setting.pipeline_space, "r") as f:
             pipeline_config = yaml.safe_load(f)
 
         if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly (low priority)
-            if config.searcher == "random_search":
-                print(f"\nRandom Search with a multi-fidelity searchspace.\nNon-multi-fidelity optimization: Train model over {config.training.number_of_epochs} epochs!\n")
+            if experimental_setting.searcher == "random_search":
+                print(f"\nRandom Search with a multi-fidelity searchspace.\nNon-multi-fidelity optimization: Train model over {experimental_setting.training.number_of_epochs} epochs!\n")
                 # For random search:
                 # The maximum number of epochs from the pipeline space is used for all evaluations.
                 epochs = pipeline_config["number_of_epochs"]["upper"]
@@ -193,9 +193,9 @@ def run_3d_pipeline(
                 # while promising hyperparameter configurations get more epochs later.
                 epochs = pipeline_config["number_of_epochs"]
         else:
-            # For non-multi-fidelity search spaces: Use the number of epochs from the config
-            print(f"\nNon-multi-fidelity optimization:\nTrain model over {config.training.number_of_epochs} epochs!")
-            epochs = config.training.number_of_epochs
+            # For non-multi-fidelity search spaces: Use the number of epochs from the experimental_setting
+            print(f"\nNon-multi-fidelity optimization:\nTrain model over {experimental_setting.training.number_of_epochs} epochs!")
+            epochs = experimental_setting.training.number_of_epochs
         
         # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset?
             
@@ -223,7 +223,7 @@ def run_3d_pipeline(
                 "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
                 **hyperparameters,  # Include all other hyperparameters
             },
-            config=config,
+            experimental_setting=experimental_setting,
             model=model,
             epochs=epochs,
             pipeline_dir=fold_directory,
@@ -255,7 +255,7 @@ def run_3d_pipeline(
             # Validation phase
             eval_start_time = time.time()
             val_metrics = None  # Initialize val_metrics as None
-            if (training_epochs + 1) % config.logging.eval_every == 0 or training_epochs == epochs - 1:
+            if (training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1:
                 val_metrics = evaluate_and_log_metrics(
                     model,
                     val_loader,
@@ -291,7 +291,7 @@ def run_3d_pipeline(
                 (
                     val_metrics["accuracy"] if val_metrics is not None else 0.0
                 ),  # Default to 0.0 if no validation
-                config,
+                experimental_setting,
                 num_classes,
                 hyperparameters,
                 device,
@@ -361,7 +361,7 @@ def run_3d_pipeline(
             # Log sample images with predictions (every N epochs or at the end)
             if (
                 training_epochs + 1
-            ) % config.logging.viz_images_every == 0 or training_epochs == epochs - 1:
+            ) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
 
@@ -377,15 +377,15 @@ def run_3d_pipeline(
     # metric (e.g., f1-score) as the loss. Additional metrics are logged in 'info_dict'.
 
     # Get the specified metric from final metrics for NePS
-    selected_metric = np.mean(all_folds_final_metrics[config.metric])
-    print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
+    selected_metric = np.mean(all_folds_final_metrics[experimental_setting.metric])
+    print(f"\nSelected metric ({experimental_setting.metric}): {selected_metric:.2f}%\n")
 
     # Convert to NePS loss (negative because NePS minimizes)
     neps_loss = -selected_metric
 
     # Add cost calculation (optional, currently unused feature in this project)
     # If we want to stop a NePS run after a certain total max_cost_toal is reached, we can define
-    # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one config.
+    # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one experimental_setting.
     cost = epoch_time
 
     # TODO @Natalia: What are the goal performances that need to be achieved to reproduce results for each dataset?

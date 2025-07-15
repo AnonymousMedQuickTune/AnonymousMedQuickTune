@@ -39,7 +39,7 @@ from src.utils.quicktune_utils import (
 # from external.quicktunetool.src.qtt.utils.pretrained import get_pretrained_optimizer
 
 
-def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict:
+def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictConfig) -> dict:
     """
     Wrapper function to adapt run_2d_pipeline for QuickTune's interface.
     """
@@ -64,13 +64,13 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
         print("\n\nHyperparameters: ", hyperparameters, "\n\n")
         
 
-        dimensionality = config.data.dimensionality.lower()
+        dimensionality = experimental_setting.data.dimensionality.lower()
 
         if dimensionality == "2d":
             result = run_2d_pipeline(
                 pipeline_directory=pipeline_dir,
                 previous_pipeline_directory=prev_pipeline_dir,
-                config=config,
+                experimental_setting=experimental_setting,
                 dataset_dict=dataset_dict,
                 num_classes=trial_info["num-classes"],
                 **hyperparameters,
@@ -79,7 +79,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
             result = run_3d_pipeline(  
                 pipeline_directory=pipeline_dir,
                 previous_pipeline_directory=prev_pipeline_dir,
-                config=config,
+                experimental_setting=experimental_setting,
                 dataset_dict=dataset_dict,
                 num_classes=trial_info["num-classes"],
                 **hyperparameters,
@@ -92,7 +92,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
 
-        score = final_metrics.get(config.metric, 0.0)
+        score = final_metrics.get(experimental_setting.metric, 0.0)
         if score is None:
             score = 0.0
 
@@ -123,27 +123,27 @@ def quicktune_wrapper(trial: dict, trial_info: dict, config: DictConfig) -> dict
 @hydra.main(
     version_base=None,
     config_path="../configs",
-    config_name="main_experiment_config.yaml",
+    config_name="experimental_setting.yaml",
 )
-def main(config: DictConfig) -> None:
+def main(experimental_setting: DictConfig) -> None:
     """
     Main entry point for the QuickTune training script.
 
     Args:
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
     """
     # Set seed for reproducibility
-    set_seed(config.seed)
+    set_seed(experimental_setting.seed)
 
     # Create directory for configuration files and logs
-    exp_base_dir = Path(config.experiment_base_dir)
+    exp_base_dir = Path(experimental_setting.experiment_base_dir)
     output_dir = exp_base_dir / "hydra_output"
     for directory in [exp_base_dir, output_dir]:
         directory.mkdir(parents=True, exist_ok=True)
 
     # Load and create configuration space
     try:
-        with open(config.pipeline_space, "r", encoding="utf-8") as f:
+        with open(experimental_setting.pipeline_space, "r", encoding="utf-8") as f:
             pipeline_space = yaml.safe_load(f)
         configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
     except (yaml.YAMLError, IOError) as e:
@@ -152,16 +152,16 @@ def main(config: DictConfig) -> None:
 
     # Prepare and save configurations
     config_files = [
-        ("config.yaml", OmegaConf.to_yaml(config)),
+        ("experimental_setting.yaml", OmegaConf.to_yaml(experimental_setting)),
         ("pipeline_space.yaml", yaml.dump(pipeline_space, default_flow_style=False)),
     ]
     save_config_files(output_dir, config_files)
 
     # Create optimizer
-    if config.qt.use_medical_portfolio:
+    if experimental_setting.qt.use_medical_portfolio:
         print("\nUse medical Portfolio\n")
         # Load portfolio data
-        portfolio = PortfolioManager.load(config.portfolio_dir)
+        portfolio = PortfolioManager.load(experimental_setting.portfolio_dir)
         
         # Extract unique model types from the portfolio
         model_types = portfolio.pipeline_df['model_type'].unique().tolist()
@@ -201,27 +201,27 @@ def main(config: DictConfig) -> None:
         # TODO: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
         # Note: batchsize is set to 1 for now to avoid division by zero for small portfolio
         # Create predictors with proper paths in experiment_base_dir
-        predictor_path = Path(config.experiment_base_dir) / "predictors"
+        predictor_path = Path(experimental_setting.experiment_base_dir) / "predictors"
         predictor_path.mkdir(parents=True, exist_ok=True)
 
-        if config.qt.use_ftpfn_perf_predictor:
+        if experimental_setting.qt.use_ftpfn_perf_predictor:
             # Use FT-PFN performance predictor like in IfBO
             print("\nUse FT-PFN performance predictor\n")
             perf_predictor = FTPFNPerfPredictor(
                 path=str(predictor_path / "ftpfn_medical_perf_predictor"),
-                seed=config.seed
+                seed=experimental_setting.seed
             ).fit(X=merged_df, y=curve)
         else:
             # Use Quicktune's default SurrogateModel that contains GPRegressionModel
             print("\nUse Quicktune's default SurrogateModel that contains GPRegressionModel\n")
             perf_predictor = CustomPerfPredictor(
                 path=str(predictor_path / "medical_perf_predictor"),
-                seed=config.seed
+                seed=experimental_setting.seed
             ).fit(X=merged_df, y=curve)
 
         cost_predictor = CustomCostPredictor(
             path=str(predictor_path / "medical_cost_predictor"),
-            seed=config.seed
+            seed=experimental_setting.seed
         ).fit(X=merged_df, y=cost)
 
         # Save predictors (no need to reset paths anymore)
@@ -233,10 +233,10 @@ def main(config: DictConfig) -> None:
             cs=configspace,
             max_fidelity=50,
             cost_aware=True,
-            path=config.experiment_base_dir,
+            path=experimental_setting.experiment_base_dir,
             perf_predictor=perf_predictor,
             cost_predictor=cost_predictor,
-            seed=config.seed,
+            seed=experimental_setting.seed,
         )
     else:
         # Use default MetaAlbum implementation
@@ -251,16 +251,16 @@ def main(config: DictConfig) -> None:
     # Note: QuickTune's default extract_image_dataset_metafeat() not working for all datasets:
     # https://github.com/automl/quicktunetool/blob/main/src/qtt/finetune/image/classification/utils.py
     # Therefore we use our custom implementation. It's currently hardcoded for the brain_tumor dataset.
-    if config.data.dataset == "brain_tumor":
+    if experimental_setting.data.dataset == "brain_tumor":
         # TODO: update custom_extract_image_dataset_metafeat() to work for all datasets
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
-            path_root=Path(config.data.path) / "brain_tumor",
+            path_root=Path(experimental_setting.data.path) / "brain_tumor",
             train_split="train",  # Note: overwrite if train / val split is provided   
             val_split="val",  # Note: overwrite if train / val split is provided
         )
     else:
         # TODO: Update custom_extract_image_dataset_metafeat() to work for all our 3D datasets
-        raise NotImplementedError(f"Unknown dataset: {config.data.dataset}")
+        raise NotImplementedError(f"Unknown dataset: {experimental_setting.data.dataset}")
 
     # Add output directory to trial info
     print("\nTrial info:\n", trial_info, "\n")
@@ -275,18 +275,18 @@ def main(config: DictConfig) -> None:
 
     # Create and run tuner instance - either QuickImageCLSTuner for image classification
     # or standard QuickTuner for general optimization tasks
-    if config.qt.use_quick_image_cls_tuner:
+    if experimental_setting.qt.use_quick_image_cls_tuner:
         print("\nUse QuickImageCLSTuner\n")
-        data_path = Path(config.data.path) / config.data.dataset
+        data_path = Path(experimental_setting.data.path) / experimental_setting.data.dataset
         # Using CustomQuickImageCLSTuner with our medical portfolio optimizer
         # instead of default QuickImageCLSTuner which uses MetaAlbum pretrained model
         tuner = CustomQuickImageCLSTuner(
             data_path=str(data_path),  # QuickImageCLSTuner expects string path
             optimizer=optimizer,  # Use our CustomQuickOptimizer
-            path=config.experiment_base_dir,
+            path=experimental_setting.experiment_base_dir,
             n=n_of_configs_to_create
         )
-        if config.qt.use_custom_objective:
+        if experimental_setting.qt.use_custom_objective:
             print("\nUse custom objective\n")
             # Replace the default objective function with our custom one
             
@@ -304,7 +304,7 @@ def main(config: DictConfig) -> None:
                 print(f"\nConfiguration {config_id}: {configuration}")
 
                 # Run quicktune_wrapper with configuration
-                result = quicktune_wrapper(configuration, trial_info, config)
+                result = quicktune_wrapper(configuration, trial_info, experimental_setting)
 
                 # Tell the optimizer about the result
                 if result is not None:
@@ -317,19 +317,19 @@ def main(config: DictConfig) -> None:
                 
             # Use the wrapped objective
             tuner.f = objective_wrapper    
-            tuner.run(fevals=config.max_evaluations, trial_info=trial_info)
+            tuner.run(fevals=experimental_setting.max_evaluations, trial_info=trial_info)
         else:
             print("\nUse default objective\n")
-            tuner.run(fevals=config.max_evaluations)
+            tuner.run(fevals=experimental_setting.max_evaluations)
         
     else:
         print("\nUse QuickTuner\n")
         tuner = QuickTuner(
             optimizer=optimizer,
             f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, config),
-            path=config.experiment_base_dir,
+            path=experimental_setting.experiment_base_dir,
         )
-        tuner.run(fevals=config.max_evaluations, time_budget=None, trial_info=trial_info)
+        tuner.run(fevals=experimental_setting.max_evaluations, time_budget=None, trial_info=trial_info)
 
 
 if __name__ == "__main__":

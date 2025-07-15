@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore", message="Detected call of `lr_scheduler.step()
 def run_2d_pipeline(
     pipeline_directory,
     previous_pipeline_directory,
-    config,
+    experimental_setting,
     dataset_dict,
     num_classes,
     **hyperparameters,
@@ -53,7 +53,7 @@ def run_2d_pipeline(
     Args:
         pipeline_directory (str): Directory where current pipeline results will be saved
         previous_pipeline_directory (str): Directory containing previous pipeline runs
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
         dataset_dict (dict, optional): Combined train+val data and labels dictionary if preloaded
         num_classes (int, optional): Number of classes in the dataset if preloaded
         **hyperparameters: Configuration dictionary containing hyperparameters
@@ -67,7 +67,7 @@ def run_2d_pipeline(
                 - all_folds_final_metrics (dict): Dictionary containing the mean value for each metric across all folds
     """
     # Set seed for pipeline reproducibility
-    set_seed(config.seed)
+    set_seed(experimental_setting.seed)
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,18 +77,18 @@ def run_2d_pipeline(
         model_type = hyperparameters["model"]  # For QuickTune
         print(f"\nQuickTune selected model: {model_type}\n")
     else:
-        model_type = config.model.type  # For NePS
+        model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
     model = get_2d_model(
         {
             "type": model_type,
-            "task": config.model.task,
+            "task": experimental_setting.model.task,
             "num_classes": num_classes,
         }
     ).to(device)
 
-    # Get k-fold parameter from config or default to 5
-    k_folds = config.data.k_folds if hasattr(config.data, "k_folds") else 5
+    # Get k-fold parameter from experimental_setting or default to 5
+    k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
 
     # Initialize metrics storage for all folds
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
@@ -98,7 +98,7 @@ def run_2d_pipeline(
     writer = SummaryWriter(tensorboard_dir)
 
     # Initialize normalization parameters
-    if "autonorm" in str(config.pipeline_space):
+    if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         print(f"\nNormalization parameters from NePS:")
         mean_values = np.array(
@@ -142,10 +142,10 @@ def run_2d_pipeline(
             labels=dataset_dict["train_val_labels"],
             k_folds=k_folds,
             batch_size=hyperparameters.get("batch_size", 32),
-            num_workers=config.data.num_workers,
+            num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
             normalization_stats=normalization_stats,  # Will be None if not using autonorm
-            augmentation_type=config.data.augmentation_type,
+            augmentation_type=experimental_setting.data.augmentation_type,
         )
 
         # Apply dropout rate to all applicable layers in the model
@@ -197,9 +197,9 @@ def run_2d_pipeline(
         # For random search:
         # The maximum number of epochs from the pipeline space is used for all evaluations.
         epochs = hyperparameters.get("number_of_epochs")
-        if epochs is None and config.searcher == "random_search":
+        if epochs is None and experimental_setting.searcher == "random_search":
             # Load the pipeline space config to get the upper value
-            with open(config.pipeline_space, "r") as f:
+            with open(experimental_setting.pipeline_space, "r") as f:
                 pipeline_config = yaml.safe_load(f)
                 epochs = pipeline_config["number_of_epochs"]["upper"]
             print(f"Random Search: Using maximum epochs value: {epochs}")
@@ -231,7 +231,7 @@ def run_2d_pipeline(
                 "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
                 **hyperparameters,  # Include all other hyperparameters
             },
-            config=config,
+            experimental_setting=experimental_setting,
             model=model,
             epochs=epochs,
             pipeline_dir=fold_directory,
@@ -263,7 +263,7 @@ def run_2d_pipeline(
             # Validation phase
             eval_start_time = time.time()
             val_metrics = None  # Initialize val_metrics as None
-            if (epoch + 1) % config.logging.eval_every == 0 or epoch == epochs - 1:
+            if (epoch + 1) % experimental_setting.logging.eval_every == 0 or epoch == epochs - 1:
                 val_metrics = evaluate_and_log_metrics(
                     model,
                     val_loader,
@@ -298,7 +298,7 @@ def run_2d_pipeline(
                 (
                     val_metrics["accuracy"] if val_metrics is not None else 0.0
                 ),  # Default to 0.0 if no validation
-                config,
+                experimental_setting,
                 num_classes,
                 hyperparameters,
                 device,
@@ -368,7 +368,7 @@ def run_2d_pipeline(
             # Log sample images with predictions (every N epochs or at the end)
             if (
                 epoch + 1
-            ) % config.logging.viz_images_every == 0 or epoch == epochs - 1:
+            ) % experimental_setting.logging.viz_images_every == 0 or epoch == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, epoch)
 
         print("\nTraining completed!")
@@ -377,8 +377,8 @@ def run_2d_pipeline(
     writer.close()
 
     # Get the specified metric from final metrics for NePS
-    selected_metric = np.mean(all_folds_final_metrics[config.metric])
-    print(f"\nSelected metric ({config.metric}): {selected_metric:.2f}%\n")
+    selected_metric = np.mean(all_folds_final_metrics[experimental_setting.metric])
+    print(f"\nSelected metric ({experimental_setting.metric}): {selected_metric:.2f}%\n")
 
     # Convert to NePS loss (negative because NePS minimizes)
     neps_loss = -selected_metric / 100.0  # Normalize to [0,1] range

@@ -360,20 +360,20 @@ def preprocess_raw_brain_tumor_dataset(dataset_path, output_path):
 @hydra.main(
     version_base=None,
     config_path="../../configs",
-    config_name="main_experiment_config.yaml",
+    config_name="experimental_setting.yaml",
 )
-def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
+def preprocess_and_cache_brain_tumor_datasets(experimental_setting: DictConfig) -> None:
     """
     Preprocess and cache brain tumor datasets for faster experiment initialization.
 
     Args:
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
     """
     print("\nPreprocessing brain tumor datasets...")
 
     # First, process the raw dataset
-    raw_dataset_path = os.path.join(config.data.path, "brain_mri")
-    processed_dataset_path = os.path.join(config.data.path, "brain_tumor")
+    raw_dataset_path = os.path.join(experimental_setting.data.path, "brain_mri")
+    processed_dataset_path = os.path.join(experimental_setting.data.path, "brain_tumor")
 
     if not os.path.exists(os.path.join(processed_dataset_path, "dataset.csv")):
         print("Processing raw dataset...")
@@ -382,11 +382,11 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
         print("Raw dataset already processed, skipping...")
 
     # Create cache directory
-    cache_dir = Path(config.data.path) / "cache"
+    cache_dir = Path(experimental_setting.data.path) / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     # Generate cache filename
-    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
+    pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
     cache_file = cache_dir / f"brain_tumor_bs{get_max_batch_size(pipeline_space)}.pkl"
 
     if cache_file.exists():
@@ -397,7 +397,7 @@ def preprocess_and_cache_brain_tumor_datasets(config: DictConfig) -> None:
     # Load raw dataset
     print("Loading brain tumor dataset...")
     dataset_dict = load_brain_tumor_dataset(
-        data_path=config.data.path, seed=config.seed
+        data_path=experimental_setting.data.path, seed=experimental_setting.seed
     )
 
     # Calculate normalization statistics from training data only

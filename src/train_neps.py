@@ -20,14 +20,14 @@ from src.utils.common_utils import (neps_space_to_dict, set_seed,
 def run_pipeline(
     pipeline_directory,
     previous_pipeline_directory,
-    config,
+    experimental_setting,
     dataset_dict,
     num_classes,
     **hyperparameters,
 ):
     """
     Main pipeline function that delegates to specific 2D or 3D implementations
-    based on config.data.dimensionality.
+    based on experimental_setting.data.dimensionality.
 
     NOTE: The argument order and parameter names must strictly follow NePS conventions
     to ensure proper optimization and checkpointing functionality.
@@ -35,7 +35,7 @@ def run_pipeline(
     Args:
         pipeline_directory (str): Directory where current pipeline results will be saved
         previous_pipeline_directory (str): Directory containing previous pipeline runs
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
         dataset_dict (dict, optional): Combined train+val data and labels dictionary if preloaded
         num_classes (int, optional): Number of classes in the dataset if preloaded
         **hyperparameters: Configuration dictionary containing hyperparameters
@@ -43,13 +43,13 @@ def run_pipeline(
     Returns:
         dict: Dictionary containing optimization metrics
     """
-    dimensionality = config.data.dimensionality.lower()
+    dimensionality = experimental_setting.data.dimensionality.lower()
 
     if dimensionality == "2d":
         return run_2d_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
-            config=config,
+            experimental_setting=experimental_setting,
             dataset_dict=dataset_dict,
             num_classes=num_classes,
             **hyperparameters,
@@ -58,7 +58,7 @@ def run_pipeline(
         return run_3d_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
-            config=config,
+            experimental_setting=experimental_setting,
             dataset_dict=dataset_dict,
             num_classes=num_classes,
             **hyperparameters,
@@ -72,39 +72,39 @@ def run_pipeline(
 @hydra.main(
     version_base=None,
     config_path="../configs",
-    config_name="main_experiment_config.yaml",
+    config_name="experimental_setting.yaml",
 )
-def main(config: DictConfig) -> None:
+def main(experimental_setting: DictConfig) -> None:
     """
     Main entry point for the NePStraining script.
 
     Args:
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
     """
     # Set seed for NePS reproducibility
-    set_seed(config.seed)
+    set_seed(experimental_setting.seed)
 
-    if config.developer_mode:
+    if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
-        config.max_evaluations = 10
-        config.data.k_folds = 2
-        config.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
-        config.training.number_of_epochs = 2
+        experimental_setting.max_evaluations = 10
+        experimental_setting.data.k_folds = 2
+        experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
+        experimental_setting.training.number_of_epochs = 2
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
-    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
+    pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
 
-    # Print main experiment configuration and pipeline space
-    print("\nconfig: ", config, "\npipeline space: ", pipeline_space, "\n")
+    # Print experimental setting and pipeline space
+    print("\nexperimental setting: ", experimental_setting, "\npipeline space: ", pipeline_space, "\n")
 
     # Create directory for configuration files and logs
-    output_dir = os.path.join(config.experiment_base_dir, "hydra_output")
+    output_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
     os.makedirs(output_dir, exist_ok=True)
 
     # Load original pipeline space configuration for human-readable logging
     # This version maintains the original YAML structure without NePS-specific transformations
-    with open(config.pipeline_space, "r", encoding="utf-8") as f:
+    with open(experimental_setting.pipeline_space, "r", encoding="utf-8") as f:
         original_pipeline_space = yaml.safe_load(f)
 
     # Save different versions of configurations:
@@ -114,7 +114,7 @@ def main(config: DictConfig) -> None:
     # Convert pipeline space to dictionary for YAML serialization
     pipeline_space_dict = neps_space_to_dict(pipeline_space)
     config_files = [
-        ("config.yaml", OmegaConf.to_yaml(config)),
+        ("experimental_setting.yaml", OmegaConf.to_yaml(experimental_setting)),
         (
             "pipeline_space.yaml",
             yaml.dump(pipeline_space_dict, default_flow_style=False),
@@ -139,7 +139,7 @@ def main(config: DictConfig) -> None:
 
     # TODO: Each NePS run should also run for different train (incl. val) / test folds!!!
 
-    if config.data.preload_data:
+    if experimental_setting.data.preload_data:
         # Preloading data has several benefits:
         # 1. Reduces I/O overhead during training iterations:
         #    - Loads data into memory once instead of repeatedly from disk
@@ -162,11 +162,11 @@ def main(config: DictConfig) -> None:
         # - Memory efficiency is maintained as augmented versions aren't stored
 
         # Try to load from cache first
-        data_path = Path(config.data.path)
+        data_path = Path(experimental_setting.data.path)
         cache_file = (
             data_path
             / "cache"
-            / f"{config.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
+            / f"{experimental_setting.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
         )
 
         # Cache mechanism further improves performance by avoiding repeated data processing
@@ -180,18 +180,18 @@ def main(config: DictConfig) -> None:
         else:
             print("\nNo cache found. Loading data directly...")
 
-            dimensionality = config.data.dimensionality.lower()
+            dimensionality = experimental_setting.data.dimensionality.lower()
             if dimensionality == "2d":
-                if config.data.dataset == "brain_tumor":
+                if experimental_setting.data.dataset == "brain_tumor":
                     dataset_dict = load_brain_tumor_dataset(
-                        data_path=config.data.path, seed=config.seed
+                        data_path=experimental_setting.data.path, seed=experimental_setting.seed
                     )
                 else:
-                    raise ValueError(f"Unsupported dataset: {config.data.dataset}.")
+                    raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
                 num_classes = dataset_dict["num_classes"]
             elif dimensionality == "3d":  # TODO: Add 3D dataset loading
                 dataset_dict = load_3d_dataset(
-                    config.data.dataset, data_path=config.data.path, seed=config.seed
+                    experimental_setting.data.dataset, data_path=experimental_setting.data.path, seed=experimental_setting.seed
                 )
                 num_classes = dataset_dict["num_classes"]
             else:
@@ -199,7 +199,7 @@ def main(config: DictConfig) -> None:
                     f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
                 )
 
-        print(f"Dataset '{config.data.dataset}' loaded with {num_classes} classes")
+        print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes")
     else:
         print("\nData will be loaded on-demand during training\n")
 
@@ -210,15 +210,15 @@ def main(config: DictConfig) -> None:
         evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
-            config=config,
+            experimental_setting=experimental_setting,
             dataset_dict=dataset_dict,
             num_classes=num_classes,
             **kwargs,
         ),
-        optimizer=config.searcher,  # HPO algorithm
-        root_directory=config.neps_directory,
+        optimizer=experimental_setting.searcher,  # HPO algorithm
+        root_directory=experimental_setting.neps_directory,
         max_evaluations_total=(
-            1 if "baseline" in str(config.pipeline_space) else config.max_evaluations
+            1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
         ),
         overwrite_working_directory=False,
         ignore_errors=True,

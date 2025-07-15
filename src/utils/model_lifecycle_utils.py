@@ -85,7 +85,7 @@ class CheckpointManager:
         optimizer,
         scheduler,
         val_acc,
-        config,
+        experimental_setting,
         num_classes,
         hyperparameters,
         device,
@@ -100,7 +100,7 @@ class CheckpointManager:
             optimizer: Optimizer to save state
             scheduler: Learning rate scheduler to save state
             val_acc (float): Current validation accuracy
-            config (DictConfig): Configuration object
+            experimental_setting (DictConfig): Configuration object
             num_classes (int): Number of classes
             hyperparameters (dict): Training hyperparameters
             device (str): Training device
@@ -111,7 +111,7 @@ class CheckpointManager:
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "val_acc": val_acc,
-            "model_type": config.model.type,
+            "model_type": experimental_setting.model.type,
             "num_classes": num_classes,
             "hyperparameters": hyperparameters,
             "device": str(device),
@@ -128,7 +128,7 @@ class CheckpointManager:
         torch.save(checkpoint, latest_path)
 
         # Save periodic checkpoint
-        if (epoch + 1) % config.logging.save_every == 0:
+        if (epoch + 1) % experimental_setting.logging.save_every == 0:
             periodic_path = os.path.join(
                 self.pipeline_directory, f"model_checkpoint_after_{epoch+1}epochs.pth"
             )

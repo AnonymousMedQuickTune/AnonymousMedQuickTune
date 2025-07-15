@@ -72,14 +72,14 @@ def parse_quicktune_results(quicktune_output_dir: str):
 @hydra.main(
     version_base=None,
     config_path="../configs",
-    config_name="main_experiment_config.yaml",
+    config_name="experimental_setting.yaml",
 )
 
 
 def test_run_pipeline(
     _pipeline_directory,
     _previous_pipeline_directory,
-    config,
+    experimental_setting,
     quicktune_output_dir,
     config_id,
     k_folds,
@@ -90,24 +90,24 @@ def test_run_pipeline(
     Each fold's model is evaluated on the complete test set.
     """
     # Set seed for pipeline reproducibility
-    set_seed(config.seed)
+    set_seed(experimental_setting.seed)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nUsing device: {device}")
 
     # Load the dataset based on dimensionality
-    dimensionality = config.data.dimensionality.lower()
+    dimensionality = experimental_setting.data.dimensionality.lower()
     if dimensionality == "2d":
-        if config.data.dataset == "brain_tumor":
+        if experimental_setting.data.dataset == "brain_tumor":
             dataset_dict = load_brain_tumor_dataset(
-                data_path=config.data.path, seed=config.seed
+                data_path=experimental_setting.data.path, seed=experimental_setting.seed
             )
         else:
-            raise ValueError(f"Unsupported dataset: {config.data.dataset}.")
+            raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
         num_classes = dataset_dict["num_classes"]
     elif dimensionality == "3d":  # TODO: Add 3D dataset loading
         dataset_dict = load_3d_dataset(
-            config.data.dataset, data_path=config.data.path, seed=config.seed
+            experimental_setting.data.dataset, data_path=experimental_setting.data.path, seed=experimental_setting.seed
         )
         num_classes = dataset_dict["num_classes"]
     else:
@@ -116,7 +116,7 @@ def test_run_pipeline(
         )
 
     # Convert pipeline space to NePS format (used to get the max batch size if needed)
-    pipeline_space = yaml_to_neps_pipeline_space(config.pipeline_space)
+    pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
 
     # Create a single test loader for the complete test set
     test_dataset = BrainTumorDataset(
@@ -126,7 +126,7 @@ def test_run_pipeline(
         test_dataset,
         batch_size=get_max_batch_size(pipeline_space),
         shuffle=False,
-        num_workers=config.data.num_workers,
+        num_workers=experimental_setting.data.num_workers,
     )
 
     num_classes = dataset_dict["num_classes"]
@@ -171,8 +171,8 @@ def test_run_pipeline(
         # Initialize model
         model = get_2d_model(
             {
-                "type": config.model.type,
-                "task": config.model.task,
+                "type": experimental_setting.model.type,
+                "task": experimental_setting.model.task,
                 "num_classes": num_classes,
             }
         )
@@ -236,21 +236,21 @@ def test_run_pipeline(
     return avg_metrics, num_classes
 
 
-def main(config: DictConfig) -> None:
+def main(experimental_setting: DictConfig) -> None:
     """
     Main entry point for evaluating Quicktune optimization results.
 
     Args:
-        config (DictConfig): Hydra configuration object
+        experimental_setting (DictConfig): Hydra configuration object
     """
     # Set seed for reproducibility
-    set_seed(config.seed)
+    set_seed(experimental_setting.seed)
 
-    # Get Quicktune output directory from config
-    quicktune_output_dir = os.path.join(config.experiment_base_dir, "QuickTune_output")
+    # Get Quicktune output directory from experimental setting
+    quicktune_output_dir = os.path.join(experimental_setting.experiment_base_dir, "QuickTune_output")
 
     # Create directory for evaluation results on the test set
-    test_dir = Path(config.experiment_base_dir) / "evaluation_results"
+    test_dir = Path(experimental_setting.experiment_base_dir) / "evaluation_results"
     test_dir.mkdir(parents=True, exist_ok=True)
 
     # Open text file for console output
@@ -263,10 +263,10 @@ def main(config: DictConfig) -> None:
             avg_metrics, num_classes = test_run_pipeline(
                 _pipeline_directory=str(test_dir),
                 _previous_pipeline_directory=None,
-                config=config,
+                experimental_setting=experimental_setting,
                 quicktune_output_dir=quicktune_output_dir,
                 config_id=config_id,
-                k_folds=config.data.k_folds,
+                k_folds=experimental_setting.data.k_folds,
                 **best_hyperparameters,
             )
 
@@ -274,10 +274,10 @@ def main(config: DictConfig) -> None:
     save_evaluation_results(avg_metrics, test_dir, num_classes)
 
     # Analyze generalization across all configurations
-    # analyze_training_validation_metrics(quicktune_output_dir, config.data.k_folds)
+    # analyze_training_validation_metrics(quicktune_output_dir, experimental_setting.data.k_folds)
 
     # Analyze validation-test generalization
-    # analyze_validation_test_generalization(quicktune_output_dir, avg_metrics, config.data.k_folds)
+    # analyze_validation_test_generalization(quicktune_output_dir, avg_metrics, experimental_setting.data.k_folds)
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ NePS to QuickTune Output Adapter
 
 This script converts NePS optimization results into the format required by QuickTune.
 It creates four CSV files:
-- config.csv: Hyperparameter configurations
+- experimental_setting.csv: Hyperparameter configurations
 - curve.csv: Learning curves
 - cost.csv: Runtime costs
 - meta.csv: Meta-features of the dataset
@@ -32,7 +32,7 @@ class NePSQuickTuneAdapter:
 
     This class handles the conversion of NePS output files into four CSV files
     required by QuickTune:
-    - config.csv: Contains hyperparameter configurations
+    - experimental_setting.csv: Contains hyperparameter configurations
     - curve.csv: Contains learning curves data
     - cost.csv: Contains runtime costs
     - meta.csv: Contains meta-features of the dataset
@@ -143,7 +143,7 @@ class NePSQuickTuneAdapter:
         """Create DataFrames for configurations, learning curves, costs, and meta-features."""
 
         def read_hydra_config() -> dict:
-            """Helper function to read hydra config."""
+            """Helper function to read hydra experimental_setting."""
             config_path = os.path.join(self.input_path, "hydra_output/config.yaml")
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
@@ -404,15 +404,15 @@ def merge_neps_runs(
 @hydra.main(
     version_base=None,
     config_path="../../configs",
-    config_name="main_experiment_config.yaml",
+    config_name="experimental_setting.yaml",
 )
 def main(config: DictConfig) -> None:  # TODO: adapt script for multiple datasets
     """Main entry point of the script."""
     try:
-        if config.get("merge_runs", False):
+        if experimental_setting.get("merge_runs", False):
             # Get experiment names and seeds from config
-            experiment_names = config.get("experiment_names", "").split(",")
-            seeds = config.get("seeds", "").split(",")
+            experiment_names = experimental_setting.get("experiment_names", "").split(",")
+            seeds = experimental_setting.get("seeds", "").split(",")
             
             if not experiment_names or not seeds:
                 raise ValueError(
@@ -420,15 +420,15 @@ def main(config: DictConfig) -> None:  # TODO: adapt script for multiple dataset
                 )
                 
             merge_neps_runs(
-                base_dir=config.base_dir,
+                base_dir=experimental_setting.base_dir,
                 experiment_names=experiment_names,
                 seeds=seeds,
-                output_dir=config.portfolio_dir
+                output_dir=experimental_setting.portfolio_dir
             )
         else:
             adapter = NePSQuickTuneAdapter(
-                input_path=config.experiment_base_dir,
-                output_dir=config.quicktune_directory
+                input_path=experimental_setting.experiment_base_dir,
+                output_dir=experimental_setting.quicktune_directory
             )
             adapter.convert()
             

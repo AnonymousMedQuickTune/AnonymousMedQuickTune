@@ -154,7 +154,7 @@ MEDQUICKTUNE
 │
 ├── configs/                        # YAML configuration files
 │   ├── pipeline_spaces/            # Pipeline space configuration files (HPO)
-│   └── main_experiment_config.yaml # Main experiment configuration file
+│   └── experimental_setting.yaml # Main experiment configuration file
 │
 ├── datasets/                       # Directory for raw and processed datasets (requires downloading)
 │   ├── <DATASET>/                  # Each dataset has its own directory
