@@ -192,7 +192,14 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
     model.eval()
     with torch.no_grad():
         # Get a batch of images
-        images, labels = next(iter(val_loader))
+        batch = next(iter(val_loader))
+        if isinstance(batch, dict):
+            # Batch is a dict for 3D datasets
+            images = batch.get("image")
+            labels = batch.get("label")
+        else:
+            # Batch is a tuple for 2D datasets
+            images, labels = batch
         images, labels = images.to(device), labels.to(device)
 
         # Get predictions
@@ -208,12 +215,34 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
         # Convert to numpy and add text to images
         images_with_text = []
         for i in range(min(16, len(images))):
-            # Convert to numpy and transpose to (H,W,C)
-            img = images[i].cpu().numpy().transpose(1, 2, 0)
+            img = images[i].cpu().numpy()
+            
+            # Handle different image dimensions
+            if len(img.shape) == 4:  # 3D image: [C, D, H, W]
+                # Take middle slice for visualization  # TODO @Natalia: Does middle slice make sense?
+                middle_slice = img.shape[1] // 2
+                img = img[:, middle_slice, :, :]  # [C, H, W]
+                img = img.transpose(1, 2, 0)  # [H, W, C]
+            elif len(img.shape) == 3:  # 2D image: [C, H, W]
+                img = img.transpose(1, 2, 0)  # [H, W, C]
+            else:
+                raise ValueError(f"Unexpected image shape: {img.shape}")
 
             # Normalize to [0,1] range if needed
             if img.max() > 1.0 or img.min() < 0.0:
                 img = (img - img.min()) / (img.max() - img.min())
+
+            # Handle different number of channels for PIL
+            # print(f"Image shape: {img.shape}")
+            if img.shape[-1] == 1:  # Single channel (grayscale)
+                # Convert to RGB by repeating the channel
+                img = np.repeat(img, 3, axis=-1)
+                # print(f"Single channel image (grayscale) gets converted to RGB. New shape: {img.shape}")
+            elif img.shape[-1] == 3:  # Three channels
+                pass
+                # print(f"Three channel image already is in the right RGB format: {img.shape}")
+            else:
+                raise ValueError(f"Unexpected number of channels: {img.shape[-1]}")
 
             # Convert to PIL Image for text drawing
             img = (img * 255).astype(np.uint8)
