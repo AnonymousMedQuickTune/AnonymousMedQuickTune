@@ -94,7 +94,7 @@ def natural_key(string_):
 
 def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run. This is not active as no cache is needed. 
     # Cache is used if there are multiple options of voxel size and they are calculated separately. If not, then just the trasnformations are needed.
-    # TODO @Both: Discuss this in a meeting.
+    # TODO @Both: Discuss this in a meeting: meeting outcome: check if it makes sense / is faster
     """
     Preprocess and cache brain tumor datasets for faster experiment initialization.
 
@@ -206,6 +206,7 @@ def FullTransform(voxel, developer_mode=False):
 
         # Ensure all images have the same shape after resampling
         # TODO @Natalia: Won't this cause problems? + How to set target shape optimally?
+        # Meeting outcome: We need Natalia's preprocessing instead of this ResizeWithPadOrCropd
         ResizeWithPadOrCropd(keys="image", spatial_size=target_shape),  # Pad or crop to fixed shape
 
         NormalizeIntensityd(keys=["image"]),
@@ -216,8 +217,10 @@ def FullTransform(voxel, developer_mode=False):
 
     return Compose(transforms)
 
-def get_median_voxel(dataset_name):  
-    # TODO @Natalia: Add more datasets and their median voxel sizes.
+def get_median_voxel(dataset_name):
+    # Meeting outcome: TODO @Diane: implement functions to calculate:
+    # median, mean, isotripoc, volumetric_isotropic across training images
+    # volumetric_isotropic is dependent on the median
     if dataset_name == "lipo":
         return (0.68, 0.68, 5.0)
     else:

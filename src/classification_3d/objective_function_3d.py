@@ -81,7 +81,7 @@ def run_3d_pipeline(
             "type": config.model.type,
             "task": config.model.task,
             "num_classes": num_classes,
-        }, hyperparameters  # TODO @Both: Check how to handle model specific hyperparameters for portfolio
+        }, hyperparameters  # TODO @Diane: Check if hyperparams can be passed the same way for QuickTune as for NePS
     ).to(device)
 
     # Get k-fold parameter from config or default to 5
@@ -130,7 +130,7 @@ def run_3d_pipeline(
             developer_mode=config.developer_mode,
         )
 
-        # TODO @Natalia: Do we need this?
+        # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
         # Apply dropout rate to all applicable layers in the model
         # model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
         
