@@ -58,6 +58,7 @@ data:
   augmentation_type: medical   # Type of augmentation to use ('medical' or 'trivial')
   k_folds: 5              # Number of folds for K-Fold Cross Validation
   preload_data: True      # Whether to preload the data into memory
+  voxel_calculation: volumetric_isotropic  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic'
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing
