@@ -122,7 +122,7 @@ def run_3d_pipeline(
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
             k_folds=k_folds,
-            batch_size=hyperparameters.get("batch_size", 32),
+            batch_size=hyperparameters.get("batch_size", 1),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
             normalization_stats=normalization_stats,
