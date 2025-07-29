@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 import torch
-from sklearn.metrics import confusion_matrix, precision_recall_fscore_support
+from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from torch import nn
 
 # TODO: Use MONAI Metrics + clean & refactor
@@ -250,6 +250,7 @@ def evaluate_and_log_metrics(
     metrics_dict[phase]["precision"].append(current_metrics["precision"])
     metrics_dict[phase]["recall"].append(current_metrics["recall"])
     metrics_dict[phase]["f1"].append(current_metrics["f1"])
+    metrics_dict[phase]["auc"].append(current_metrics["auc"])
 
     if phase == "val":
         metrics_dict[phase]["confusion_matrices"].append(
@@ -263,10 +264,11 @@ def evaluate_and_log_metrics(
     print(
         f"[{timestamp}]{epoch_str}{phase_name} - "
         f"Loss: {current_metrics['loss']:.4f}, "
-        f"Acc: {current_metrics['accuracy']:.2f}%, "
+        f"Acc: {float(np.mean(current_metrics['accuracy']))*100:.2f}%, "
         f"Prec: {float(np.mean(current_metrics['precision']))*100:.2f}%, "
         f"Rec: {float(np.mean(current_metrics['recall']))*100:.2f}%, "
-        f"F1: {float(np.mean(current_metrics['f1']))*100:.2f}%"
+        f"F1: {float(np.mean(current_metrics['f1']))*100:.2f}%, "
+        f"AUC: {float(np.mean(current_metrics['auc']))*100:.2f}%"
     )
 
     return current_metrics
@@ -334,6 +336,9 @@ def evaluate_model(model, data_loader, criterion, device):
     # Calculate confusion matrix
     conf_matrix = confusion_matrix(all_targets, all_predictions)
 
+    # Calculate AUC
+    auc = roc_auc_score(all_targets, all_predictions)
+
     # Create metrics dictionary
     metrics = {
         "loss": avg_loss,
@@ -342,6 +347,7 @@ def evaluate_model(model, data_loader, criterion, device):
         "recall": recall.tolist(),
         "f1": f1.tolist(),
         "confusion_matrix": conf_matrix.tolist(),
+        "auc": auc,
     }
 
     return metrics
