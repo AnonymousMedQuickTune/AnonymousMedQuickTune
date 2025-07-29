@@ -149,7 +149,7 @@ def run_3d_pipeline(
             optimizer_type=hyperparameters.get("optimizer_type", "adam"),
             # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
             # otherwise use default value of 0.001
-            learning_rate=hyperparameters.get("learning_rate", 1e-3),
+            learning_rate=hyperparameters.get("learning_rate", 1e-4),
             weight_decay=hyperparameters.get("weight_decay", 0.0),
         )
 

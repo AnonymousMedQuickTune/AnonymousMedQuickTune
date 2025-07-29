@@ -1,5 +1,5 @@
 number_of_epochs:  # for multifidelity
   type: int
-  lower: 49
-  upper: 50
+  lower: 99
+  upper: 100
   is_fidelity: true  # explicitly marked as fidelity parameter
