@@ -33,7 +33,7 @@ def initialize_logging_files(logging_dir):
 
     # Create CSV headers if files don't exist
     headers = {
-        "metrics": "epoch,phase,loss,accuracy,precision,recall,f1",
+        "metrics": "epoch,phase,loss,accuracy,precision,recall,f1,auc",
         "gradients": "epoch,layer_name,avg_grad,max_grad",
         "lr": "epoch,learning_rate",
         "resource": "epoch,gpu_memory_allocated,gpu_memory_cached",
@@ -94,15 +94,17 @@ def log_metrics(log_file, epoch, phase, metrics):
             - precision (list): Precision values
             - recall (list): Recall values
             - f1 (list): F1 values
+            - auc (float): AUC value
     """
     metrics_line = (
         f"{epoch+1},"
         f"{phase},"
         f"{metrics['loss']:.4f},"
-        f"{metrics['accuracy']:.4f},"
+        f"{np.mean(metrics['accuracy'])*100:.4f},"
         f"{np.mean(metrics['precision'])*100:.4f},"
         f"{np.mean(metrics['recall'])*100:.4f},"
-        f"{np.mean(metrics['f1'])*100:.4f}\n"
+        f"{np.mean(metrics['f1'])*100:.4f},"
+        f"{np.mean(metrics['auc'])*100:.4f}\n"
     )
 
     with open(log_file, "a", encoding="utf-8") as f:

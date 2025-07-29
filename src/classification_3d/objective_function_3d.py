@@ -88,7 +88,7 @@ def run_3d_pipeline(
     k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
 
     # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics?
-    all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
+    all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
 
     # Initialize TensorBoard writer
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
@@ -311,6 +311,7 @@ def run_3d_pipeline(
                     np.mean(val_metrics["recall"]) * 100
                 )
                 all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+                all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
 
             # Log metrics to TensorBoard
             writer.add_scalar(f"Loss/train/fold_{fold}", train_metrics["loss"], training_epochs)
@@ -327,6 +328,9 @@ def run_3d_pipeline(
             )
             writer.add_scalar(
                 f"F1/train/fold_{fold}", np.mean(train_metrics["f1"]), training_epochs
+            )
+            writer.add_scalar(
+                f"AUC/train/fold_{fold}", np.mean(train_metrics["auc"]), training_epochs
             )
 
             # Log learning rate (moved outside the val_metrics check)
@@ -349,6 +353,9 @@ def run_3d_pipeline(
                 )
                 writer.add_scalar(
                     f"F1/val/fold_{fold}", np.mean(val_metrics["f1"]), training_epochs
+                )
+                writer.add_scalar(
+                    f"AUC/val/fold_{fold}", np.mean(val_metrics["auc"]), training_epochs
                 )
 
                 # Add confusion matrix as image
