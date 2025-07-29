@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -p alldlc_gpu-rtx2080
-##SBATCH -p testdlc_gpu-rtx2080
+##SBATCH -p alldlc_gpu-rtx2080
+#SBATCH -p testdlc_gpu-rtx2080
 ##SBATCH -q dlc-wagnerd
 #SBATCH --gres=gpu:1
 #SBATCH -J medquicktune
@@ -12,8 +12,8 @@ source activate medquicktune
 BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
 EXP_DIR="$BASE_DIR/experiments/NePS/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
 DATA_DIR="$BASE_DIR/datasets/"
-PIPELINE_SPACE="configs/pipeline_spaces/pipeline_space_without_user_priors.yaml"
-# PIPELINE_SPACE="configs/pipeline_spaces/baseline.yaml"
+# PIPELINE_SPACE="configs/pipeline_spaces/pipeline_space_without_user_priors.yaml"
+PIPELINE_SPACE="configs/pipeline_spaces/baseline.yaml"
 
 python -m src.train_neps \
     data.dataset=$DATASET \
