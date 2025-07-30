@@ -230,6 +230,25 @@ def FullTransform(voxel_size, developer_mode=False):
 
     return Compose(transforms)
 
+
+def EvaluationTransform(voxel_size, developer_mode=False):
+    """Transform for evaluation without data augmentation."""
+    if developer_mode:
+        target_shape = (32, 32, 16)  # Smaller shape for faster training on the laptop
+    else:
+        target_shape = (256, 256, 32)  # Original shape
+
+    transforms = [
+        LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+        EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+        Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+        ResizeWithPadOrCropd(keys="image", spatial_size=target_shape),  # Pad or crop to fixed shape
+        NormalizeIntensityd(keys=["image"]),
+        # No data augmentation for evaluation!
+    ]
+
+    return Compose(transforms)
+
 # TODO @Natalia: Pls double check this implementation by trying out different calculation methods (see experimental_setting.yaml > data.voxel_calculation)
 def calculate_voxel_from_images(data_path, dataset_name, calculation_method="median"):
     """

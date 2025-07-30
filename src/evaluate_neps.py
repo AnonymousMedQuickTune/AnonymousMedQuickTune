@@ -28,6 +28,9 @@ from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
+from src.classification_3d.preprocess_data_3d import get_kfold_dataloaders, calculate_voxel_from_images
+from monai.data import Dataset
+from src.classification_3d.preprocess_data_3d import EvaluationTransform
 
 
 def parse_neps_results(neps_output_dir: str):
@@ -182,15 +185,40 @@ def test_run_pipeline(
     pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
 
     # Create a single test loader for the complete test set
-    test_dataset = BrainTumorDataset(
-        dataset_dict["test_data"], dataset_dict["test_labels"]
-    )
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=get_max_batch_size(pipeline_space),
-        shuffle=False,
-        num_workers=experimental_setting.data.num_workers,
-    )
+    if dimensionality == "2d":
+        test_dataset = BrainTumorDataset(
+            dataset_dict["test_data"], dataset_dict["test_labels"]
+        )
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=get_max_batch_size(pipeline_space),
+            shuffle=False,
+            num_workers=experimental_setting.data.num_workers,
+        )
+    elif dimensionality == "3d":  # TODO @Diane: Doublecheck this
+        # For 3D datasets, we need to create the test data in the correct format
+        
+        # Create test data in the format expected by 3D dataloaders
+        test_data_images = [{"index": idx, "image": img, "label": label} 
+                           for idx, (img, label) in enumerate(zip(dataset_dict["test_data"], dataset_dict["test_labels"]))]
+        
+        # Get voxel size for the dataset
+        voxel_size = calculate_voxel_from_images(
+            experimental_setting.data.path, 
+            experimental_setting.data.dataset, 
+            calculation_method=experimental_setting.data.voxel_calculation
+        )
+        
+        # Create test dataset with transforms (no augmentation for evaluation)
+        test_dataset = Dataset(test_data_images, transform=EvaluationTransform(voxel_size, developer_mode=experimental_setting.developer_mode))
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=get_max_batch_size(pipeline_space),
+            shuffle=False,
+            num_workers=experimental_setting.data.num_workers,
+        )
+    else:
+        raise ValueError(f"Unsupported dimensionality: {dimensionality}")
 
     num_classes = dataset_dict["num_classes"]
 
@@ -292,6 +320,12 @@ def main(experimental_setting: DictConfig) -> None:
     # Set seed for reproducibility
     set_seed(experimental_setting.seed)
 
+    if experimental_setting.developer_mode:
+        print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
+        experimental_setting.data.k_folds = 2
+        experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
+        experimental_setting.training.number_of_epochs = 2
+
     # Get NePS output directory from experimental setting
     neps_output_dir = os.path.join(experimental_setting.experiment_base_dir, "NePS_output")
 
@@ -309,7 +343,7 @@ def main(experimental_setting: DictConfig) -> None:
             avg_metrics, num_classes = test_run_pipeline(
                 _pipeline_directory=str(test_dir),
                 _previous_pipeline_directory=None,
-                config=config,
+                experimental_setting=experimental_setting,
                 neps_output_dir=neps_output_dir,
                 config_id=config_id,
                 k_folds=experimental_setting.data.k_folds,

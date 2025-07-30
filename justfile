@@ -176,20 +176,41 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     run_mode=QuickTune \
     qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
 
-# Evaluate NePS optimization results
-eval-neps-local DATASET EXPERIMENT_NAME SEED:
+# Evaluate NePS optimization results for a 2D dataset
+eval-2d-neps-local DATASET EXPERIMENT_NAME SEED:
   python -m src.evaluate_neps \
     experiment_name={{EXPERIMENT_NAME}} \
     data.dataset={{DATASET}} \
     seed={{SEED}} \
     data.path=datasets
 
-# Submit a NePS evaluation to the cluster
-eval-neps-cluster DATASET EXPERIMENT_NAME SEED FOLDS:
+# Evaluate NePS optimization results for a 3D dataset
+eval-3d-neps-local DATASET EXPERIMENT_NAME SEED:
+  python -m src.evaluate_neps \
+    experiment_name={{EXPERIMENT_NAME}} \
+    data.dataset={{DATASET}} \
+    seed={{SEED}} \
+    data.path=datasets \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+
+# Submit a NePS evaluation to the cluster for a 2D dataset
+eval-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
   sbatch --exclude=dlcgpu05 \
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},FOLDS={{FOLDS}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
-    cluster_scripts/evaluate_neps.sh
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+    cluster_scripts/evaluate_neps_2d.sh
+
+# Submit a NePS evaluation to the cluster for a 3D dataset
+eval-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
+    cluster_scripts/evaluate_neps_3d.sh
