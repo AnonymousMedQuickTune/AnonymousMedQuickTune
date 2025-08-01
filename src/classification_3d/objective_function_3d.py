@@ -125,11 +125,10 @@ def run_3d_pipeline(
             batch_size=hyperparameters.get("batch_size", 1),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
+            voxel_size=dataset_dict["voxel_size"],
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
-            voxel_calculation=experimental_setting.data.voxel_calculation,
-            data_path=experimental_setting.data.path,
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)

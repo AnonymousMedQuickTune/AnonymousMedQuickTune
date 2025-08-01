@@ -1,8 +1,12 @@
 import os
+import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
 from sklearn.model_selection import StratifiedKFold, train_test_split
+import nibabel as nib
+import shutil
+import re
 
 from monai.transforms import (
     Compose,
@@ -17,22 +21,235 @@ from monai.transforms import (
 )
 from monai.data import Dataset
 from torch.utils.data import DataLoader
-import re
 
 from src.classification_3d.utils.normalization_stats import calculate_normalization_stats
+from src.classification_3d.preprocessing.preprocess import main_preprocessing
+from src.classification_3d.preprocessing.utils import spacing_info
+from src.classification_3d.utils.dataset_stats import analyze_dataset_statistics, save_statistics_to_file
+from src.classification_3d.utils.dataset_cleaning import find_valid_image_and_segmentation_files, natural_key, clean_dataset
 
-def load_3d_dataset(name, data_path="datasets", seed=42):
+
+def get_paths(dataset_path):
+    """
+    Get paths to images, segmentations, and CSV file for a given dataset path.
+    
+    Args:
+        dataset_path (str): Path to the dataset directory
+        
+    Returns:
+        tuple: Tuple containing lists of image paths, segmentation paths, and CSV file path
+    """
+    # Only directories, not files and ignore preprocessed directory which is within the cleaned dataset directory
+    directory_names = [d for d in sorted(os.listdir(dataset_path), key=natural_key) 
+                      if os.path.isdir(os.path.join(dataset_path, d)) and d != "preprocessed"]
+    
+    # Use flexible file naming to find image and segmentation files
+    images_path = []
+    segmentations_path = []
+    
+    for data_point in directory_names:
+        # Supports: image.nii.gz, img.nii, image.nrrd, segmentation.nii.gz, mask.nii, etc.
+        img_path, seg_path = find_valid_image_and_segmentation_files(dataset_path, data_point)
+        if img_path and seg_path:
+            images_path.append(img_path)
+            segmentations_path.append(seg_path)
+        else:
+            print(f"Warning: Could not find image or segmentation files in {data_point}")
+    
+    csv_path = os.path.join(dataset_path, "dataset.csv")
+
+    return images_path, segmentations_path, csv_path
+
+
+# TODO @Natalia: Pls double check this implementation + compare calculated voxel size with values you worked with so far
+# NOTE: Pls see experimental_setting.yaml > data.voxel_calculation
+def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="median"):
+    """
+    Calculate voxel for a dataset using the specified calculation method.
+    
+    Args:
+        cleaned_dataset_path (str): Path to the cleaned dataset
+        calculation_method (str): Method to calculate voxel size:
+            - 'mean': Calculate mean voxel size across all training images
+            - 'median': Calculate median voxel size across all training images
+            - 'isotropic': Return (1.0, 1.0, 1.0)
+            - 'volumetric_isotropic': Calculate isotropic voxel based on median volume
+    
+    Returns:
+        tuple: Voxel size as (x, y, z) tuple
+    """
+    # Get image paths for the dataset
+    images_path, _, _ = get_paths(cleaned_dataset_path)
+
+    # Extract dataset name from path
+    dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
+
+    # If isotropic, no calculation is needed, return (1.0, 1.0, 1.0)
+    if calculation_method == "isotropic":
+        voxel_result = (1.0, 1.0, 1.0)
+        print(f"Voxel size (isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        return voxel_result
+    
+    # Load voxel information from all images
+    voxel_sizes = []
+    volumes = []
+    
+    for i, img_path in enumerate(images_path):
+        try:
+            # Load image header to get voxel information
+            import nibabel as nib
+            img = nib.load(img_path)
+            voxel_size = img.header.get_zooms()[:3]  # Get first 3 dimensions
+            voxel_sizes.append(voxel_size)
+            
+            # Calculate volume for volumetric_isotropic
+            if calculation_method == "volumetric_isotropic":
+                volume = np.prod(voxel_size)
+                print(f"Volume for {dataset_name} dataset: {volume}")
+                print(f"Voxel size for {dataset_name} dataset: {voxel_size}")
+                volumes.append(volume)
+                
+        except Exception as e:
+            print(f"Warning: Could not load voxel information from {img_path}: {e}")
+            continue
+    
+    if not voxel_sizes:
+        raise ValueError(f"No valid voxel information found in images")
+    
+    voxel_sizes = np.array(voxel_sizes)
+    
+    if calculation_method == "mean":
+        # Calculate mean across all images for each axis (x, y, z)
+        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 averages over N_images for each axis
+        voxel_result = tuple(np.mean(voxel_sizes, axis=0))
+        print(f"Voxel size (mean) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        return voxel_result
+    elif calculation_method == "median":
+        # Calculate median across all images for each axis (x, y, z)
+        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 takes median over N_images for each axis
+        voxel_result = tuple(np.median(voxel_sizes, axis=0))
+        print(f"Voxel size (median) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        return voxel_result
+    elif calculation_method == "volumetric_isotropic":
+        median_volume = np.median(volumes)
+        # Calculate isotropic voxel size that gives the same volume
+        isotropic_voxel = median_volume ** (1/3)
+        voxel_result = (isotropic_voxel, isotropic_voxel, isotropic_voxel)
+        print(f"Voxel size (volumetric_isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        return voxel_result
+    else:
+        raise ValueError(f"Unknown calculation method: {calculation_method}")
+
+
+def apply_smart_preprocessing(cleaned_dataset_path, calculation_method):
+    """
+    Apply Natalia's smart preprocessing pipeline to the dataset.
+    
+    Args:
+        cleaned_dataset_path (str): Path to the cleaned dataset
+        calculation_method (str): Method to calculate voxel size ('mean', 'median', 'isotropic', 'volumetric_isotropic')
+        
+    Returns:
+        str: Path to the preprocessed dataset
+    """
+    print(f"\n\n\n\nApplying smart preprocessing to {cleaned_dataset_path} with {calculation_method} voxel calculation...\n\n\n\n")
+
+    # Get image paths for the cleaned dataset
+    images_path, segmentations_path, csv_path = get_paths(cleaned_dataset_path)
+    
+    # Extract directory names from image paths
+    # Example: img_path = "datasets/lipo_cleaned/Lipo-001/image.nii.gz"
+    #          os.path.dirname(img_path) → "datasets/lipo_cleaned/Lipo-001"
+    #          os.path.basename(...) → "Lipo-001"
+    # Result: ["Lipo-001", "Lipo-002", "Lipo-003", ...]
+    directory_names = [os.path.basename(os.path.dirname(img_path)) for img_path in images_path]
+    
+    # Create file paths for preprocessing (only valid ones)
+    # Example: cleaned_dataset_path = "datasets/lipo_cleaned"
+    #          data_point = "Lipo-001"
+    #          os.path.join(...) → "datasets/lipo_cleaned/Lipo-001"
+    # Result: ["datasets/lipo_cleaned/Lipo-001", "datasets/lipo_cleaned/Lipo-002", ...]
+    file_paths = [os.path.join(cleaned_dataset_path, data_point) for data_point in directory_names] 
+    
+    # Create preprocessed directory within the cleaned dataset directory
+    output_path = os.path.join(cleaned_dataset_path, "preprocessed")
+    os.makedirs(output_path, exist_ok=True)
+
+    # Calculate voxel size from the cleaned dataset
+    voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=calculation_method)
+    
+    # Run the preprocessing pipeline from Natalia's preprocessing code base
+    main_preprocessing(file_paths, output_path, voxel_size)  # TODO @Natalia: Verify for correct integration pls :)
+    
+    # Analyze preprocessed dataset statistics
+    print("\n=== Preprocessed Dataset Statistics Analysis ===")
+    
+    # Load the CSV file to get labels
+    csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
+    if os.path.exists(csv_path):
+        labels_df = pd.read_csv(csv_path)
+        statistics = analyze_dataset_statistics(output_path, labels_df)
+        
+        # Extract dataset name from path
+        dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
+        
+        # Save statistics to file in preprocessed directory
+        statistics_file = os.path.join(output_path, "statistics.txt")
+        additional_info = {
+            "Voxel size": voxel_size,
+            "Calculation method": calculation_method,
+            "Preprocessing path": output_path
+        }
+        save_statistics_to_file(statistics, statistics_file, dataset_name, additional_info)
+        
+        print(f"Preprocessed statistics saved to: {statistics_file}")
+    else:
+        print("Warning: Could not find CSV file for statistics analysis")
+    
+    print(f"Smart preprocessing completed with {calculation_method} voxel calculation. Output saved to: {output_path}")
+    return output_path, voxel_size
+
+
+def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median"):
     """
     Load and preprocess a medical image dataset.
 
     Args:
-        name (str): Name of the dataset to load ('lipo', 'desmoid', 'gist')
+        dataset_name (str): Name of the dataset to load ('lipo', 'desmoid', 'gist')
         data_path (str): Base path to the datasets directory. Defaults to 'datasets'
+        seed (int): Random seed for reproducibility
+        use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing
+        voxel_calculation (str): Method to calculate voxel size for preprocessing
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-    images, segmentations, csv_path = get_paths(data_path, name) # Segmentation will be added in the next run. 
+    if use_smart_preprocessing:
+        # Check if cleaned and preprocessed datasets already exist
+        cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
+        preprocessed_dataset_path = os.path.join(cleaned_dataset_path, "preprocessed")
+        
+        if os.path.exists(preprocessed_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):
+            print(f"\nFound existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
+            # Get voxel size from existing cleaned data (we'll calculate it again)
+            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
+            # Keep the CSV path from the cleaned directory
+            csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")  
+        else:
+            print("\nPreprocessing dataset...\n")
+            # First clean the dataset: For Lipo dataset, Lipo-073 has missing files, so we need to clean the dataset.
+            cleaned_dataset_path = clean_dataset(data_path, dataset_name)
+            # Now apply preprocessing to cleaned dataset
+            # TODO @Diane: Integrate voxel calculation method to search space and preprocess for all methods!
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, calculation_method=voxel_calculation)
+            # Keep the CSV path from the cleaned directory
+            csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
+    
+    else:
+        raise NotImplementedError("Smart preprocessing must be applied to use this function.")
+
+    # Get image and segmentation paths from preprocessed data
+    images, segmentations, _ = get_paths(preprocessed_dataset_path)
 
     # Load labels
     labels_csv = pd.read_csv(csv_path)
@@ -40,7 +257,7 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
 
     # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
     # NOTE: When adding a new dataset, pls verify if -1 is not a valid label!
-    if name in ["lipo", "desmoid", "gist"]:
+    if dataset_name in ["lipo", "desmoid", "gist"]:
         # Create a list of indices for which the label is not -1 and not NaN
         filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
         # Keep only the images corresponding to valid indices
@@ -52,14 +269,14 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
 
     # Recheck class distribution after filtering
     unique_labels, counts = np.unique(labels, return_counts=True)
-    print(f"Class distribution after filtering: {dict(zip(unique_labels, counts))}")
+    print(f"\nClass distribution after filtering: {dict(zip(unique_labels, counts))}")
 
     # Split into train+val and test (80-20)
     train_val_data, test_data, train_val_labels, test_labels = train_test_split(
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
-    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}")
+    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}\n")
 
     return {
         "train_val_data": train_val_data,
@@ -67,56 +284,120 @@ def load_3d_dataset(name, data_path="datasets", seed=42):
         "test_data": test_data,
         "test_labels": test_labels,
         "num_classes": len(unique_labels),
+        "voxel_size": voxel_size,
     }
     
-def get_paths(data_path, name):
-    full_path = os.path.join(data_path, name)
-    # Only directories, not files
-    directory_names = [d for d in sorted(os.listdir(full_path), key=natural_key) 
-                      if os.path.isdir(os.path.join(full_path, d))]
-    
-    if name in ["lipo", "desmoid", "gist"]:
-        # These names can change depending in the dataset, format of the scans, segmentations, etc. 
-        # Please verify this when adding new datasets.
-        image_name = "image.nii.gz"
-        segmentation_name = "segmentation.nii.gz"
-    else:
-        raise NotImplementedError(f"Filename for dataset {name} not specified yet.")
 
-    images_path = [os.path.join(full_path, d, image_name) for d in directory_names]
-    segmentations_path = [os.path.join(full_path, d, segmentation_name) for d in directory_names]
-
-    csv_path = os.path.join(full_path, "dataset.csv")
-
-    return images_path, segmentations_path, csv_path
-
-def natural_key(string_):
-    return [int(s) if s.isdigit() else s for s in re.split(r'(\d+)', string_)]
-
-def cache_datasets(name, data_path="datasets") -> None: # Preprocessed voxel size in the next run. This is not active as no cache is needed. 
-    # Cache is used if there are multiple options of voxel size and they are calculated separately. If not, then just the trasnformations are needed.
-    # NOTE: Outcome of our last meeting: Use Natalia's smart preprocessing instead of this ResizeWithPadOrCropd > caching is needed
-    # TODO @Natalia: Integrate your smart preprocessing to the cache_datasets function
-    # TODO @Both: Discuss in a meeting: Can't we not modify the model to handle variable size inputs instead of using the smart preprocessing?
-    
+def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
     """
-    Preprocess and cache brain tumor datasets for faster experiment initialization.
+    Transform for training on the training set with basic data augmentation.
+    
+    Args:
+        voxel_size (tuple): Voxel size in (x, y, z) format
+        normalization_stats (dict): Normalization statistics
+        developer_mode (bool): If True, uses smaller model target shape for faster development
+
+    Returns:
+        monai.transforms.Compose: Compose object containing the transformations
+    """
+    if developer_mode:
+        spatial_size = (100, 100, 50)  # spatial_size in (H, W, D) format
+        transforms = [
+            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
+            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
+            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+            
+            # Please see statistics.txt in lipo_cleaned/preprocessed/statistics.txt for the maximum width, height, and depth.
+            # After smart preprocessing, the maximum width, height, and depth are 274, 275, and 176 respectively.
+            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
+            # We use pad to reach the maximum sizes to make the model work for now.
+            # NOTE: This is hardcoded for lipo dataset with volumetric isotropic voxel calculation!!
+            # TODO @Natalia: Delete after model is able to handle different input sizes!
+            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+
+            # Data augmentation  # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
+            RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+            RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+            RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+        ]
+    else:
+        # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
+        spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        transforms = [
+            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
+            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
+            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+            
+            # NOTE: Use smaller image size in the developer mode for faster development!
+            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+
+            # Data augmentation  # TODO @Diane: Improve data augmentation strategy + add hyperparameters to the search space
+            RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+            RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+            RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+        ]
+
+    return Compose(transforms)
+
+
+def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
+    """
+    Transform for evaluation on validation and test set without data augmentation.
 
     Args:
-        config (DictConfig): Hydra configuration object
+        voxel_size (tuple): Voxel size in (x, y, z) format
+        normalization_stats (dict): Normalization statistics
+        developer_mode (bool): If True, uses smaller model target shape for faster development
+
+    Returns:
+        monai.transforms.Compose: Compose object containing the transformations
     """
-    print("\nPreprocessing dataset...")
+    if developer_mode:
+        spatial_size = (100, 100, 50)  # spatial_size in (H, W, D) format
+        transforms = [
+            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
+            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
+            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
 
-    # First, process the raw dataset
-    raw_dataset_path = os.path.join(data_path + name, "/raw") # If there is a config path this could be changed. 
-    processed_dataset_path = os.path.join(data_path + name, "/cache")
+            # NOTE: Use smaller image size in the developer mode for faster development!
+            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
 
-    if not os.path.exists(os.path.join(raw_dataset_path + "cache")): # If using voxel size for preprocessing this will change
-        print("Processing raw dataset...")
-        # get_dataloaders(raw_dataset_path, processed_dataset_path)
+            # No data augmentation for evaluation!
+        ]
     else:
-        print("Raw dataset already processed, skipping...")
+        # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
+        spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        transforms = [
+            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
+            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
+            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+
+            # Please see statistics.txt in lipo_cleaned/preprocessed/statistics.txt for the maximum width, height, and depth.
+            # After smart preprocessing, the maximum width, height, and depth are 274, 275, and 176 respectively.
+            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
+            # We use pad to reach the maximum sizes to make the model work for now.
+            # NOTE: This is hardcoded for lipo dataset with volumetric isotropic voxel calculation!!
+            # TODO @Natalia: Delete after model is able to handle different input sizes!
+            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+
+            # No data augmentation for evaluation!
+        ]
         
+    return Compose(transforms)
+
+# TODO @Diane: Create a flag for the use of no validation set (to train baseline & best config
 def get_kfold_dataloaders(
     dataset_name,
     data,
@@ -125,11 +406,10 @@ def get_kfold_dataloaders(
     batch_size,
     num_workers,
     fold_idx,
-    normalization_stats=None,
-    augmentation_type="medical",
-    developer_mode=False,
-    voxel_calculation="median",
-    data_path="datasets",
+    voxel_size,
+    normalization_stats,
+    augmentation_type,
+    developer_mode,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -145,15 +425,10 @@ def get_kfold_dataloaders(
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
-        voxel_calculation (str): Method to calculate voxel size
-        data_path (str): Path to datasets directory
 
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
-    # Get voxel size depending on the dataset and calculation method
-    voxel_size = calculate_voxel_from_images(data_path, dataset_name, calculation_method=voxel_calculation)
-
     # Create k-fold splitter
     kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
 
@@ -171,23 +446,30 @@ def get_kfold_dataloaders(
     train_data = [train_data_images[i] for i in train_idx]
     valid_data = [train_data_images[i] for i in val_idx]
 
-    # TODO @Diane: Use resized data (pad or crop) to pass to the normalization stats function
-    # NOTE: normalization stats should be calculated from resized (pad or crop) images, meaning the preprocessed data, not original images!!!!
-    # Calculate normalization stats from training data if not provided
+    # Calculate normalization stats from preprocessed training data if not provided by NePS
+    # NOTE: normalization stats should be calculated from the preprocessed data, not the original data!
     if normalization_stats is None:
-        means, stds = calculate_normalization_stats(train_data)
-        normalization_stats = {"mean": means, "std": stds}
+        # TODO @Diane: Verify this implementation!
+        stats = calculate_normalization_stats(train_data)  
+        normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
+        print(f"Normalization stats: {normalization_stats}\n")
 
-    # First preprocess part:  # TODO @Diane: integrate normalization stats and data augmentation to Dataset class
-    train_dataset = Dataset(train_data, transform=FullTransform(voxel_size, developer_mode=developer_mode))
-    val_dataset = Dataset(valid_data, transform=FullTransform(voxel_size, developer_mode=developer_mode))
- 
-    # Try without cropping and padding if it is possible, if not need to add cropping.  # NOTE: See FullTransform function
+    # Create train and validation datasets
+    if augmentation_type == "basic":
+        train_dataset = Dataset(train_data, transform=BasicAugmentTransform(voxel_size, normalization_stats, developer_mode))
+    elif augmentation_type == "trivial":
+        raise NotImplementedError("Trivial augmentation is not implemented yet.")  # TODO @Diane: Integrate TrivialAugment
+    elif augmentation_type == "groupaugment":
+        raise NotImplementedError("Group augmentation is not implemented yet.")  # TODO @Diane: Implement + integrate GroupAugment
+    else:
+        raise ValueError(f"Invalid augmentation type: {augmentation_type}")
+
+    val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, normalization_stats, developer_mode))
 
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=batch_size,
+        batch_size=1,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
@@ -195,130 +477,10 @@ def get_kfold_dataloaders(
 
     val_loader = DataLoader(
         val_dataset,
-        batch_size=batch_size,
+        batch_size=1,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
     )
 
     return train_loader, val_loader
-
-def FullTransform(voxel_size, developer_mode=False):
-    if developer_mode:
-        target_shape = (32, 32, 16)  # Smaller shape for faster training on the laptop
-    else:
-        target_shape = (256, 256, 32)  # Original shape
-        # TODO @Natalia: How to set target shape optimally?
-
-    transforms = [
-        LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-        EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-        Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-
-        # Ensure all images have the same shape
-        # TODO: @Diane: Remove ResizeWithPadOrCropd and use Natalia's preprocessing instead (when it's ready to use)
-        # NOTE: meeting outcome: Downsampling bad for images with small tumors and with ResizeWithPadOrCropd we might accidentally crop out the tumor
-        # So we need to use Natalia's smarter preprocessing instead.
-        # TODO @Both: Think about modifying the model to handle variable size inputs.
-        ResizeWithPadOrCropd(keys="image", spatial_size=target_shape),  # Pad or crop to fixed shape
-
-        NormalizeIntensityd(keys=["image"]),
-        RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-        RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-        RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-    ]
-
-    return Compose(transforms)
-
-
-def EvaluationTransform(voxel_size, developer_mode=False):
-    """Transform for evaluation without data augmentation."""
-    if developer_mode:
-        target_shape = (32, 32, 16)  # Smaller shape for faster training on the laptop
-    else:
-        target_shape = (256, 256, 32)  # Original shape
-
-    transforms = [
-        LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-        EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-        Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-        ResizeWithPadOrCropd(keys="image", spatial_size=target_shape),  # Pad or crop to fixed shape
-        NormalizeIntensityd(keys=["image"]),
-        # No data augmentation for evaluation!
-    ]
-
-    return Compose(transforms)
-
-# TODO @Natalia: Pls double check this implementation by trying out different calculation methods (see experimental_setting.yaml > data.voxel_calculation)
-def calculate_voxel_from_images(data_path, dataset_name, calculation_method="median"):
-    """
-    Calculate voxel for a dataset using the specified calculation method.
-    
-    Args:
-        dataset_name (str): Name of the dataset
-        data_path (str): Path to datasets directory
-        calculation_method (str): Method to calculate voxel size:
-            - 'mean': Calculate mean voxel size across all training images
-            - 'median': Calculate median voxel size across all training images
-            - 'isotropic': Return (1.0, 1.0, 1.0)
-            - 'volumetric_isotropic': Calculate isotropic voxel based on median volume
-    
-    Returns:
-        tuple: Voxel size as (x, y, z) tuple
-    """
-    # Get image paths for the dataset
-    images_path, _, _ = get_paths(data_path, dataset_name)
-
-    # If isotropic, no calculation is needed, return (1.0, 1.0, 1.0)
-    if calculation_method == "isotropic":
-        voxel_result = (1.0, 1.0, 1.0)
-        print(f"Voxel size (isotropic) for {dataset_name}: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    
-    # Load voxel information from all images
-    voxel_sizes = []
-    volumes = []
-    
-    for img_path in images_path:
-        try:
-            # Load image header to get voxel information
-            import nibabel as nib
-            img = nib.load(img_path)
-            voxel_size = img.header.get_zooms()[:3]  # Get first 3 dimensions
-            voxel_sizes.append(voxel_size)
-            
-            # Calculate volume for volumetric_isotropic
-            if calculation_method == "volumetric_isotropic":
-                volume = np.prod(voxel_size)
-                volumes.append(volume)
-                
-        except Exception as e:
-            print(f"Warning: Could not load voxel information from {img_path}: {e}")
-            continue
-    
-    if not voxel_sizes:
-        raise ValueError(f"No valid voxel information found in images")
-    
-    voxel_sizes = np.array(voxel_sizes)
-    
-    if calculation_method == "mean":
-        # Calculate mean across all images for each axis (x, y, z)
-        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 averages over N_images for each axis
-        voxel_result = tuple(np.mean(voxel_sizes, axis=0))
-        print(f"Voxel size (mean) for {dataset_name}: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    elif calculation_method == "median":
-        # Calculate median across all images for each axis (x, y, z)
-        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 takes median over N_images for each axis
-        voxel_result = tuple(np.median(voxel_sizes, axis=0))
-        print(f"Voxel size (median) for {dataset_name}: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    elif calculation_method == "volumetric_isotropic":
-        median_volume = np.median(volumes)
-        # Calculate isotropic voxel size that gives the same volume
-        isotropic_voxel = median_volume ** (1/3)
-        voxel_result = (isotropic_voxel, isotropic_voxel, isotropic_voxel)
-        print(f"Voxel size (volumetric_isotropic) for {dataset_name}: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    else:
-        raise ValueError(f"Unknown calculation method: {calculation_method}")

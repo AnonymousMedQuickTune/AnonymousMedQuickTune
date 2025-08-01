@@ -55,9 +55,10 @@ data:
   path: datasets          # Path to the dataset
   debug_mode: False       # Enable/disable debug mode
   num_workers: 4          # Number of parallel data loading workers
-  augmentation_type: medical   # Type of augmentation to use ('medical' or 'trivial')
+  augmentation_type: basic   # Type of augmentation to use ('basic''medical' or 'trivial')
   k_folds: 5              # Number of folds for K-Fold Cross Validation
   preload_data: True      # Whether to preload the data into memory
+  use_smart_preprocessing: True  # Whether to apply Natalia's smart preprocessing (3D only)
   voxel_calculation: volumetric_isotropic  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic'
 
 #------------------------------------------------------------------------------

@@ -28,7 +28,7 @@ from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
-from src.classification_3d.preprocess_data_3d import get_kfold_dataloaders, calculate_voxel_from_images
+from src.classification_3d.preprocess_data_3d import get_kfold_dataloaders
 from monai.data import Dataset
 from src.classification_3d.preprocess_data_3d import EvaluationTransform
 
@@ -173,7 +173,11 @@ def test_run_pipeline(
         num_classes = dataset_dict["num_classes"]
     elif dimensionality == "3d":  # TODO: Add 3D dataset loading
         dataset_dict = load_3d_dataset(
-            experimental_setting.data.dataset, data_path=experimental_setting.data.path, seed=experimental_setting.seed
+            experimental_setting.data.dataset, 
+            data_path=experimental_setting.data.path, 
+            seed=experimental_setting.seed,
+            use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+            voxel_calculation=experimental_setting.data.voxel_calculation
         )
         num_classes = dataset_dict["num_classes"]
     else:
@@ -203,7 +207,7 @@ def test_run_pipeline(
                            for idx, (img, label) in enumerate(zip(dataset_dict["test_data"], dataset_dict["test_labels"]))]
         
         # Get voxel size for the dataset
-        voxel_size = calculate_voxel_from_images(
+        voxel_size = calculate_voxel_size_from_images(
             experimental_setting.data.path, 
             experimental_setting.data.dataset, 
             calculation_method=experimental_setting.data.voxel_calculation
