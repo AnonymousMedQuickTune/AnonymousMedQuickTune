@@ -139,7 +139,7 @@ def main(experimental_setting: DictConfig) -> None:
 
     # TODO: Each NePS run should also run for different train (incl. val) / test folds!!!
     # TODO @Diane: Implement cross-validation for train_val / test split
-    
+
     if experimental_setting.data.preload_data:
         # Preloading data has several benefits:
         # 1. Reduces I/O overhead during training iterations:
@@ -191,14 +191,52 @@ def main(experimental_setting: DictConfig) -> None:
                     raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
                 num_classes = dataset_dict["num_classes"]
             elif dimensionality == "3d":  # TODO: Add 3D dataset loading
-                dataset_dict = load_3d_dataset(
-                    experimental_setting.data.dataset, 
-                    data_path=experimental_setting.data.path, 
-                    seed=experimental_setting.seed,
-                    use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                    voxel_calculation=experimental_setting.data.voxel_calculation
-                )
-                num_classes = dataset_dict["num_classes"]
+                if experimental_setting.data.voxel_calculation == "all":
+                    dataset_dict_mean = load_3d_dataset(
+                        experimental_setting.data.dataset, 
+                        data_path=experimental_setting.data.path, 
+                        seed=experimental_setting.seed,
+                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                        voxel_calculation="mean"
+                    )
+                    dataset_dict_median = load_3d_dataset(
+                        experimental_setting.data.dataset, 
+                        data_path=experimental_setting.data.path, 
+                        seed=experimental_setting.seed,
+                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                        voxel_calculation="median"
+                    )
+                    dataset_dict_isotropic = load_3d_dataset(
+                        experimental_setting.data.dataset, 
+                        data_path=experimental_setting.data.path, 
+                        seed=experimental_setting.seed,
+                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                        voxel_calculation="isotropic"
+                    )
+                    dataset_dict_volumetric_isotropic = load_3d_dataset(
+                        experimental_setting.data.dataset, 
+                        data_path=experimental_setting.data.path, 
+                        seed=experimental_setting.seed,
+                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                        voxel_calculation="volumetric_isotropic"
+                    )
+                    num_classes = dataset_dict_mean["num_classes"]
+                    dataset_dict = {
+                        "dataset_dict_mean": dataset_dict_mean,
+                        "dataset_dict_median": dataset_dict_median,
+                        "dataset_dict_isotropic": dataset_dict_isotropic,
+                        "dataset_dict_volumetric_isotropic": dataset_dict_volumetric_isotropic,
+                    }
+                else:
+                    dataset_dict = load_3d_dataset(
+                        experimental_setting.data.dataset, 
+                        data_path=experimental_setting.data.path, 
+                        seed=experimental_setting.seed,
+                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                        voxel_calculation=experimental_setting.data.voxel_calculation
+                    )
+                    num_classes = dataset_dict["num_classes"]
+                    dataset_dict = {"dataset_dict_{voxel_calculation}": dataset_dict}
             else:
                 raise ValueError(
                     f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"

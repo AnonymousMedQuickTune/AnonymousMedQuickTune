@@ -41,7 +41,7 @@ def get_paths(dataset_path):
     """
     # Only directories, not files and ignore preprocessed directory which is within the cleaned dataset directory
     directory_names = [d for d in sorted(os.listdir(dataset_path), key=natural_key) 
-                      if os.path.isdir(os.path.join(dataset_path, d)) and d != "preprocessed"]
+                      if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("preprocessed_")]
     
     # Use flexible file naming to find image and segmentation files
     images_path = []
@@ -105,8 +105,6 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
             # Calculate volume for volumetric_isotropic
             if calculation_method == "volumetric_isotropic":
                 volume = np.prod(voxel_size)
-                print(f"Volume for {dataset_name} dataset: {volume}")
-                print(f"Voxel size for {dataset_name} dataset: {voxel_size}")
                 volumes.append(volume)
                 
         except Exception as e:
@@ -224,26 +222,26 @@ def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_prepr
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-    if use_smart_preprocessing:
-        # Check if cleaned and preprocessed datasets already exist
+    if use_smart_preprocessing:  # TODO @Diane: Clean prints
+        # Check if cleaned dataset exists
         cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
-        preprocessed_dataset_path = os.path.join(cleaned_dataset_path, "preprocessed")
-        
-        if os.path.exists(preprocessed_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):
+        if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):  
+            print(f"\nFound existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
+        else:
+            print("\nCleaned dataset not found, running dataset cleaning...\n")
+            cleaned_dataset_path = clean_dataset(data_path, dataset_name)
+
+        # Check if preprocessed dataset with the given voxel calculation method exists
+        preprocessed_dataset_path = os.path.join(cleaned_dataset_path, f"preprocessed_{voxel_calculation}")
+        if os.path.exists(preprocessed_dataset_path):
             print(f"\nFound existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
-            # Keep the CSV path from the cleaned directory
-            csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")  
         else:
-            print("\nPreprocessing dataset...\n")
-            # First clean the dataset: For Lipo dataset, Lipo-073 has missing files, so we need to clean the dataset.
-            cleaned_dataset_path = clean_dataset(data_path, dataset_name)
-            # Now apply preprocessing to cleaned dataset
-            # TODO @Diane: Integrate voxel calculation method to search space and preprocess for all methods!
+            print("\nPreprocessed dataset not found, running preprocessing...\n")
             preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, calculation_method=voxel_calculation)
-            # Keep the CSV path from the cleaned directory
-            csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
+        # Keep the CSV path from the cleaned directory
+        csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
     
     else:
         raise NotImplementedError("Smart preprocessing must be applied to use this function.")
@@ -310,12 +308,7 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
             NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
             
-            # Please see statistics.txt in lipo_cleaned/preprocessed/statistics.txt for the maximum width, height, and depth.
-            # After smart preprocessing, the maximum width, height, and depth are 274, 275, and 176 respectively.
-            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
-            # We use pad to reach the maximum sizes to make the model work for now.
-            # NOTE: This is hardcoded for lipo dataset with volumetric isotropic voxel calculation!!
-            # TODO @Natalia: Delete after model is able to handle different input sizes!
+            # NOTE: Use smaller image size in the developer mode for faster development!
             ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
 
             # Data augmentation  # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
@@ -325,7 +318,19 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
         ]
     else:
         # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
-        spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
+        # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
+        # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
+        # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
+        # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
+        if voxel_size[0] == 0.68684727:  # mean voxel calculation
+            spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 0.71651787:  # median voxel calculation
+            spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 1.0:  # isotropic voxel calculation
+            spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 1.3903084893330422:  # volumetric isotropic voxel calculation
+            spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
@@ -334,7 +339,11 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
             NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
             
-            # NOTE: Use smaller image size in the developer mode for faster development!
+            
+            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
+            # We use pad to reach the maximum sizes to make the model work for now.
+            # NOTE: This is hardcoded for lipo dataset!!
+            # TODO @Natalia: Delete after model is able to handle different input sizes!
             ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
 
             # Data augmentation  # TODO @Diane: Improve data augmentation strategy + add hyperparameters to the search space
@@ -375,7 +384,20 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
         ]
     else:
         # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
-        spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
+        # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
+        # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
+        # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
+        # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
+        if voxel_size[0] == 0.68684727:  # mean voxel calculation
+            spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 0.71651787:  # median voxel calculation
+            spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 1.0:  # isotropic voxel calculation
+            spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
+        elif voxel_size[0] == 1.3903084893330422:  # volumetric isotropic voxel calculation
+            spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
@@ -384,11 +406,9 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
             NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
 
-            # Please see statistics.txt in lipo_cleaned/preprocessed/statistics.txt for the maximum width, height, and depth.
-            # After smart preprocessing, the maximum width, height, and depth are 274, 275, and 176 respectively.
             # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
             # We use pad to reach the maximum sizes to make the model work for now.
-            # NOTE: This is hardcoded for lipo dataset with volumetric isotropic voxel calculation!!
+            # NOTE: This is hardcoded for lipo dataset!!
             # TODO @Natalia: Delete after model is able to handle different input sizes!
             ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
 

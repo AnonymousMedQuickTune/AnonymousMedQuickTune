@@ -74,12 +74,24 @@ def resample_image(image, new_spacing):
     original_spacing = np.array(image.GetSpacing())
     original_size = np.array(image.GetSize())
 
+    # Ensure new_spacing is a list for SimpleITK compatibility
+    if isinstance(new_spacing, tuple):
+        new_spacing = list(new_spacing)
+    elif isinstance(new_spacing, np.ndarray):
+        new_spacing = new_spacing.tolist()
+    
+    # Force conversion to list if still not a list
+    if not isinstance(new_spacing, list):
+        new_spacing = list(new_spacing)
+
     new_size = original_size * (original_spacing / new_spacing)
     new_size = np.ceil(new_size).astype(int)
     interpolator = sitk.sitkLinear
     resampler = sitk.ResampleImageFilter()
     resampler.SetSize(new_size.tolist())
-    resampler.SetOutputSpacing(new_spacing)
+    # Convert to list of floats for SimpleITK compatibility
+    spacing_list = [float(x) for x in new_spacing]
+    resampler.SetOutputSpacing(spacing_list)
     resampler.SetOutputOrigin(image.GetOrigin())
     resampler.SetOutputDirection(image.GetDirection())
     resampler.SetInterpolator(interpolator)

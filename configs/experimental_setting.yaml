@@ -59,7 +59,7 @@ data:
   k_folds: 5              # Number of folds for K-Fold Cross Validation
   preload_data: True      # Whether to preload the data into memory
   use_smart_preprocessing: True  # Whether to apply Natalia's smart preprocessing (3D only)
-  voxel_calculation: volumetric_isotropic  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic'
+  voxel_calculation: all  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic', or 'all'
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing

@@ -94,13 +94,26 @@ def run_3d_pipeline(
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
     
-    # Initialize normalization parameters
+    # Initialize normalization parameters and select the dataset_dict based on the selected voxel calculation
     if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         normalization_stats = autonorm(hyperparameters)
+        # Use dataset_dict with mean voxel calculation
+        dataset = dataset_dict["dataset_dict_mean"]  # TODO @Diane: Keep an eye on this!
     else:
         # For k-fold CV, normalization stats will be calculated per fold
         normalization_stats = None
+        # Select the dataset_dict based on the voxel calculation hyperparameter
+        if hyperparameters["voxel_calculation"] == "mean":
+            dataset_dict = dataset_dict["dataset_dict_mean"]
+        elif hyperparameters["voxel_calculation"] == "median":
+            dataset_dict = dataset_dict["dataset_dict_median"]
+        elif hyperparameters["voxel_calculation"] == "isotropic":
+            dataset_dict = dataset_dict["dataset_dict_isotropic"]
+        elif hyperparameters["voxel_calculation"] == "volumetric_isotropic":
+            dataset_dict = dataset_dict["dataset_dict_volumetric_isotropic"]
+        else:
+            raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
 
     # Run k-fold cross validation
     for fold in range(k_folds):
