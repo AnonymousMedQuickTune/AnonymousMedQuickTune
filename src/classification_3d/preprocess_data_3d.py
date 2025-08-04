@@ -206,7 +206,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0):
+def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0, mode="train"):
     """
     Load and preprocess a medical image dataset with cross-validation support.
 
@@ -218,6 +218,7 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing
         voxel_calculation (str): Method to calculate voxel size for preprocessing
         cv_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
+        mode (str): Mode of the experiment ('train' or 'test')
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
@@ -303,7 +304,7 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     # Save CV split in the preprocessed dataset folder
     cv_split_dir = os.path.join(preprocessed_dataset_path, "cv_splits")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    split_file = os.path.join(cv_split_dir, f"train_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_fold_{cv_fold}_split_info_{timestamp}.txt")
+    split_file = os.path.join(cv_split_dir, f"{mode}_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_fold_{cv_fold}_split_info_{timestamp}.txt")
     
     save_cv_split_info( 
         cv_split_dir,

@@ -113,7 +113,8 @@ def test_run_pipeline(
             data_path=experimental_setting.data.path,
             seed=experimental_setting.seed,
             use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-            voxel_calculation=experimental_setting.data.voxel_calculation
+            voxel_calculation=experimental_setting.data.voxel_calculation,
+            mode="test"
         )
         num_classes = dataset_dict["num_classes"]
     else:
