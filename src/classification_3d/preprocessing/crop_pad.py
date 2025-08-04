@@ -5,9 +5,11 @@ import numpy as np
 import math
 
 def get_image_dimensions(data_path):
-    # Get the list of image file paths
+    # Get the list of image file paths (only directories, not files)
     image_name = "image.nii.gz"
-    image_paths = [os.path.join(data_path, f, image_name) for f in os.listdir(data_path)]
+    # Filter only directories, exclude files like statistics.txt
+    directories = [f for f in os.listdir(data_path) if os.path.isdir(os.path.join(data_path, f))]
+    image_paths = [os.path.join(data_path, f, image_name) for f in directories]
     # Initialize lists to store sizes
     x_sizes, y_sizes, z_sizes = [], [], []
 
@@ -63,7 +65,7 @@ def get_center_of_mass_3D(binary_image):
     
     # Compute region properties including center of mass
     props = skimage.measure.regionprops_table(labeled_image, properties=['centroid'])
-    print(props)
+    # print(props)  # Commented out to reduce output noise
     
     # Get the center of mass coordinates
     center_row = np.mean(props['centroid-0'])
@@ -92,8 +94,8 @@ def tumor_bbox(tumor_mask, max_bbox_size, bbox_size = [50, 50, 50]):
         bbox = props.bbox
         min_row, min_col, min_slice, max_row, max_col, max_slice = bbox 
 
-    print("Median bbox size before change: ", bbox_size)
-    print("Max size of a bbox should be: ", max_bbox_size)
+    # print("Median bbox size before change: ", bbox_size)  # Commented out to reduce output noise
+    # print("Max size of a bbox should be: ", max_bbox_size)  # Commented out to reduce output noise
 
     # Update bbox_size[0] based on comparison with bbox_size[0]
     bbox_size[0] = bbox_size[0] if (max_row - min_row) < bbox_size[0] else max_bbox_size[0]
@@ -102,7 +104,7 @@ def tumor_bbox(tumor_mask, max_bbox_size, bbox_size = [50, 50, 50]):
     # Update bbox_size[2] based on comparison with bbox_size[2]
     bbox_size[2] = bbox_size[2] if (max_slice - min_slice) < bbox_size[2] else max_bbox_size[2]
 
-    print("bbox: ", bbox_size)
+    # print("bbox: ", bbox_size)  # Commented out to reduce output noise
 
     # extract bbox around the center of mass
     min_row = int(max(0, com[0] - bbox_size[0] // 2))
@@ -131,7 +133,7 @@ def crop_scan(scan, bbox):
     # Crop the scan using the updated bounding box
     scan_crop = scan[min_row:max_row, min_col:max_col, min_slice:max_slice]
     # scan_crop = scan[min_row:max_row, min_col:max_col, :]
-    print("Scan crop shape: ", scan_crop.shape)
+    # print("Scan crop shape: ", scan_crop.shape)  # Commented out to reduce output noise
     return scan_crop
 
 
@@ -151,20 +153,20 @@ def pad_3d_image(image):
     target_shape = tuple(max(dim, 50) for dim in current_shape)
     
     img_data = image.get_fdata().astype(np.float32)
-    print("current img shape", current_shape)
-    print("target img shape", target_shape)
+    # print("current img shape", current_shape)  # Commented out to reduce output noise
+    # print("target img shape", target_shape)  # Commented out to reduce output noise
     # Calculate the padding amounts for each dimension
     pad_depth = math.ceil((target_shape[0] - current_shape[0]) / 2)
     pad_height = math.ceil((target_shape[1] - current_shape[1]) / 2)
     pad_width = math.ceil((target_shape[2] - current_shape[2]) / 2)    
     
-    print(f"pad depth: {pad_depth}, pad height: {pad_height}, pad width: {pad_width} ") 
+    # print(f"pad depth: {pad_depth}, pad height: {pad_height}, pad width: {pad_width} ")  # Commented out to reduce output noise
     
-    print("Calculating if correct size of image is done to: ", target_shape)
-    print(f"size x total: {current_shape[0] + pad_depth * 2}, size y total: {current_shape[1] + pad_height * 2 }, size z total: {current_shape[2] + pad_width * 2} ") 
+    # print("Calculating if correct size of image is done to: ", target_shape)  # Commented out to reduce output noise
+    # print(f"size x total: {current_shape[0] + pad_depth * 2}, size y total: {current_shape[1] + pad_height * 2 }, size z total: {current_shape[2] + pad_width * 2} ")  # Commented out to reduce output noise
 
     final_shape = [current_shape[0] + pad_depth * 2, current_shape[1] + pad_height * 2 , current_shape[2] + pad_width * 2]
-    print("Final shape: ", final_shape)
+    # print("Final shape: ", final_shape)  # Commented out to reduce output noise
     
     pad_depth_conditioned = pad_depth - 1 if final_shape[0] > target_shape[0] else pad_depth
     pad_height_conditioned = pad_height - 1 if final_shape[1] > target_shape[1] else pad_height

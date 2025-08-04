@@ -41,7 +41,7 @@ def get_paths(dataset_path):
     """
     # Only directories, not files and ignore preprocessed directory which is within the cleaned dataset directory
     directory_names = [d for d in sorted(os.listdir(dataset_path), key=natural_key) 
-                      if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("preprocessed_")]
+                      if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("preprocessed")]
     
     # Use flexible file naming to find image and segmentation files
     images_path = []
@@ -54,7 +54,7 @@ def get_paths(dataset_path):
             images_path.append(img_path)
             segmentations_path.append(seg_path)
         else:
-            print(f"Warning: Could not find image or segmentation files in {data_point}")
+            print(f"\nWarning: Could not find image or segmentation files in {data_point}")
     
     csv_path = os.path.join(dataset_path, "dataset.csv")
 
@@ -87,7 +87,7 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
     # If isotropic, no calculation is needed, return (1.0, 1.0, 1.0)
     if calculation_method == "isotropic":
         voxel_result = (1.0, 1.0, 1.0)
-        print(f"Voxel size (isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        print(f"> Voxel size (isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
         return voxel_result
     
     # Load voxel information from all images
@@ -120,26 +120,26 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
         # Calculate mean across all images for each axis (x, y, z)
         # voxel_sizes shape: (N_images, 3_axes) -> axis=0 averages over N_images for each axis
         voxel_result = tuple(np.mean(voxel_sizes, axis=0))
-        print(f"Voxel size (mean) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        print(f"> Voxel size (mean) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
         return voxel_result
     elif calculation_method == "median":
         # Calculate median across all images for each axis (x, y, z)
         # voxel_sizes shape: (N_images, 3_axes) -> axis=0 takes median over N_images for each axis
         voxel_result = tuple(np.median(voxel_sizes, axis=0))
-        print(f"Voxel size (median) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        print(f"> Voxel size (median) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
         return voxel_result
     elif calculation_method == "volumetric_isotropic":
         median_volume = np.median(volumes)
         # Calculate isotropic voxel size that gives the same volume
         isotropic_voxel = median_volume ** (1/3)
         voxel_result = (isotropic_voxel, isotropic_voxel, isotropic_voxel)
-        print(f"Voxel size (volumetric_isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
+        print(f"> Voxel size (volumetric_isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
         return voxel_result
     else:
         raise ValueError(f"Unknown calculation method: {calculation_method}")
 
 
-def apply_smart_preprocessing(cleaned_dataset_path, calculation_method):
+def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method):
     """
     Apply Natalia's smart preprocessing pipeline to the dataset.
     
@@ -150,7 +150,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, calculation_method):
     Returns:
         str: Path to the preprocessed dataset
     """
-    print(f"\n\n\n\nApplying smart preprocessing to {cleaned_dataset_path} with {calculation_method} voxel calculation...\n\n\n\n")
+    print(f"\nApplying smart preprocessing to '{cleaned_dataset_path}'...\n")
 
     # Get image paths for the cleaned dataset
     images_path, segmentations_path, csv_path = get_paths(cleaned_dataset_path)
@@ -170,11 +170,8 @@ def apply_smart_preprocessing(cleaned_dataset_path, calculation_method):
     file_paths = [os.path.join(cleaned_dataset_path, data_point) for data_point in directory_names] 
     
     # Create preprocessed directory within the cleaned dataset directory
-    output_path = os.path.join(cleaned_dataset_path, "preprocessed")
+    output_path = os.path.join(cleaned_dataset_path, f"preprocessed_{calculation_method}")
     os.makedirs(output_path, exist_ok=True)
-
-    # Calculate voxel size from the cleaned dataset
-    voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=calculation_method)
     
     # Run the preprocessing pipeline from Natalia's preprocessing code base
     main_preprocessing(file_paths, output_path, voxel_size)  # TODO @Natalia: Verify for correct integration pls :)
@@ -208,9 +205,9 @@ def apply_smart_preprocessing(cleaned_dataset_path, calculation_method):
     return output_path, voxel_size
 
 
-def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median"):
+def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0):
     """
-    Load and preprocess a medical image dataset.
+    Load and preprocess a medical image dataset with cross-validation support.
 
     Args:
         dataset_name (str): Name of the dataset to load ('lipo', 'desmoid', 'gist')
@@ -218,6 +215,7 @@ def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_prepr
         seed (int): Random seed for reproducibility
         use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing
         voxel_calculation (str): Method to calculate voxel size for preprocessing
+        cv_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
@@ -226,20 +224,21 @@ def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_prepr
         # Check if cleaned dataset exists
         cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
         if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):  
-            print(f"\nFound existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
+            print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
-            print("\nCleaned dataset not found, running dataset cleaning...\n")
+            print("X Cleaned dataset not found, running dataset cleaning...\n")
             cleaned_dataset_path = clean_dataset(data_path, dataset_name)
 
         # Check if preprocessed dataset with the given voxel calculation method exists
         preprocessed_dataset_path = os.path.join(cleaned_dataset_path, f"preprocessed_{voxel_calculation}")
         if os.path.exists(preprocessed_dataset_path):
-            print(f"\nFound existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
+            print(f"> Found existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
         else:
-            print("\nPreprocessed dataset not found, running preprocessing...\n")
-            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, calculation_method=voxel_calculation)
+            print("X Preprocessed dataset not found, running preprocessing...\n")
+            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation)
         # Keep the CSV path from the cleaned directory
         csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
     
@@ -269,12 +268,17 @@ def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_prepr
     unique_labels, counts = np.unique(labels, return_counts=True)
     print(f"\nClass distribution after filtering: {dict(zip(unique_labels, counts))}")
 
-    # Split into train+val and test (80-20)
+    # Cross-validation for train+val/test splits
+    # Use different seeds for different CV folds to get different splits
+    cv_seed = seed + cv_fold
+    
+    # Split into train+val and test (80-20) with CV fold-specific seed
+    test_size = 0.2
     train_val_data, test_data, train_val_labels, test_labels = train_test_split(
-        images, labels, test_size=0.2, random_state=seed, stratify=labels
+        images, labels, test_size=test_size, random_state=cv_seed, stratify=labels
     )
 
-    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}\n")
+    print(f"\n> CV Fold {cv_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a {int(100-(test_size*100))}%/{int(test_size*100)}% split\n")
 
     return {
         "train_val_data": train_val_data,
@@ -472,7 +476,7 @@ def get_kfold_dataloaders(
         # TODO @Diane: Verify this implementation!
         stats = calculate_normalization_stats(train_data)  
         normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
-        print(f"Normalization stats: {normalization_stats}\n")
+        print(f"Normalization stats (calculated from preprocessed data):\n{normalization_stats}     !!! Currently ignored > see applied data transformations !!!\n")
 
     # Create train and validation datasets
     if augmentation_type == "basic":

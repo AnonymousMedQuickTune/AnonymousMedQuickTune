@@ -242,9 +242,6 @@ def run_2d_pipeline(
         for epoch in range(start_epoch, epochs):
             epoch_start_time = time.time()
 
-            # Apply warmup scheduler at the beginning of each epoch
-            adjust_learning_rate(scheduler)
-
             # Training phase
             train_start_time = time.time()
             train_metrics = train_epoch(
@@ -370,6 +367,9 @@ def run_2d_pipeline(
                 epoch + 1
             ) % experimental_setting.logging.viz_images_every == 0 or epoch == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, epoch)
+
+            # Apply learning rate scheduler after training
+            adjust_learning_rate(scheduler)
 
         print("\nTraining completed!")
 

@@ -196,7 +196,7 @@ def load_brain_tumor_dataset(data_path="datasets", seed=42):
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
-    print(f"\nDataset split (train+val/test): {len(train_val_data)}/{len(test_data)}")
+    print(f"\n> CV Fold {cv_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a 80%/20% split")
 
     # Calculate class distribution
     unique_labels, counts = np.unique(labels, return_counts=True)

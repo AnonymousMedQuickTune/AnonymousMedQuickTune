@@ -116,7 +116,7 @@ def calculate_normalization_stats(train_data, is_rgb=False):
     means = torch.mean(all_means, dim=0)
     stds = torch.mean(all_stds, dim=0)
 
-    print(f"\nNormalization parameters (calculated):")
-    print(f"Means: {means.tolist()}")
-    print(f"Stds: {stds.tolist()}\n")
+    # print(f"\nNormalization parameters (calculated):")
+    # print(f"Means: {means.tolist()}")
+    # print(f"Stds: {stds.tolist()}\n")
     return {"mean": means.tolist(), "std": stds.tolist()}

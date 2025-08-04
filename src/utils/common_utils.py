@@ -7,6 +7,38 @@ import torch
 import yaml
 
 
+def get_cache_file_path(data_path, dataset_name, dimensionality, cv_fold, voxel_calculation=None):
+    """
+    Generate cache file path for different dataset types and configurations.
+    
+    Args:
+        data_path (Path): Base path to datasets
+        dataset_name (str): Name of the dataset
+        dimensionality (str): '2d' or '3d'
+        cv_fold (int): Cross-validation fold number
+        voxel_calculation (str, optional): Voxel calculation method for 3D
+        
+    Returns:
+        Path: Cache file path
+    """
+    if dimensionality == "2d":
+        cache_file = (
+            data_path
+            / "cache"
+            / f"{dataset_name}_2d_cv{cv_fold}.pkl"
+        )
+    elif dimensionality == "3d":
+        cache_file = (
+            data_path
+            / "cache"
+            / f"{dataset_name}_3d_cv{cv_fold}_voxel{voxel_calculation}.pkl"
+        )
+    else:
+        raise ValueError(f"Unsupported dimensionality: {dimensionality}")
+    
+    return cache_file
+
+    
 def yaml_to_neps_pipeline_space(yaml_path):
     """Convert YAML pipeline space configuration to NePS format.
 

@@ -65,7 +65,7 @@ def run_3d_pipeline(
 
     # TODO @Natalia: Is the search space complete?
     # TODO @Both: Discuss search space in a meeting
-    print(f"\n\n\nHyperparameters: {hyperparameters}\n\n\n")  
+    print(f"\nHyperparameters: {hyperparameters}\n")  
     
     # Initialize model and move it to the appropriate device
     if "model" in hyperparameters:
@@ -117,7 +117,9 @@ def run_3d_pipeline(
 
     # Run k-fold cross validation
     for fold in range(k_folds):
-        print(f"\nTraining Fold {fold + 1}/{k_folds}\n... training...")
+        print(f"{'-' * 50}")
+        print(f"Training Fold {fold + 1}/{k_folds}")
+        print(f"{'-' * 50}\n")
 
         # Create fold-specific directory
         fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
@@ -194,13 +196,15 @@ def run_3d_pipeline(
 
         if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly (low priority)
             if experimental_setting.searcher == "random_search":
-                print(f"\nRandom Search with a multi-fidelity searchspace.\nNon-multi-fidelity optimization: Train model over {experimental_setting.training.number_of_epochs} epochs!\n")
-                # For random search:
-                # The maximum number of epochs from the pipeline space is used for all evaluations.
-                epochs = pipeline_config["number_of_epochs"]["upper"]
-                print(f"Random Search: Using maximum epochs value: {epochs}")
+                if experimental_setting.developer_mode:
+                    epochs = experimental_setting.training.number_of_epochs
+                    print(f"\nRandom Search with a multi-fidelity searchspace.\n> Non-multi-fidelity optimization: Train model over {epochs} epochs!\n")
+                else:
+                    # The maximum number of epochs from the pipeline space is used for all evaluations.
+                    epochs = pipeline_config["number_of_epochs"]["upper"]
+                    print(f"\nRandom Search with a multi-fidelity searchspace.\n> Non-multi-fidelity optimization: Train model over {epochs} epochs!\n")
             else:
-                print(f"\nMulti-fidelity optimization:\nUsing number_of_epochs ({hyperparameters['number_of_epochs']}) as fidelity parameter!\n")
+                print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({hyperparameters['number_of_epochs']}) as fidelity parameter!\n")
                 # For multi-fidelity compatible searchers (e.g., PriorBand, HyperBand):
                 # 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
                 # Early optimization runs use fewer epochs for rapid exploration,
@@ -247,9 +251,6 @@ def run_3d_pipeline(
         # Main training loop
         for training_epochs in range(start_epoch, epochs):
             epoch_start_time = time.time()
-
-            # Apply warmup scheduler at the beginning of each epoch
-            adjust_learning_rate(scheduler)
 
             # Training phase
             train_start_time = time.time()
@@ -385,8 +386,10 @@ def run_3d_pipeline(
             ) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1:
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
+            # Apply learning rate scheduler after training
+            adjust_learning_rate(scheduler)
 
-        print("\nTraining completed!")
+        print("\nTraining completed!\n")
     
     # Close TensorBoard writer
     writer.close()

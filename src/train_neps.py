@@ -13,8 +13,9 @@ from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
                                                       load_brain_tumor_dataset)
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
-from src.utils.common_utils import (neps_space_to_dict, set_seed,
+from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space)
+import datetime
 
 
 def run_pipeline(
@@ -43,6 +44,13 @@ def run_pipeline(
     Returns:
         dict: Dictionary containing optimization metrics
     """
+    # Extract config number from pipeline directory to print in the console
+    pipeline_dir_str = str(pipeline_directory)
+    config_number = pipeline_dir_str.split('/configs/config_')[-1] if '/configs/config_' in pipeline_dir_str else "unknown"
+    print(f"\n{'-' * 100}")
+    print(f"Running NePS configuration #{config_number}/{experimental_setting.max_evaluations}")
+    print(f"{'-' * 100}\n")
+
     dimensionality = experimental_setting.data.dimensionality.lower()
 
     if dimensionality == "2d":
@@ -86,17 +94,18 @@ def main(experimental_setting: DictConfig) -> None:
 
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
-        experimental_setting.max_evaluations = 10
+        experimental_setting.max_evaluations = 2
         experimental_setting.data.k_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 2
+        experimental_setting.cv_folds = 1
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
     pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
 
     # Print experimental setting and pipeline space
-    print("\nexperimental setting: ", experimental_setting, "\npipeline space: ", pipeline_space, "\n")
+    print("\nexperimental setting: ", experimental_setting, "\n\npipeline space: ", pipeline_space, "\n")
 
     # Create directory for configuration files and logs
     output_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
@@ -137,136 +146,254 @@ def main(experimental_setting: DictConfig) -> None:
     dataset_dict = None
     num_classes = None
 
-    # TODO: Each NePS run should also run for different train (incl. val) / test folds!!!
-    # TODO @Diane: Implement cross-validation for train_val / test split
-
-    if experimental_setting.data.preload_data:
-        # Preloading data has several benefits:
-        # 1. Reduces I/O overhead during training iterations:
-        #    - Loads data into memory once instead of repeatedly from disk
-        #    - Minimizes disk access during training loops
-        #    - Significantly improves training speed, especially with fast storage
-        #    - Reduces system resource usage from repeated file operations
-        # 2. Ensures consistent data loading across optimization runs:
-        #    - Same data ordering and batching between different trials
-        #    - Eliminates random variations from data loading
-        #    - Improves reproducibility of experiments
-        #    - Makes hyperparameter comparisons more reliable
-        # 3. Enables early validation of data integrity and format:
-        #    - Verify all data samples are properly loaded
-        #    - Check for corrupted or missing data
-        #    - Confirm data dimensions and types match expectations
-        #    - Detect potential issues before starting expensive training runs
-        # Note on Data Augmentation:
-        # - Raw data is preloaded, but dynamic augmentation still occurs during training
-        # - Each epoch can apply different random augmentations to the base data on-the-fly
-        # - Memory efficiency is maintained as augmented versions aren't stored
-
-        # Try to load from cache first
-        data_path = Path(experimental_setting.data.path)
-        cache_file = (
-            data_path
-            / "cache"
-            / f"{experimental_setting.data.dataset}_bs{get_max_batch_size(pipeline_space)}.pkl"
-        )
-
-        # Cache mechanism further improves performance by avoiding repeated data processing
-        if cache_file.exists():
-            print("\nLoading data from cache...")
-            with open(cache_file, "rb") as f:
-                cached_data = pickle.load(f)
-                # Directly use cached_data as it should already be in the correct format
-                dataset_dict = cached_data
-                num_classes = dataset_dict["num_classes"]
-        else:
-            print("\nNo cache found. Loading data directly...")
-
+    # Cross-validation outer loop for different train+val/test splits
+    cv_folds = experimental_setting.cv_folds
+    
+    print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
+    
+    for cv_fold in range(cv_folds):        
+        # Load data for current CV fold
+        if experimental_setting.data.use_smart_preprocessing:
+            print(f"\n{'=' * 100}")
+            print(f"Preloading data for CV fold {cv_fold + 1}/{cv_folds} depending on the selected voxel calculation method")
+            print(f"{'=' * 100}\n")
+            # Reload data with current CV fold
             dimensionality = experimental_setting.data.dimensionality.lower()
             if dimensionality == "2d":
-                if experimental_setting.data.dataset == "brain_tumor":
-                    dataset_dict = load_brain_tumor_dataset(
-                        data_path=experimental_setting.data.path, seed=experimental_setting.seed
-                    )
+                if experimental_setting.data.cache_data:
+                    # TODO @Diane: Implement cross-validation for 2D datasets for cache_data=True
+                    raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet for cache_data=True.")
                 else:
-                    raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
-                num_classes = dataset_dict["num_classes"]
-            elif dimensionality == "3d":  # TODO: Add 3D dataset loading
-                if experimental_setting.data.voxel_calculation == "all":
-                    dataset_dict_mean = load_3d_dataset(
+                    # TODO @Diane: Implement cross-validation for 2D datasets
+                    if cv_folds > 1:
+                        raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet.")
+                    else:
+                        if experimental_setting.data.dataset == "brain_tumor":
+                            dataset_dict = load_brain_tumor_dataset(
+                                data_path=experimental_setting.data.path, seed=experimental_setting.seed, cv_fold=cv_fold
+                            )
+                        else:
+                            raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
+            elif dimensionality == "3d":
+                if experimental_setting.data.cache_data:
+                    # Try to load from cache first
+                    data_path = Path(experimental_setting.data.path)
+                    cache_file = get_cache_file_path(
+                        data_path, 
                         experimental_setting.data.dataset, 
-                        data_path=experimental_setting.data.path, 
-                        seed=experimental_setting.seed,
-                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                        voxel_calculation="mean"
+                        "3d", 
+                        cv_fold, 
+                        experimental_setting.data.voxel_calculation
                     )
-                    dataset_dict_median = load_3d_dataset(
-                        experimental_setting.data.dataset, 
-                        data_path=experimental_setting.data.path, 
-                        seed=experimental_setting.seed,
-                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                        voxel_calculation="median"
-                    )
-                    dataset_dict_isotropic = load_3d_dataset(
-                        experimental_setting.data.dataset, 
-                        data_path=experimental_setting.data.path, 
-                        seed=experimental_setting.seed,
-                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                        voxel_calculation="isotropic"
-                    )
-                    dataset_dict_volumetric_isotropic = load_3d_dataset(
-                        experimental_setting.data.dataset, 
-                        data_path=experimental_setting.data.path, 
-                        seed=experimental_setting.seed,
-                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                        voxel_calculation="volumetric_isotropic"
-                    )
-                    num_classes = dataset_dict_mean["num_classes"]
-                    dataset_dict = {
-                        "dataset_dict_mean": dataset_dict_mean,
-                        "dataset_dict_median": dataset_dict_median,
-                        "dataset_dict_isotropic": dataset_dict_isotropic,
-                        "dataset_dict_volumetric_isotropic": dataset_dict_volumetric_isotropic,
-                    }
+
+                    # Cache mechanism further improves performance by avoiding repeated data processing
+                    if cache_file.exists():
+                        print(f"> Loading 3D data from cache for CV fold {cv_fold + 1}/{cv_folds}...")
+                        with open(cache_file, "rb") as f:
+                            cached_data = pickle.load(f)
+                            dataset_dict = cached_data["dataset_dict"]
+                            num_classes = cached_data["num_classes"]
+                    else:
+                        print(f"> No cache found for CV fold {cv_fold + 1}/{cv_folds}. Loading 3D data directly...\n")
+                        # Create cache directory if it doesn't exist
+                        cache_file.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        # Load data and cache it
+                        if experimental_setting.data.voxel_calculation == "all":
+                            print(f"--------")
+                            print(f"- MEAN -")
+                            print(f"--------")
+                            dataset_dict_mean = load_3d_dataset(
+                                experimental_setting.data.dataset, 
+                                data_path=experimental_setting.data.path, 
+                                seed=experimental_setting.seed,
+                                use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                                voxel_calculation="mean",
+                                cv_fold=cv_fold
+                            )
+                            print(f"----------")
+                            print(f"- MEDIAN -")
+                            print(f"----------")
+                            dataset_dict_median = load_3d_dataset(
+                                experimental_setting.data.dataset, 
+                                data_path=experimental_setting.data.path, 
+                                seed=experimental_setting.seed,
+                                use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                                voxel_calculation="median",
+                                cv_fold=cv_fold
+                            )
+                            print(f"-------------")
+                            print(f"- ISOTROPIC -")
+                            print(f"-------------")
+                            dataset_dict_isotropic = load_3d_dataset(
+                                experimental_setting.data.dataset, 
+                                data_path=experimental_setting.data.path, 
+                                seed=experimental_setting.seed,
+                                use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                                voxel_calculation="isotropic",
+                                cv_fold=cv_fold
+                            )
+                            print(f"------------------------")
+                            print(f"- VOLUMETRIC ISOTROPIC -")
+                            print(f"------------------------")
+                            dataset_dict_volumetric_isotropic = load_3d_dataset(
+                                experimental_setting.data.dataset, 
+                                data_path=experimental_setting.data.path, 
+                                seed=experimental_setting.seed,
+                                use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                                voxel_calculation="volumetric_isotropic",
+                                cv_fold=cv_fold
+                            )
+                            num_classes = dataset_dict_mean["num_classes"]
+                            dataset_dict = {
+                                "dataset_dict_mean": dataset_dict_mean,
+                                "dataset_dict_median": dataset_dict_median,
+                                "dataset_dict_isotropic": dataset_dict_isotropic,
+                                "dataset_dict_volumetric_isotropic": dataset_dict_volumetric_isotropic,
+                            }
+                        else:
+                            dataset_dict = load_3d_dataset(
+                                experimental_setting.data.dataset, 
+                                data_path=experimental_setting.data.path, 
+                                seed=experimental_setting.seed,
+                                use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
+                                voxel_calculation=experimental_setting.data.voxel_calculation,
+                                cv_fold=cv_fold
+                            )
+                            num_classes = dataset_dict["num_classes"]
+                        
+                        # Cache the loaded data
+                        cache_data = {
+                            "dataset_dict": dataset_dict,
+                            "num_classes": num_classes,
+                            "cv_fold": cv_fold,
+                            "voxel_calculation": experimental_setting.data.voxel_calculation,
+                            "dataset": experimental_setting.data.dataset,
+                            "seed": experimental_setting.seed
+                        }
+                        with open(cache_file, "wb") as f:
+                            pickle.dump(cache_data, f)
+                        print(f"\n\n> 3D data cached to: {cache_file}")
                 else:
-                    dataset_dict = load_3d_dataset(
-                        experimental_setting.data.dataset, 
-                        data_path=experimental_setting.data.path, 
-                        seed=experimental_setting.seed,
-                        use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-                        voxel_calculation=experimental_setting.data.voxel_calculation
-                    )
-                    num_classes = dataset_dict["num_classes"]
-                    dataset_dict = {"dataset_dict_{voxel_calculation}": dataset_dict}
+                    raise NotImplementedError("Cross-validation for 3D datasets is only implemented for cache_data=True.")
             else:
-                raise ValueError(
-                    f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
-                )
+                raise ValueError(f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'")
 
-        print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes")
-    else:
-        print("\nData will be loaded on-demand during training\n")
+            print(f"\n{'=' * 100}")
+            print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes for CV fold {cv_fold + 1}/{cv_folds}")
+            print(f"{'=' * 100}\n")
+        
+        # Run NePS optimization for current CV fold
+        logging.basicConfig(level=logging.INFO)
+        run(
+            pipeline_space=pipeline_space,  # Hyperparameter search space
+            evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
+                pipeline_directory=pipeline_directory,
+                previous_pipeline_directory=previous_pipeline_directory,
+                experimental_setting=experimental_setting,
+                dataset_dict=dataset_dict,
+                num_classes=num_classes,
+                **kwargs,
+            ),
+            optimizer=experimental_setting.searcher,  # HPO algorithm
+            root_directory=f"{experimental_setting.neps_directory}/cv_fold_{cv_fold}",
+            max_evaluations_total=(
+                1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
+            ),
+            overwrite_working_directory=False,
+            ignore_errors=True,
+            # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
+        )
+        
+    
+    print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
+    
+    # Save cross-validation summary to text file
+    save_cv_summary(experimental_setting, cv_folds)
 
-    # Run NePS optimization
-    logging.basicConfig(level=logging.INFO)
-    run(
-        pipeline_space=pipeline_space,  # Hyperparameter search space
-        evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
-            pipeline_directory=pipeline_directory,
-            previous_pipeline_directory=previous_pipeline_directory,
-            experimental_setting=experimental_setting,
-            dataset_dict=dataset_dict,
-            num_classes=num_classes,
-            **kwargs,
-        ),
-        optimizer=experimental_setting.searcher,  # HPO algorithm
-        root_directory=experimental_setting.neps_directory,
-        max_evaluations_total=(
-            1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
-        ),
-        overwrite_working_directory=False,
-        ignore_errors=True,
-        # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
-    )
+
+def save_cv_summary(experimental_setting, cv_folds):
+    """
+    Save cross-validation summary to a text file.
+    
+    Args:
+        experimental_setting (DictConfig): Hydra configuration object
+        cv_folds (int): Number of cross-validation folds
+    """
+    # Create summary directory
+    summary_dir = os.path.join(experimental_setting.experiment_base_dir, "cv_summary")
+    os.makedirs(summary_dir, exist_ok=True)
+    
+    # Create summary file with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    summary_file = os.path.join(summary_dir, f"cv_summary_{timestamp}.txt")
+    
+    with open(summary_file, "w", encoding="utf-8") as f:
+        f.write("=" * 80 + "\n")
+        f.write("CROSS-VALIDATION SUMMARY\n")
+        f.write("=" * 80 + "\n\n")
+        
+        # Experiment information
+        f.write("EXPERIMENT INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Dataset: {experimental_setting.data.dataset}\n")
+        f.write(f"Dimensionality: {experimental_setting.data.dimensionality}\n")
+        f.write(f"Voxel Calculation: {experimental_setting.data.voxel_calculation}\n")
+        f.write(f"Number of CV Folds: {cv_folds}\n")
+        f.write(f"Seed: {experimental_setting.seed}\n")
+        f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
+        f.write(f"Optimizer: {experimental_setting.searcher}\n")
+        f.write(f"Developer Mode: {experimental_setting.developer_mode}\n")
+        f.write(f"Number of Epochs: {experimental_setting.training.number_of_epochs}\n")
+        f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        # CV Fold directories
+        f.write("CROSS-VALIDATION FOLD DIRECTORIES:\n")
+        f.write("-" * 40 + "\n")
+        for cv_fold in range(cv_folds):
+            cv_dir = f"{experimental_setting.neps_directory}/cv_fold_{cv_fold}"
+            f.write(f"CV Fold {cv_fold}: {cv_dir}\n")
+        f.write("\n")
+        
+        # Configuration files
+        f.write("CONFIGURATION FILES:\n")
+        f.write("-" * 40 + "\n")
+        config_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
+        f.write(f"Configuration Directory: {config_dir}\n")
+        f.write("Files:\n")
+        f.write("  - experimental_setting.yaml\n")
+        f.write("  - pipeline_space.yaml\n")
+        f.write("  - pipeline_space_compact.yaml\n\n")
+        
+        # Data information
+        f.write("DATA INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Data Path: {experimental_setting.data.path}\n")
+        f.write(f"Cache Data: {experimental_setting.data.cache_data}\n")
+        f.write(f"Use Smart Preprocessing: {experimental_setting.data.use_smart_preprocessing}\n")
+        f.write(f"K-Folds: {experimental_setting.data.k_folds}\n")
+        f.write(f"Num Workers: {experimental_setting.data.num_workers}\n\n")
+        
+        # Pipeline space information
+        f.write("PIPELINE SPACE:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Pipeline Space File: {experimental_setting.pipeline_space}\n")
+        f.write(f"Developer Mode Pipeline: {experimental_setting.developer_mode}\n\n")
+        
+        # Summary
+        f.write("SUMMARY:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Total NePS Runs: {cv_folds}\n")
+        f.write(f"Each run uses different train+val/test split\n")
+        f.write(f"Results saved in separate directories per fold\n")
+        f.write(f"Cross-validation ensures robust evaluation\n\n")
+        
+        f.write("=" * 80 + "\n")
+        f.write("END OF CROSS-VALIDATION SUMMARY\n")
+        f.write("=" * 80 + "\n")
+    
+    print(f"\nCross-validation summary saved to: {summary_file}")
+    return summary_file
 
 
 if __name__ == "__main__":
