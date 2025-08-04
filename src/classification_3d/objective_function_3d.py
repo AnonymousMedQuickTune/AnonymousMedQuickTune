@@ -149,6 +149,7 @@ def run_3d_pipeline(
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
+            no_validation=experimental_setting.data.no_validation,
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
@@ -275,7 +276,7 @@ def run_3d_pipeline(
             # Validation phase
             eval_start_time = time.time()
             val_metrics = None  # Initialize val_metrics as None
-            if (training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1:
+            if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1):
                 val_metrics = evaluate_and_log_metrics(
                     model,
                     val_loader,
@@ -309,8 +310,8 @@ def run_3d_pipeline(
                 optimizer,
                 scheduler,
                 (
-                    val_metrics["accuracy"] if val_metrics is not None else 0.0
-                ),  # Default to 0.0 if no validation
+                    val_metrics["accuracy"] if val_metrics is not None else train_metrics["accuracy"]
+                ),  # Use training accuracy if no validation
                 experimental_setting,
                 num_classes,
                 hyperparameters,
@@ -321,15 +322,28 @@ def run_3d_pipeline(
             
             # Store final metrics for all folds
             if training_epochs == epochs - 1:
-                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
-                all_folds_final_metrics["precision"].append(
-                    np.mean(val_metrics["precision"]) * 100
-                )
-                all_folds_final_metrics["recall"].append(
-                    np.mean(val_metrics["recall"]) * 100
-                )
-                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
-                all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+                if val_metrics is not None:
+                    # Use validation metrics if available
+                    all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+                    all_folds_final_metrics["precision"].append(
+                        np.mean(val_metrics["precision"]) * 100
+                    )
+                    all_folds_final_metrics["recall"].append(
+                        np.mean(val_metrics["recall"]) * 100
+                    )
+                    all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+                    all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+                else:
+                    # Use training metrics when no validation is available
+                    all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"])
+                    all_folds_final_metrics["precision"].append(
+                        np.mean(train_metrics["precision"]) * 100
+                    )
+                    all_folds_final_metrics["recall"].append(
+                        np.mean(train_metrics["recall"]) * 100
+                    )
+                    all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
+                    all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
             # Log metrics to TensorBoard
             writer.add_scalar(f"Loss/train/fold_{fold}", train_metrics["loss"], training_epochs)
@@ -386,9 +400,7 @@ def run_3d_pipeline(
                     plt.close()
 
             # Log sample images with predictions (every N epochs or at the end)
-            if (
-                training_epochs + 1
-            ) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1:
+            if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1):
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
             # Apply learning rate scheduler after training

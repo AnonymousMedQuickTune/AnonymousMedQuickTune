@@ -480,6 +480,7 @@ def get_kfold_dataloaders(
     normalization_stats,
     augmentation_type,
     developer_mode,
+    no_validation=False,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -495,26 +496,36 @@ def get_kfold_dataloaders(
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
+        no_validation (bool): If True, uses no validation set
 
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
-    # Create k-fold splitter
-    kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+    # Handle no_validation case
+    if no_validation:
+        print("No validation set mode: Using all data for training")
+        # Use all data for training, no validation split
+        train_data_images = [{"index": idx, "image": img, "label": label} 
+                        for idx, (img, label) in enumerate(zip(data, labels))]
+        train_data = train_data_images
+        valid_data = []  # Empty validation set
+    else:
+        # Create k-fold splitter
+        kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
 
-    # Get indices for current fold
-    indices = np.arange(len(data))
-    for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
-        if i == fold_idx:
-            break
-    
-    # Combine images and labels into a list of dictionaries
-    train_data_images = [{"index": idx, "image": img, "label": label} 
-                    for idx, (img, label) in enumerate(zip(data, labels))]
- 
-    # Split data for current fold
-    train_data = [train_data_images[i] for i in train_idx]
-    valid_data = [train_data_images[i] for i in val_idx]
+        # Get indices for current fold
+        indices = np.arange(len(data))
+        for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
+            if i == fold_idx:
+                break
+        
+        # Combine images and labels into a list of dictionaries
+        train_data_images = [{"index": idx, "image": img, "label": label} 
+                        for idx, (img, label) in enumerate(zip(data, labels))]
+     
+        # Split data for current fold
+        train_data = [train_data_images[i] for i in train_idx]
+        valid_data = [train_data_images[i] for i in val_idx]
 
     # Calculate normalization stats from preprocessed training data if not provided by NePS
     # NOTE: normalization stats should be calculated from the preprocessed data, not the original data!
@@ -534,7 +545,11 @@ def get_kfold_dataloaders(
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
-    val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, normalization_stats, developer_mode))
+    # Create validation dataset only if validation data exists
+    if valid_data:
+        val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, normalization_stats, developer_mode))
+    else:
+        val_dataset = None
 
     # Create data loaders
     train_loader = DataLoader(
@@ -545,12 +560,16 @@ def get_kfold_dataloaders(
         pin_memory=True,
     )
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=1,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=True,
-    )
+    if val_dataset is not None:
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=1,
+            shuffle=False,
+            num_workers=num_workers,
+            pin_memory=True,
+        )
+    else:
+        # Create empty validation loader when no validation data
+        val_loader = None
 
     return train_loader, val_loader
