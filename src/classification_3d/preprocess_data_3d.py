@@ -223,13 +223,13 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-    if use_smart_preprocessing:  # TODO @Diane: Clean prints
+    if use_smart_preprocessing:
         # Check if cleaned dataset exists
         cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
         if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):  
             print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
-            print("X Cleaned dataset not found, running dataset cleaning...\n")
+            print("\nX Cleaned dataset not found, running dataset cleaning...\n")
             cleaned_dataset_path = clean_dataset(data_path, dataset_name)
 
         # Check if preprocessed dataset with the given voxel calculation method exists

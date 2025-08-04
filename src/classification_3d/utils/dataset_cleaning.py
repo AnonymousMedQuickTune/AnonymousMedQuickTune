@@ -8,6 +8,7 @@ import nibabel as nib
 import shutil
 import re
 import pandas as pd
+from tqdm import tqdm
 
 from src.classification_3d.utils.dataset_info import analyze_dataset_statistics, save_statistics_to_file
 
@@ -133,7 +134,11 @@ def copy_and_convert_files(original_path, cleaned_path, valid_directories, datas
         raise NotImplementedError(f"Dataset {dataset_name} has more than 999 samples, which is not supported yet.")
     
     # Process each valid directory and renumber them sequentially
-    for new_idx, old_dir in enumerate(valid_directories, start=1):
+    print(f"Copying and converting {len(valid_directories)} files...")
+    for new_idx, old_dir in tqdm(enumerate(valid_directories, start=1), 
+                                  total=len(valid_directories), 
+                                  desc="", 
+                                  unit="file"):
         # Create new directory name with 3-digit padding (e.g., "Lipo-001", "Gist-073")
         new_dir = f"{dataset_name.capitalize()}-{new_idx:03d}"
         
@@ -168,8 +173,6 @@ def copy_and_convert_files(original_path, cleaned_path, valid_directories, datas
             # If conversion fails, copy the original file directly
             print(f"Warning: Could not convert segmentation {old_seg_path}: {e}")
             shutil.copy2(old_seg_path, new_seg_path)
-        
-        print(f"Copied {old_dir} -> {new_dir}")
 
 
 def update_csv_file(original_path, cleaned_path, valid_directories):
@@ -225,7 +228,9 @@ def clean_dataset(data_path, dataset_name):
     Returns:
         str: Path to the cleaned dataset
     """
-    print(f"\nCleaning {dataset_name} dataset...\n")
+    print(f"\n{'='*60}")
+    print(f"Cleaning {dataset_name} dataset")
+    print(f"{'='*60}")
     
     # Define paths
     original_path = os.path.join(data_path, dataset_name)
@@ -235,16 +240,19 @@ def clean_dataset(data_path, dataset_name):
     os.makedirs(cleaned_path, exist_ok=True)
     
     # Get valid directories
+    print(f"\nStep 1: Validating directories...")
     valid_directories = get_valid_directories(original_path)
     
     # Copy and convert files
+    print(f"\nStep 2: Copying and converting files...")
     copy_and_convert_files(original_path, cleaned_path, valid_directories, dataset_name)
     
     # Update CSV file
+    print(f"\nStep 3: Updating CSV file...")
     new_df = update_csv_file(original_path, cleaned_path, valid_directories)
     
     # Analyze dataset statistics
-    print("\n=== Dataset Statistics Analysis ===")
+    print(f"\nStep 4: Analyzing dataset statistics...")
     statistics = analyze_dataset_statistics(cleaned_path, new_df)
     
     # Save statistics to file
@@ -260,6 +268,9 @@ def clean_dataset(data_path, dataset_name):
     }
     save_statistics_to_file(statistics, statistics_file, dataset_name, additional_info)
     
+    print(f"\n{'='*60}")
+    print(f"Cleaning completed successfully!")
     print(f"Statistics saved to: {statistics_file}")
     print(f"Cleaned dataset saved to: {cleaned_path}")
+    print(f"{'='*60}\n")
     return cleaned_path

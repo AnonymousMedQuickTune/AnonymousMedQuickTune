@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import datetime
+from tqdm import tqdm
 
 
 def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_fold, train_val_data, test_data, train_val_labels, test_labels, voxel_calculation, seed, suffix=""):
@@ -122,7 +123,8 @@ def analyze_dataset_statistics(cleaned_path, labels_df):
     volumes = []
     aspect_ratios = []
     
-    for img_dir in image_dirs:
+    print(f"Analyzing {len(image_dirs)} images...")
+    for img_dir in tqdm(image_dirs, desc="", unit="img"):
         img_path = os.path.join(cleaned_path, img_dir, "image.nii.gz")
         if os.path.exists(img_path):
             try:
