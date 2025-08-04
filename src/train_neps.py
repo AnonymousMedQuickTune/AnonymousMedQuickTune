@@ -211,7 +211,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="mean",
-                                cv_fold=cv_fold
+                                cv_fold=cv_fold,
+                                mode="train"
                             )
                             print(f"----------")
                             print(f"- MEDIAN -")
@@ -223,7 +224,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="median",
-                                cv_fold=cv_fold
+                                cv_fold=cv_fold,
+                                mode="train"
                             )
                             print(f"-------------")
                             print(f"- ISOTROPIC -")
@@ -235,7 +237,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="isotropic",
-                                cv_fold=cv_fold
+                                cv_fold=cv_fold,
+                                mode="train"
                             )
                             print(f"------------------------")
                             print(f"- VOLUMETRIC ISOTROPIC -")
@@ -247,7 +250,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="volumetric_isotropic",
-                                cv_fold=cv_fold
+                                cv_fold=cv_fold,
+                                mode="train"
                             )
                             num_classes = dataset_dict_mean["num_classes"]
                             dataset_dict = {
@@ -264,7 +268,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation=experimental_setting.data.voxel_calculation,
-                                cv_fold=cv_fold
+                                cv_fold=cv_fold,
+                                mode="train"
                             )
                             num_classes = dataset_dict["num_classes"]
                         
