@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -p alldlc_gpu-rtx2080
-##SBATCH -p testdlc_gpu-rtx2080
+##SBATCH -p alldlc_gpu-rtx2080
+#SBATCH -p testdlc_gpu-rtx2080
 ##SBATCH -q dlc-wagnerd
 #SBATCH --gres=gpu:1
 #SBATCH -J medquicktune-eval
@@ -16,6 +16,7 @@ python -m src.evaluate_neps \
     experiment_name=$EXPERIMENT_NAME \
     data.dataset=$DATASET \
     seed=$SEED \
+    experiment_base_dir=$EXP_DIR \
     data.path=$DATA_DIR \
     model.type=densenetv2 \
     data.dimensionality=3d \
