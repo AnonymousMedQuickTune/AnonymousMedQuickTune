@@ -49,7 +49,10 @@ def run_pipeline(
     pipeline_dir_str = str(pipeline_directory)
     config_number = pipeline_dir_str.split('/configs/config_')[-1] if '/configs/config_' in pipeline_dir_str else "unknown"
     print(f"\n{'-' * 100}")
-    print(f"Running NePS configuration #{config_number}/{experimental_setting.max_evaluations}")
+    if "baseline" in str(experimental_setting.pipeline_space):
+        print(f"Running Baseline configuration")
+    else:
+        print(f"Running NePS configuration #{config_number}/{experimental_setting.max_evaluations}")
     print(f"{'-' * 100}\n")
 
     dimensionality = experimental_setting.data.dimensionality.lower()

@@ -365,14 +365,18 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
         # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
         # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
         # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-        if voxel_size[0] == 0.68684727:  # mean voxel calculation
+        # Use approximate comparison with tolerance for floating point precision issues
+        if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
             spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 0.71651787:  # median voxel calculation
+        elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
             spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 1.0:  # isotropic voxel calculation
+        elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
             spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 1.3903084893330422:  # volumetric isotropic voxel calculation
+        elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
             spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        else:
+            print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+        
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
@@ -431,14 +435,17 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
         # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
         # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
         # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-        if voxel_size[0] == 0.68684727:  # mean voxel calculation
+        # Use approximate comparison with tolerance for floating point precision issues
+        if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
             spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 0.71651787:  # median voxel calculation
+        elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
             spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 1.0:  # isotropic voxel calculation
+        elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
             spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-        elif voxel_size[0] == 1.3903084893330422:  # volumetric isotropic voxel calculation
+        elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
             spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+        else:
+            print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
 
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images

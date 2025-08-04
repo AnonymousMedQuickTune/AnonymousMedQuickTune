@@ -98,8 +98,13 @@ def run_3d_pipeline(
     if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         normalization_stats = autonorm(hyperparameters)
-        # Use dataset_dict with mean voxel calculation
-        dataset = dataset_dict["dataset_dict_mean"]  # TODO @Diane: Keep an eye on this!
+        # Use dataset_dict with median voxel calculation
+        dataset = dataset_dict["dataset_dict_median"]  # TODO @Diane: Keep an eye on this!
+    elif "baseline" in str(experimental_setting.pipeline_space):
+        # For k-fold CV, normalization stats will be calculated per fold
+        normalization_stats = None
+        # Use dataset_dict with median voxel calculation
+        dataset = dataset_dict
     else:
         # For k-fold CV, normalization stats will be calculated per fold
         normalization_stats = None
