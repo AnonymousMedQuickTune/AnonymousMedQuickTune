@@ -467,7 +467,6 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
         
     return Compose(transforms)
 
-# TODO @Diane: Create a flag for the use of no validation set (to train baseline & best config
 def get_kfold_dataloaders(
     dataset_name,
     data,
