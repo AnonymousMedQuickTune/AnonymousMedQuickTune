@@ -196,6 +196,14 @@ def run_3d_pipeline(
             },
         }
 
+        # Initialize early stopping variables
+        best_metric = float('-inf')  # Track best validation metric (higher is better)
+        best_loss = float('inf')  # Track best validation loss (lower is better)
+        patience_counter = 0
+        patience = experimental_setting.training.patience
+        early_stopping_enabled = experimental_setting.training.early_stopping
+        use_loss_threshold = experimental_setting.training.use_loss_threshold
+
         # Training setup: number of epochs
         with open(experimental_setting.pipeline_space, "r") as f:
             pipeline_config = yaml.safe_load(f)
@@ -304,23 +312,93 @@ def run_3d_pipeline(
             if val_metrics is not None:
                 log_metrics(log_files["metrics"], training_epochs, "val", val_metrics)
 
-            # Save progress
+            # Save progress (not the best model, just regular checkpoint)
             checkpoint_manager.save(
                 model,
                 optimizer,
                 scheduler,
                 (
-                    val_metrics["accuracy"] if val_metrics is not None else train_metrics["accuracy"]
-                ),  # Use training accuracy if no validation
+                    val_metrics[experimental_setting.metric] if val_metrics is not None else train_metrics[experimental_setting.metric]
+                ),  # Use training metric if 'no validation' mode is enabled
                 experimental_setting,
                 num_classes,
                 hyperparameters,
                 device,
                 training_epochs,
                 metrics,
+                is_best=False,  # This is not the best model
             )
             
-            # Store final metrics for all folds
+            # Early stopping logic
+            if early_stopping_enabled and val_metrics is not None:
+                improved = False
+                
+                if use_loss_threshold:
+                    # Use loss for early stopping (minimize loss)
+                    current_loss = val_metrics["loss"]
+                    if current_loss < best_loss:
+                        best_loss = current_loss
+                        patience_counter = 0
+                        improved = True
+                        # Save best model checkpoint
+                        checkpoint_manager.save(
+                            model,
+                            optimizer,
+                            scheduler,
+                            best_loss,  # Use the actual metric we're tracking
+                            experimental_setting,
+                            num_classes,
+                            hyperparameters,
+                            device,
+                            training_epochs,
+                            metrics,
+                            is_best=True
+                        )
+                        print(f"New best loss: {best_loss:.4f}")
+                else:
+                    # Use metric for early stopping (maximize metric)
+                    current_metric = val_metrics[experimental_setting.metric]
+                    if current_metric > best_metric:
+                        best_metric = current_metric
+                        patience_counter = 0
+                        improved = True
+                        # Save best model checkpoint
+                        checkpoint_manager.save(
+                            model,
+                            optimizer,
+                            scheduler,
+                            best_metric,  # Use the actual metric we're tracking
+                            experimental_setting,
+                            num_classes,
+                            hyperparameters,
+                            device,
+                            training_epochs,
+                            metrics,
+                            is_best=True
+                        )
+                        print(f"New best {experimental_setting.metric}: {best_metric:.4f}")
+                
+                if not improved:
+                    patience_counter += 1
+                    if use_loss_threshold:
+                        if patience_counter == 1:
+                            print(f"No improvement for {patience_counter} epoch. Best loss: {best_loss:.4f}")
+                        else:
+                            print(f"No improvement for {patience_counter} epochs. Best loss: {best_loss:.4f}")
+                    else:
+                        if patience_counter == 1:
+                            print(f"No improvement for {patience_counter} epoch. Best {experimental_setting.metric}: {best_metric:.4f}")
+                        else:
+                            print(f"No improvement for {patience_counter} epochs. Best {experimental_setting.metric}: {best_metric:.4f}")
+                
+                if patience_counter >= patience:
+                    if use_loss_threshold:
+                        print(f"Early stopping triggered after {patience_counter} epochs without loss improvement")
+                    else:
+                        print(f"Early stopping triggered after {patience_counter} epochs without {experimental_setting.metric} improvement")
+                    break
+
+            # Store final metrics for all folds (at the end of training or after early stopping)
             if training_epochs == epochs - 1:
                 if val_metrics is not None:
                     # Use validation metrics if available
@@ -405,6 +483,30 @@ def run_3d_pipeline(
 
             # Apply learning rate scheduler after training
             adjust_learning_rate(scheduler)
+
+        # Store final metrics for all folds (after training is completed, whether by early stopping or normal completion)
+        if val_metrics is not None:
+            # Use validation metrics if available
+            all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+            all_folds_final_metrics["precision"].append(
+                np.mean(val_metrics["precision"]) * 100
+            )
+            all_folds_final_metrics["recall"].append(
+                np.mean(val_metrics["recall"]) * 100
+            )
+            all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+            all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+        else:
+            # Use training metrics when no validation is available
+            all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"])
+            all_folds_final_metrics["precision"].append(
+                np.mean(train_metrics["precision"]) * 100
+            )
+            all_folds_final_metrics["recall"].append(
+                np.mean(train_metrics["recall"]) * 100
+            )
+            all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
+            all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
         print("\nTraining completed!\n")
     

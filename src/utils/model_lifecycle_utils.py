@@ -84,13 +84,14 @@ class CheckpointManager:
         model,
         optimizer,
         scheduler,
-        val_acc,
+        current_metric,
         experimental_setting,
         num_classes,
         hyperparameters,
         device,
         epoch,
         metrics,
+        is_best=False,
     ):
         """
         Save model checkpoint.
@@ -99,7 +100,7 @@ class CheckpointManager:
             model (nn.Module): Model to save
             optimizer: Optimizer to save state
             scheduler: Learning rate scheduler to save state
-            val_acc (float): Current validation accuracy
+            current_metric (float): Current metric value (loss, or selected metric)
             experimental_setting (DictConfig): Configuration object
             num_classes (int): Number of classes
             hyperparameters (dict): Training hyperparameters
@@ -110,7 +111,7 @@ class CheckpointManager:
         checkpoint = {
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "val_acc": val_acc,
+            "current_metric": current_metric,
             "model_type": experimental_setting.model.type,
             "num_classes": num_classes,
             "hyperparameters": hyperparameters,
@@ -126,6 +127,12 @@ class CheckpointManager:
         # Save latest checkpoint (overwrite)
         latest_path = os.path.join(self.pipeline_directory, self.checkpoint_name)
         torch.save(checkpoint, latest_path)
+
+        # Save best model checkpoint if this is the best so far
+        if is_best:
+            best_path = os.path.join(self.pipeline_directory, "best_model.pth")
+            torch.save(checkpoint, best_path)
+            print(f"Best model saved to: {best_path}")
 
         # Save periodic checkpoint
         if (epoch + 1) % experimental_setting.logging.save_every == 0:

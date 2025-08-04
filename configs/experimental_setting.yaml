@@ -20,7 +20,10 @@ cv_folds: 5
 # Training Configuration
 #------------------------------------------------------------------------------
 training:
-  number_of_epochs: 50  # Total number of training epochs (for non-multi-fidelity searchspaces)
+  number_of_epochs: 50   # Total number of training epochs (for non-multi-fidelity searchspaces)
+  early_stopping: True   # Whether to use early stopping
+  patience: 20            # Number of epochs with no improvement after which training will be stopped
+  use_loss_threshold: True  # Whether to use loss threshold to stop training
 
 #------------------------------------------------------------------------------
 # QuickTune Optimization Settings
