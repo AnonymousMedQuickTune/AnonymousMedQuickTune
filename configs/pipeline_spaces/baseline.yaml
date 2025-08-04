@@ -1,8 +1,6 @@
-weight_decay:
-  type: float
-  log: true
-  lower: 1e-6
-  upper: 1e-2
+voxel_calculation:
+  type: categorical
+  choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
   
 number_of_epochs:  # for multifidelity
   type: int

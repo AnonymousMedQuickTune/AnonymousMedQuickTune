@@ -1,3 +1,9 @@
+voxel_calculation:
+  type: categorical
+  choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
+  default: "mean"
+  default_confidence: "medium"
+
 learning_rate:
   type: float
   log: true
