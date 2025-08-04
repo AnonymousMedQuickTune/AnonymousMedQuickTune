@@ -2,6 +2,7 @@ import logging
 import os
 import pickle
 from pathlib import Path
+import numpy as np
 
 import hydra
 import yaml
@@ -98,7 +99,7 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.data.k_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 2
-        experimental_setting.cv_folds = 1
+        experimental_setting.cv_folds = 2
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
@@ -204,7 +205,8 @@ def main(experimental_setting: DictConfig) -> None:
                             print(f"- MEAN -")
                             print(f"--------")
                             dataset_dict_mean = load_3d_dataset(
-                                experimental_setting.data.dataset, 
+                                experimental_setting.experiment_base_dir,
+                                experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
@@ -215,7 +217,8 @@ def main(experimental_setting: DictConfig) -> None:
                             print(f"- MEDIAN -")
                             print(f"----------")
                             dataset_dict_median = load_3d_dataset(
-                                experimental_setting.data.dataset, 
+                                experimental_setting.experiment_base_dir,
+                                experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
@@ -226,7 +229,8 @@ def main(experimental_setting: DictConfig) -> None:
                             print(f"- ISOTROPIC -")
                             print(f"-------------")
                             dataset_dict_isotropic = load_3d_dataset(
-                                experimental_setting.data.dataset, 
+                                experimental_setting.experiment_base_dir,
+                                experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
@@ -237,7 +241,8 @@ def main(experimental_setting: DictConfig) -> None:
                             print(f"- VOLUMETRIC ISOTROPIC -")
                             print(f"------------------------")
                             dataset_dict_volumetric_isotropic = load_3d_dataset(
-                                experimental_setting.data.dataset, 
+                                experimental_setting.experiment_base_dir,
+                                experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
@@ -253,7 +258,8 @@ def main(experimental_setting: DictConfig) -> None:
                             }
                         else:
                             dataset_dict = load_3d_dataset(
-                                experimental_setting.data.dataset, 
+                                experimental_setting.experiment_base_dir,
+                                experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,

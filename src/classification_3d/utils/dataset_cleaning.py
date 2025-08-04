@@ -9,7 +9,7 @@ import shutil
 import re
 import pandas as pd
 
-from src.classification_3d.utils.dataset_stats import analyze_dataset_statistics, save_statistics_to_file
+from src.classification_3d.utils.dataset_info import analyze_dataset_statistics, save_statistics_to_file
 
 
 def natural_key(string_):

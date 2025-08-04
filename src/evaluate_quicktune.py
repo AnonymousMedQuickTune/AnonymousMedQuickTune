@@ -107,6 +107,8 @@ def test_run_pipeline(
         num_classes = dataset_dict["num_classes"]
     elif dimensionality == "3d":  # TODO: Add 3D dataset loading
         dataset_dict = load_3d_dataset(
+            experimental_setting.experiment_base_dir,
+            experimental_setting.experiment_name,
             experimental_setting.data.dataset,
             data_path=experimental_setting.data.path,
             seed=experimental_setting.seed,

@@ -25,8 +25,9 @@ from torch.utils.data import DataLoader
 from src.classification_3d.utils.normalization_stats import calculate_normalization_stats
 from src.classification_3d.preprocessing.preprocess import main_preprocessing
 from src.classification_3d.preprocessing.utils import spacing_info
-from src.classification_3d.utils.dataset_stats import analyze_dataset_statistics, save_statistics_to_file
+from src.classification_3d.utils.dataset_info import analyze_dataset_statistics, save_statistics_to_file, save_cv_split_info
 from src.classification_3d.utils.dataset_cleaning import find_valid_image_and_segmentation_files, natural_key, clean_dataset
+import datetime
 
 
 def get_paths(dataset_path):
@@ -205,11 +206,12 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0):
+def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0):
     """
     Load and preprocess a medical image dataset with cross-validation support.
 
     Args:
+        experiment_base_dir (str): Path to the experiment base directory
         dataset_name (str): Name of the dataset to load ('lipo', 'desmoid', 'gist')
         data_path (str): Base path to the datasets directory. Defaults to 'datasets'
         seed (int): Random seed for reproducibility
@@ -279,6 +281,42 @@ def load_3d_dataset(dataset_name, data_path="datasets", seed=42, use_smart_prepr
     )
 
     print(f"\n> CV Fold {cv_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a {int(100-(test_size*100))}%/{int(test_size*100)}% split\n")
+
+    # Save CV split information to cv_summary folder
+    cv_split_dir = os.path.join(experiment_base_dir, "cv_summary", "cv_splits")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    split_file = os.path.join(cv_split_dir, f"cv_fold_{cv_fold}_split_info_{timestamp}.txt")
+
+    save_cv_split_info( 
+        cv_split_dir,
+        split_file,
+        dataset_name, 
+        cv_fold, 
+        train_val_data, 
+        test_data, 
+        train_val_labels, 
+        test_labels, 
+        voxel_calculation,
+        seed
+    )
+    
+    # Save CV split in the preprocessed dataset folder
+    cv_split_dir = os.path.join(preprocessed_dataset_path, "cv_splits")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    split_file = os.path.join(cv_split_dir, f"train_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_fold_{cv_fold}_split_info_{timestamp}.txt")
+    
+    save_cv_split_info( 
+        cv_split_dir,
+        split_file,
+        dataset_name, 
+        cv_fold, 
+        train_val_data, 
+        test_data, 
+        train_val_labels, 
+        test_labels, 
+        voxel_calculation,
+        seed
+    )
 
     return {
         "train_val_data": train_val_data,
