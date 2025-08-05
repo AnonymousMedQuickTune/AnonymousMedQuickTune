@@ -64,6 +64,7 @@ def get_paths(dataset_path):
 
 # TODO @Natalia: Pls double check this implementation + compare calculated voxel size with values you worked with so far
 # NOTE: Pls see experimental_setting.yaml > data.voxel_calculation
+# NOTE: Pls see cleaned_dataset_path/preprocessed_*/statistics.txt
 def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="median"):
     """
     Calculate voxel for a dataset using the specified calculation method.
