@@ -31,7 +31,7 @@ from src.utils.model_lifecycle_utils import evaluate_model
 from src.classification_3d.preprocess_data_3d import get_kfold_dataloaders
 from monai.data import Dataset
 from src.classification_3d.preprocess_data_3d import EvaluationTransform
-
+from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 
 def parse_neps_results(neps_output_dir: str):
     """
@@ -41,10 +41,19 @@ def parse_neps_results(neps_output_dir: str):
         neps_output_dir (str): Path to NePS output directory
 
     Returns:
-        tuple: (dict, str) - (best hyperparameter config, config ID)
+        tuple: (dict, str, str) - (best hyperparameter config, config ID, fold-specific NePS directory)
     """
-    # Read the summary CSV
+    # Read the summary CSV (support both flat and cv_fold_* layouts)
     summary_path = os.path.join(neps_output_dir, "summary", "full.csv")
+    if not os.path.exists(summary_path):
+        cv_dirs = [d for d in sorted(os.listdir(neps_output_dir)) if d.startswith("cv_fold_")]
+        if not cv_dirs:
+            raise FileNotFoundError(f"NePS summary CSV not found at {summary_path} and no cv_fold_* directories present in {neps_output_dir}")
+        # Default to first CV fold if multiple are present
+        fold_dir = os.path.join(neps_output_dir, cv_dirs[0])
+        summary_path = os.path.join(fold_dir, "summary", "full.csv")
+    else:
+        fold_dir = neps_output_dir
     df = pd.read_csv(summary_path)
 
     # Find the best configuration (minimum objective_to_minimize)
@@ -69,7 +78,7 @@ def parse_neps_results(neps_output_dir: str):
     print("Parameters:", config_params)
     print(f"Performance: {-best_row['objective_to_minimize']:.2f}%\n")
 
-    return config_params, config_id
+    return config_params, config_id, fold_dir
 
 
 def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
@@ -171,15 +180,20 @@ def test_run_pipeline(
         else:
             raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
         num_classes = dataset_dict["num_classes"]
-    elif dimensionality == "3d":  # TODO: Add 3D dataset loading
+    elif dimensionality == "3d":
+        # Choose voxel calculation method: median for baseline, else from best config
+        if "baseline" in str(experimental_setting.pipeline_space):
+            voxel_calc = "median"
+        else:
+            voxel_calc = hyperparameters.get("voxel_calculation", "median")
         dataset_dict = load_3d_dataset(
             experimental_setting.experiment_base_dir,
-            experimental_setting.experiment_name,
             experimental_setting.data.dataset,
             data_path=experimental_setting.data.path, 
             seed=experimental_setting.seed,
             use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-            voxel_calculation=experimental_setting.data.voxel_calculation,
+            voxel_calculation=voxel_calc,
+            cv_fold=0,
             mode="test"
         )
         num_classes = dataset_dict["num_classes"]
@@ -209,15 +223,21 @@ def test_run_pipeline(
         test_data_images = [{"index": idx, "image": img, "label": label} 
                            for idx, (img, label) in enumerate(zip(dataset_dict["test_data"], dataset_dict["test_labels"]))]
         
+        cleaned_dataset_path = os.path.join(experimental_setting.data.path, experimental_setting.data.dataset + "_cleaned")
         # Get voxel size for the dataset
+        # Use same logic as earlier: baseline => median, else from best config
+        if "baseline" in str(experimental_setting.pipeline_space):
+            voxel_calc = "median"
+        else:
+            voxel_calc = hyperparameters.get("voxel_calculation", "median")
         voxel_size = calculate_voxel_size_from_images(
-            experimental_setting.data.path, 
-            experimental_setting.data.dataset, 
-            calculation_method=experimental_setting.data.voxel_calculation
+            cleaned_dataset_path,
+            calculation_method=voxel_calc
         )
         
         # Create test dataset with transforms (no augmentation for evaluation)
-        test_dataset = Dataset(test_data_images, transform=EvaluationTransform(voxel_size, developer_mode=experimental_setting.developer_mode))
+        normalization_stats = None  # TODO @Diane: load_normalization_stats(cleaned_dataset_path)
+        test_dataset = Dataset(test_data_images, transform=EvaluationTransform(voxel_size, normalization_stats,developer_mode=experimental_setting.developer_mode))
         test_loader = DataLoader(
             test_dataset,
             batch_size=get_max_batch_size(pipeline_space),
@@ -332,6 +352,7 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.data.k_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 2
+        experimental_setting.cv_folds = 2
 
     # Get NePS output directory from experimental setting
     neps_output_dir = os.path.join(experimental_setting.experiment_base_dir, "NePS_output")
@@ -343,25 +364,92 @@ def main(experimental_setting: DictConfig) -> None:
     # Open text file for console output
     with open(test_dir / "evaluation_output.txt", "w") as f:
         with redirect_stdout(f):
-            # Get the best hyperparameters and config ID
-            best_hyperparameters, config_id = parse_neps_results(neps_output_dir)
+            print(f"=== Evaluating NePS results for experiment '{experimental_setting.experiment_name}' ===")
+            print(f"Experiment base: {experimental_setting.experiment_base_dir}")
+            print(f"Outer CV folds (expected): {experimental_setting.cv_folds}\n")
 
-            # Run evaluation on the test set
-            avg_metrics, num_classes = test_run_pipeline(
-                _pipeline_directory=str(test_dir),
-                _previous_pipeline_directory=None,
-                experimental_setting=experimental_setting,
-                neps_output_dir=neps_output_dir,
-                config_id=config_id,
-                k_folds=experimental_setting.data.k_folds,
-                **best_hyperparameters,
-            )
+            # Determine fold directories to evaluate
+            fold_dirs = []
+            flat_summary = os.path.join(neps_output_dir, "summary", "full.csv")
+            if os.path.exists(flat_summary):
+                fold_dirs = [neps_output_dir]
+            else:
+                # Collect cv_fold_* directories up to experimental_setting.cv_folds
+                for cv_idx in range(experimental_setting.cv_folds):
+                    cv_dir = os.path.join(neps_output_dir, f"cv_fold_{cv_idx}")
+                    if os.path.isdir(cv_dir):
+                        fold_dirs.append(cv_dir)
+
+            if not fold_dirs:
+                raise FileNotFoundError(f"No NePS summaries found in {neps_output_dir}")
+
+            per_fold_metrics = []
+            num_classes = None
+
+            for idx, fold_dir in enumerate(fold_dirs):
+                print(f"\n\n\n----- Outer CV Fold {idx + 1}/{len(fold_dirs)} -----\n\n\n")
+
+                # Get the best hyperparameters and config ID for this fold
+                best_hyperparameters, config_id, fold_neps_dir = parse_neps_results(fold_dir)
+                if "baseline" in str(experimental_setting.pipeline_space):
+                    print("Voxel calculation used for evaluation: median (baseline)")
+                else:
+                    vc = best_hyperparameters.get("voxel_calculation", "median")
+                    print(f"Voxel calculation used for evaluation: {vc}")
+
+                # Run evaluation on the test set for this fold
+                fold_avg_metrics, num_classes = test_run_pipeline(
+                    _pipeline_directory=str(test_dir),
+                    _previous_pipeline_directory=None,
+                    experimental_setting=experimental_setting,
+                    neps_output_dir=fold_neps_dir,
+                    config_id=config_id,
+                    k_folds=experimental_setting.data.k_folds,
+                    **best_hyperparameters,
+                )
+                per_fold_metrics.append(fold_avg_metrics)
+
+                print("\n--- Average over inner folds for this outer fold ---")
+                print_evaluation_results(fold_avg_metrics, num_classes)
+
+            # Aggregate metrics across outer CV folds
+            overall_metrics = {}
+            metric_keys = per_fold_metrics[0].keys()
+            for key in metric_keys:
+                if key == "confusion_matrix":
+                    # Average confusion matrices element-wise
+                    mats = [np.array(m[key]) for m in per_fold_metrics]
+                    overall_metrics[key] = (np.mean(mats, axis=0)).tolist()
+                else:
+                    vals = [m[key] for m in per_fold_metrics]
+                    # Handle both scalars and arrays/lists by scalarizing to a single value per fold
+                    def _scalarize(v):
+                        return float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else float(v)
+                    val_scalars = np.array([_scalarize(v) for v in vals])
+                    overall_metrics[key] = float(np.mean(val_scalars))
+
+            print("\n\n\n=== Average Results Across All Outer CV Folds (mean) ===\n\n\n")
+            print_evaluation_results(overall_metrics, num_classes)
+
+            # Mean/Median/Std across outer CV folds for scalar metrics
+            print("\n\n=== Summary across outer CV folds (mean / median ± std) ===\n\n")
+            for key in metric_keys:
+                if key == "confusion_matrix":
+                    continue
+                vals = [m[key] for m in per_fold_metrics]
+                def _scalarize(v):
+                    return float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else float(v)
+                val_scalars = np.array([_scalarize(v) for v in vals])
+                mean_v = float(np.mean(val_scalars))
+                median_v = float(np.median(val_scalars))
+                std_v = float(np.std(val_scalars))
+                print(f"{key.capitalize()}: {mean_v:.2f} / {median_v:.2f} ± {std_v:.2f}")
 
     # Convert NumPy arrays to lists for JSON serialization
     json_compatible_metrics = {}
-    for key, value in avg_metrics.items():
+    for key, value in overall_metrics.items():
         if key == "confusion_matrix":
-            json_compatible_metrics[key] = value.tolist()
+            json_compatible_metrics[key] = value
         else:
             json_compatible_metrics[key] = float(value)
 
@@ -372,8 +460,8 @@ def main(experimental_setting: DictConfig) -> None:
 
     # Plot and save confusion matrix
     plot_confusion_matrix(
-        conf_matrix=avg_metrics["confusion_matrix"],
-        metrics=avg_metrics,
+        conf_matrix=overall_metrics["confusion_matrix"],
+        metrics=overall_metrics,
         class_names=[
             f"Class {i}" for i in range(num_classes)
         ],  # Add class names dynamically

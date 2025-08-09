@@ -98,10 +98,10 @@ def main(experimental_setting: DictConfig) -> None:
 
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
-        experimental_setting.max_evaluations = 2
+        experimental_setting.max_evaluations = 1
         experimental_setting.data.k_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
-        experimental_setting.training.number_of_epochs = 2
+        experimental_setting.training.number_of_epochs = 1
         experimental_setting.cv_folds = 2
     
     if experimental_setting.data.no_validation and not "baseline" in str(experimental_setting.pipeline_space):
