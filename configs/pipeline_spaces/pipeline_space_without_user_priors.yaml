@@ -8,11 +8,17 @@ learning_rate:
   lower: 1e-5
   upper: 1e-1
 
-batch_size:
-  type: int
-  lower: 2
-  upper: 32
+# Batch size will not be part of the search space
+#batch_size:
+#  type: int
+#  lower: 2
+#  upper: 32
 
+gradient_accumulation_steps: 
+  type: int
+  lower: 5
+  upper: 10
+  
 optimizer_type:
   type: categorical
   choices: ["adam", "adamw", "sgd"]

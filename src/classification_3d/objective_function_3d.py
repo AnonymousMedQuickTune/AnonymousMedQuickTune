@@ -63,7 +63,7 @@ def run_3d_pipeline(
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # TODO @Natalia: Is the search space complete?
+    # TODO @Natalia: Is the search space complete? Yes
     # TODO @Both: Discuss search space in a meeting
     print(f"\nHyperparameters: {hyperparameters}\n")  
     
@@ -87,7 +87,7 @@ def run_3d_pipeline(
     # Get k-fold parameter from experimental_setting or default to 5
     k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
 
-    # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics?
+    # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics? No
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
 
     # Initialize TensorBoard writer
@@ -229,7 +229,7 @@ def run_3d_pipeline(
             print(f"\nNon-multi-fidelity optimization:\nTrain model over {experimental_setting.training.number_of_epochs} epochs!")
             epochs = experimental_setting.training.number_of_epochs
         
-        # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset?
+        # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset? 50-100
             
         # Initialize training components
         checkpoint_manager = CheckpointManager(
@@ -278,6 +278,7 @@ def run_3d_pipeline(
                 metrics,
                 training_epochs,
                 hyperparameters.get("mixup_alpha", 0.0),
+                accumulation_steps=hyperparameters.get("gradient_accumulation_steps", 1),
             )
             train_time = time.time() - train_start_time
             
@@ -531,7 +532,7 @@ def run_3d_pipeline(
     # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one experimental_setting.
     cost = epoch_time
 
-    # TODO @Natalia: What are the goal performances that need to be achieved to reproduce results for each dataset?
+    # TODO @Natalia: What are the goal performances that need to be achieved to reproduce results for each dataset? 82 for Lipo.
     return {
         "objective_to_minimize": neps_loss,  # Required by NePS
         "cost": cost,

@@ -152,6 +152,7 @@ def train_epoch(
     metrics_dict,
     epoch,
     mixup_alpha=0.0,
+    accumulation_steps: int = 5,
 ):
     """
     Train model for one epoch and return training metrics.
@@ -172,8 +173,12 @@ def train_epoch(
     """
     model.train()
 
+
+    # Optimizer step first
+    optimizer.zero_grad()
+
     # Training loop
-    for batch in train_loader:
+    for step, batch in enumerate(train_loader, start=1):
         if isinstance(batch, dict):
             # Batch is a dict for 3D datasets
             inputs = batch.get("image")
@@ -200,9 +205,10 @@ def train_epoch(
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
-        # Optimizer step first
-        optimizer.zero_grad()
         # scaler.scale(loss).backward()
+
+        # ---- NEW: scale loss for accumulation ----
+        loss = loss / accumulation_steps
 
         # # Log gradients before optimizer step if the method exists
         # if hasattr(model, "log_gradients"):
@@ -215,12 +221,22 @@ def train_epoch(
         # Inside the training loop, modify the backward pass to handle both with and without scaler
         if scaler is not None:
             scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            # scaler.step(optimizer)
+            # scaler.update()
 
         else:
             loss.backward()
-            optimizer.step()
+            # optimizer.step()
+
+        # Update weights every accumulation_steps
+        if (step % accumulation_steps == 0) or (step == len(train_loader)):
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
+
+            optimizer.zero_grad(set_to_none=True)
 
     print()  # print empty line for better readability in the logging
 
