@@ -42,6 +42,10 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/neps2qt.sh
 
+# Plot CV results from MedQuickTune experiment directories
+plot-cv-results EXPERIMENT_PATH OUTPUT_DIR="results/lipo_baseline":
+  python src/analysis/plot_cluster_results.py {{EXPERIMENT_PATH}} --auto-structure --output-dir {{OUTPUT_DIR}}
+
 # Preprocess brain tumor dataset: process raw data, create CSV and cache for faster experiment initialization
 preprocess-brain-tumor-dataset:
     python -m src.classification_2d.preprocess_data_2d data.path=datasets
