@@ -247,7 +247,7 @@ def parse_evaluation_file(evaluation_file_path):
                 'precision': precision,
                 'recall': recall,
                 'f1': f1,
-                'auc': auc * 100  # Convert to percentage  # TODO @Diane: Update after fixing the evaluation script!
+                'auc': auc
             }
         
         # Extract average results for this outer fold
@@ -260,7 +260,7 @@ def parse_evaluation_file(evaluation_file_path):
                 'precision': float(avg_match.group(3)),
                 'recall': float(avg_match.group(4)),
                 'f1': float(avg_match.group(5)),
-                'auc': float(avg_match.group(6)) * 100  # Convert to percentage # TODO @Diane: Update after fixing the evaluation script!
+                'auc': float(avg_match.group(6))
             }
         
         evaluation_data['outer_folds'][fold_num] = fold_data
@@ -282,7 +282,7 @@ def parse_evaluation_file(evaluation_file_path):
             'precision': float(overall_match.group(3)),
             'recall': float(overall_match.group(4)),
             'f1': float(overall_match.group(5)),
-            'auc': float(overall_match.group(6)) * 100  # Convert to percentage  # TODO @Diane: Update after fixing the evaluation script!
+            'auc': float(overall_match.group(6))
         }
         print("Successfully extracted overall summary data")
     else:

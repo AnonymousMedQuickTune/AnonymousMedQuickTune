@@ -108,6 +108,15 @@ def print_evaluation_results(fold_metrics, num_classes, fold_number=None):
 
     # Print confusion matrix
     conf_matrix = np.array(fold_metrics["confusion_matrix"])
+    
+    # Ensure conf_matrix is 2D
+    if conf_matrix.ndim == 0:
+        # If it's a scalar, create a 1x1 matrix
+        conf_matrix = np.array([[conf_matrix]])
+    elif conf_matrix.ndim == 1:
+        # If it's 1D, reshape to 2D
+        conf_matrix = conf_matrix.reshape(1, -1)
+    
     total_samples = np.sum(conf_matrix)
     print(f"\nConfusion Matrix (Total samples: {total_samples:.1f}):")
 
@@ -310,20 +319,31 @@ def test_run_pipeline(
         # Print fold results using the new function
         print_evaluation_results(fold_metrics, num_classes, fold)
 
-    # Calculate average metrics across folds dynamically
+        # Calculate average metrics across folds dynamically
     avg_metrics = {}
     for metric_name in all_fold_metrics[0].keys():
         if metric_name == "confusion_matrix":
-            avg_metrics[metric_name] = np.mean(
-                [m[metric_name] for m in all_fold_metrics], axis=0
-            )
+            # Ensure all confusion matrices are 2D before averaging
+            matrices = []
+            for m in all_fold_metrics:
+                matrix = np.array(m[metric_name])
+                if matrix.ndim == 0:
+                    matrix = np.array([[matrix]])
+                elif matrix.ndim == 1:
+                    matrix = matrix.reshape(1, -1)
+                matrices.append(matrix)
+            avg_metrics[metric_name] = np.mean(matrices, axis=0)
         else:
             # Handle both scalar and array metrics
             values = [m[metric_name] for m in all_fold_metrics]
             if isinstance(values[0], (list, np.ndarray)):
                 avg_metrics[metric_name] = np.mean([np.mean(v) for v in values]) * 100
             else:
-                avg_metrics[metric_name] = np.mean(values)
+                # Special handling for AUC: multiply by 100 to convert to percentage
+                if metric_name == "auc":
+                    avg_metrics[metric_name] = np.mean(values) * 100
+                else:
+                    avg_metrics[metric_name] = np.mean(values)
 
     # Print average results using the same function
     print("\n=== Average Results Across All Folds ===")
@@ -426,7 +446,11 @@ def main(experimental_setting: DictConfig) -> None:
                     def _scalarize(v):
                         return float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else float(v)
                     val_scalars = np.array([_scalarize(v) for v in vals])
-                    overall_metrics[key] = float(np.mean(val_scalars))
+                    # Special handling for AUC: ensure it's already in percentage format
+                    if key == "auc":
+                        overall_metrics[key] = float(np.mean(val_scalars))
+                    else:
+                        overall_metrics[key] = float(np.mean(val_scalars))
 
             print("\n\n\n=== Average Results Across All Outer CV Folds (mean) ===\n\n\n")
             print_evaluation_results(overall_metrics, num_classes)
@@ -443,7 +467,11 @@ def main(experimental_setting: DictConfig) -> None:
                 mean_v = float(np.mean(val_scalars))
                 median_v = float(np.median(val_scalars))
                 std_v = float(np.std(val_scalars))
-                print(f"{key.capitalize()}: {mean_v:.2f} / {median_v:.2f} ± {std_v:.2f}")
+                # Special handling for AUC: ensure it's displayed as percentage
+                if key == "auc":
+                    print(f"{key.capitalize()}: {mean_v:.2f}% / {median_v:.2f}% ± {std_v:.2f}%")
+                else:
+                    print(f"{key.capitalize()}: {mean_v:.2f} / {median_v:.2f} ± {std_v:.2f}")
 
     # Convert NumPy arrays to lists for JSON serialization
     json_compatible_metrics = {}
