@@ -11,6 +11,7 @@ import hydra
 import numpy as np
 import pandas as pd
 import torch
+import torch.serialization
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
 from torch.utils.data import DataLoader
@@ -28,6 +29,7 @@ from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
+from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.classification_3d.preprocess_data_3d import get_kfold_dataloaders
 from monai.data import Dataset
 from src.classification_3d.preprocess_data_3d import EvaluationTransform
@@ -301,7 +303,12 @@ def test_run_pipeline(
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}")
 
-        checkpoint = torch.load(checkpoint_path)
+        # Add safe globals for NumPy objects that might be in the checkpoint
+        # Allow loading PyTorch models that contain NumPy datatypes (required for NePS checkpoints)
+        torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype, np.dtypes.Float64DType])
+        
+        # Load the model checkpoint
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
         model.load_state_dict(checkpoint["model_state_dict"])
         model = model.to(device)
         model.eval()
@@ -485,6 +492,11 @@ def main(experimental_setting: DictConfig) -> None:
     results_path = test_dir / "evaluation_results.json"
     with open(results_path, "w") as f:
         json.dump(json_compatible_metrics, f, indent=4)
+    
+    # Log evaluation in experiment status
+    status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir)
+    status_logger.log_evaluation()
+    print(f"\n{status_logger.get_evaluation_status()}")
 
     # Plot and save confusion matrix
     plot_confusion_matrix(

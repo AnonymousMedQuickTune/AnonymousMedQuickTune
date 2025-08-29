@@ -16,6 +16,7 @@ from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space)
+from src.utils.experiment_status_logger import ExperimentStatusLogger
 import datetime
 
 
@@ -98,10 +99,10 @@ def main(experimental_setting: DictConfig) -> None:
 
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
-        experimental_setting.max_evaluations = 1
+        experimental_setting.max_evaluations = 2
         experimental_setting.data.k_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
-        experimental_setting.training.number_of_epochs = 1
+        experimental_setting.training.number_of_epochs = 3
         experimental_setting.cv_folds = 2
     
     if experimental_setting.data.no_validation and not "baseline" in str(experimental_setting.pipeline_space):
@@ -157,6 +158,20 @@ def main(experimental_setting: DictConfig) -> None:
 
     # Cross-validation outer loop for different train+val/test splits
     cv_folds = experimental_setting.cv_folds
+    
+    # Initialize experiment status logger for webapp dashboard
+    status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir)
+    
+    # Set the total number of outer folds for cross-validation to calculate overall progress percentages
+    status_logger.set_total_outer_folds(cv_folds)
+    
+    # Force save the initial status immediately after initialization to ensure the webapp can display "Active" status
+    # The initial status file contains:
+    # - started timestamp
+    # - total_outer_folds count
+    # - all outer folds marked as "not_started"
+    # - empty outer_folds_progress dictionary
+    status_logger._save_neps_status()
     
     print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
     
@@ -302,6 +317,15 @@ def main(experimental_setting: DictConfig) -> None:
             print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes for CV fold {cv_fold + 1}/{cv_folds}")
             print(f"{'=' * 100}\n")
         
+        # Mark outer fold as in progress
+        status_logger.neps_status['outer_folds_progress'][cv_fold + 1] = {
+            'status': 'in_progress',                                # Current fold is now running
+            'inner_folds_completed': 0,                             # No inner folds completed yet
+            'total_inner_folds': experimental_setting.data.k_folds  # Total inner folds for this outer fold
+        }
+        # Save status for webapp
+        status_logger._save_neps_status()
+        
         # Run NePS optimization for current CV fold
         logging.basicConfig(level=logging.INFO)
         run(
@@ -324,8 +348,23 @@ def main(experimental_setting: DictConfig) -> None:
             # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
         )
         
+        # Update outer fold status to completed and mark all inner folds as done
+        status_logger.update_neps_progress(
+            outer_fold=cv_fold + 1,                                   # Convert to 1-based indexing
+            inner_folds_completed=experimental_setting.data.k_folds,  # All inner folds are done
+            total_inner_folds=experimental_setting.data.k_folds       # Total inner folds for this outer fold
+        )
+        
+        # Note: Inner fold progress is tracked by InnerFoldProgressLogger in the pipeline
+        # This ExperimentStatusLogger only tracks the main NePS status
+        
+        # Save updated status for webapp
+        status_logger._save_neps_status()
     
     print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
+    
+    # This sets the 'finished' timestamp in neps_status.txt and the webapp will display "Completed" status.
+    status_logger.mark_neps_finished()
     
     # Save cross-validation summary to text file
     save_cv_summary(experimental_setting, cv_folds)

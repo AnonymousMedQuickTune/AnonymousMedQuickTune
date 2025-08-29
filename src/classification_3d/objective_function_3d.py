@@ -1,5 +1,6 @@
 import os
 import time
+import datetime
 
 import numpy as np
 import torch
@@ -23,6 +24,8 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
 from src.classification_3d.preprocess_data_3d import (
     get_kfold_dataloaders)
 from src.classification_3d.utils.normalization_stats import autonorm
+from src.utils.experiment_status_logger import ExperimentStatusLogger
+from src.utils.experiment_status_logger import InnerFoldProgressLogger
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -120,11 +123,25 @@ def run_3d_pipeline(
         else:
             raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
 
+    # Initialize the inner fold progress logger
+    # This logger tracks progress of individual inner folds within each outer fold
+    # It automatically extracts the outer fold number and base directory from the pipeline path
+    inner_fold_logger = InnerFoldProgressLogger(pipeline_directory)
+    
     # Run k-fold cross validation
     for fold in range(k_folds):
         print(f"{'-' * 50}")
         print(f"Training Fold {fold + 1}/{k_folds}")
         print(f"{'-' * 50}\n")
+        
+        # Log start of inner fold training
+        # This updates the outer fold status file to show this inner fold is now running
+        inner_fold_logger.update_inner_fold_progress(
+            inner_fold=fold + 1,        # Convert to 1-based indexing (Python uses 0-based, we need 1-based)
+            status="in_progress",       # Mark as currently running
+            epoch=0,                    # Starting at epoch 0
+            total_inner_folds=k_folds   # Total number of inner folds for progress calculation
+        )
 
         # Create fold-specific directory
         fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
@@ -482,6 +499,15 @@ def run_3d_pipeline(
             if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1):
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
+            # Update inner fold progress in inner fold logger at the and of an epoch
+            # This shows the current training epoch in the status file for real-time progress tracking
+            inner_fold_logger.update_inner_fold_progress(
+                inner_fold=fold + 1,
+                status="in_progress",           # Still running
+                epoch=training_epochs + 1,      # Current epoch (1-based for display)
+                total_inner_folds=k_folds       # Total for progress calculation
+            )
+
             # Apply learning rate scheduler after training
             adjust_learning_rate(scheduler)
 
@@ -509,6 +535,13 @@ def run_3d_pipeline(
             all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
             all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
+        # Log completion of inner fold training and mark inner fold as completed.
+        inner_fold_logger.update_inner_fold_progress(
+            inner_fold=fold + 1,
+            status="completed",         # Mark as finished
+            total_inner_folds=k_folds   # Total for progress calculation
+        )
+        
         print("\nTraining completed!\n")
     
     # Close TensorBoard writer
