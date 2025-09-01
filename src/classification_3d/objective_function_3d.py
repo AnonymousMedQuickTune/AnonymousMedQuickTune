@@ -283,6 +283,15 @@ def run_3d_pipeline(
         for training_epochs in range(start_epoch, epochs):
             epoch_start_time = time.time()
 
+            # Update inner fold progress in inner fold logger at the beginning of an epoch
+            # This shows the current training epoch in the status file for real-time progress tracking
+            inner_fold_logger.update_inner_fold_progress(
+                inner_fold=fold + 1,
+                status="in_progress",           # Still running
+                epoch=training_epochs + 1,      # Current epoch (1-based for display)
+                total_inner_folds=k_folds       # Total for progress calculation
+            )
+
             # Training phase
             train_start_time = time.time()
             train_metrics = train_epoch(
@@ -498,15 +507,6 @@ def run_3d_pipeline(
             # Log sample images with predictions (every N epochs or at the end)
             if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1):
                 log_validation_images(writer, model, val_loader, device, fold, training_epochs)
-
-            # Update inner fold progress in inner fold logger at the and of an epoch
-            # This shows the current training epoch in the status file for real-time progress tracking
-            inner_fold_logger.update_inner_fold_progress(
-                inner_fold=fold + 1,
-                status="in_progress",           # Still running
-                epoch=training_epochs + 1,      # Current epoch (1-based for display)
-                total_inner_folds=k_folds       # Total for progress calculation
-            )
 
             # Apply learning rate scheduler after training
             adjust_learning_rate(scheduler)
