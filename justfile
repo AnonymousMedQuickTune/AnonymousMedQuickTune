@@ -26,12 +26,6 @@ download-mini-datasets:
 
 # DATA PROCESSING ----------------------------------------------------------------------------------
 
-# Convert NePS output to QuickTune format (local machine)
-neps2qt-local DATASET EXP SEED:
-  python src/analysis/neps_quicktune_output_adapter.py \
-    experiments/{{DATASET}}/{{EXP}}/seed_{{SEED}} \
-    --output-dir experiments/{{DATASET}}/{{EXP}}/seed_{{SEED}}/quicktune_input
-
 # Convert NePS output to QuickTune format (cluster)
 neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
@@ -298,16 +292,16 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/analyze_fidelity_correlation.sh
 
-# Merge multiple NePS runs into a single QuickTune portfolio
-create-portfolio-local DATASET EXPERIMENT_NAMES SEEDS:
-  python -m src.analysis.neps_quicktune_output_adapter \
-    data.dataset="{{DATASET}}" \
-    experiment_names="'{{EXPERIMENT_NAMES}}'" \
-    seeds="'{{SEEDS}}'" \
+# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
+# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio
+create-multi-dataset-portfolio DATASET_SPEC:
+  python -m src.analysis.create_portfolio \
+    +dataset_spec="'{{DATASET_SPEC}}'" \
     portfolio_dir=experiments/Portfolio \
     merge_runs=true \
+    +multi_dataset=true \
     run_mode=Portfolio \
-    experiment_dir_suffix=""
+    hydra.run.dir=experiments/Portfolio/logs
 
 # Run QuickTune on a portfolio of NePS runs
 run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
