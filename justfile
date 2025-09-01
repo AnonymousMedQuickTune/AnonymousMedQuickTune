@@ -81,6 +81,146 @@ run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
     data.dimensionality=3d \
     developer_mode=true
 
+# Run multiple HPO experiments sequentially for portfolio cration on the local machine
+run-portfolio-experiments:
+  # Lipo
+  python -m src.train_neps \
+    data.dataset=lipo \
+    experiment_name=test_portfolio_1 \
+    seed=42 \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_1 \
+    data.dataset=lipo \
+    seed=42 \
+    data.path=datasets \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.train_neps \
+    data.dataset=lipo \
+    experiment_name=test_portfolio_1 \
+    seed=43 \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_1 \
+    data.dataset=lipo \
+    seed=43 \
+    data.path=datasets \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.train_neps \
+    data.dataset=lipo \
+    experiment_name=test_portfolio_2 \
+    seed=43 \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_2 \
+    data.dataset=lipo \
+    seed=43 \
+    data.path=datasets \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.train_neps \
+    data.dataset=lipo \
+    experiment_name=test_portfolio_2 \
+    seed=44 \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_2 \
+    data.dataset=lipo \
+    seed=44 \
+    data.path=datasets \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  # Desmoid
+  python -m src.train_neps \
+    data.dataset=desmoid \
+    experiment_name=test_portfolio_1 \
+    seed=42 \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_1 \
+    data.dataset=desmoid \
+    seed=42 \
+    data.path=datasets \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+
+  python -m src.train_neps \
+    data.dataset=desmoid \
+    experiment_name=test_portfolio_1 \
+    seed=43 \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_1 \
+    data.dataset=desmoid \
+    seed=43 \
+    data.path=datasets \
+    model.type=densenetv1 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.train_neps \
+    data.dataset=desmoid \
+    experiment_name=test_portfolio_2 \
+    seed=43 \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_2 \
+    data.dataset=desmoid \
+    seed=43 \
+    data.path=datasets \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.train_neps \
+    data.dataset=desmoid \
+    experiment_name=test_portfolio_2 \
+    seed=44 \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+  
+  python -m src.evaluate_neps \
+    experiment_name=test_portfolio_2 \
+    data.dataset=desmoid \
+    seed=44 \
+    data.path=datasets \
+    model.type=densenetv2 \
+    data.dimensionality=3d \
+    developer_mode=true
+
 # Submit an HPO experiment for a 2D dataset to the cluster
 run-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
