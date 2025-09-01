@@ -241,7 +241,34 @@ class ExperimentStatusLogger:
                 continue
             
             if current_section == 'evaluation':
-                if line.startswith('Evaluated:'):
+                # Parse new format
+                if line.startswith('Started:'):
+                    value = line.split(':', 1)[1].strip()
+                    if value != 'Not started' and value != 'Never' and value != 'None':
+                        status['started'] = value
+                elif line.startswith('Last Updated:'):
+                    value = line.split(':', 1)[1].strip()
+                    if value != 'Never' and value != 'None':
+                        status['last_updated'] = value
+                elif line.startswith('Evaluation Count:'):
+                    value = line.split(':', 1)[1].strip()
+                    try:
+                        status['evaluation_count'] = int(value)
+                    except ValueError:
+                        status['evaluation_count'] = 0
+                elif line.startswith('Evaluation ') and ':' in line:
+                    # Parse evaluation history entries
+                    parts = line.split(':', 1)
+                    if len(parts) == 2:
+                        time_range = parts[1].strip()
+                        if ' - ' in time_range:
+                            started, finished = time_range.split(' - ', 1)
+                            status['evaluation_history'].append({
+                                'started': started.strip(),
+                                'finished': finished.strip()
+                            })
+                # Parse old format for backward compatibility
+                elif line.startswith('Evaluated:'):
                     value = line.split(':', 1)[1].strip()
                     if value != 'Never' and value != 'None':
                         status['last_updated'] = value
@@ -336,6 +363,9 @@ class ExperimentStatusLogger:
         if len(self.evaluation_status['evaluation_history']) > 10:
             self.evaluation_status['evaluation_history'] = \
                 self.evaluation_status['evaluation_history'][-10:]
+        
+        # Save the updated evaluation status to file
+        self._save_evaluation_status()
     
     def _save_neps_status(self):
         """Save NePS status to file."""
@@ -343,12 +373,42 @@ class ExperimentStatusLogger:
         
 
         
-        # Format the status as a readable text file
+        # Format the status as a readable text fileki
         status_text = self._format_neps_status_text()
         
         with open(self.neps_status_file, 'w') as f:
             f.write(status_text)
     
+    def _save_evaluation_status(self):
+        """Save evaluation status to file."""
+        self.evaluation_status['last_updated'] = datetime.now().isoformat()
+        
+        # Format the status as a readable text file
+        status_text = self._format_evaluation_status_text()
+        
+        with open(self.evaluation_status_file, 'w') as f:
+            f.write(status_text)
+    
+    def _format_evaluation_status_text(self) -> str:
+        """Format the evaluation status data as a readable text file."""
+        lines = []
+        
+        # Header
+        lines.append("=" * 60)
+        lines.append("EVALUATION STATUS")
+        lines.append("=" * 60)
+        
+        # Simple format: just show when it was evaluated
+        last_updated = self.evaluation_status.get('last_updated', 'Never')
+        if last_updated != 'Never':
+            lines.append(f"Evaluated: {last_updated}")
+        else:
+            lines.append("Evaluated: Never")
+        
+        lines.append("")
+        lines.append("=" * 60)
+        
+        return "\n".join(lines)
     
     def _format_neps_status_text(self) -> str:
         """Format the NePS status data as a readable text file."""
@@ -373,7 +433,7 @@ class ExperimentStatusLogger:
             progress_percent = (completed_outer / total_outer) * 100
             lines.append(f"Overall Progress: {progress_percent:.1f}%")
         
-        lines.append("")
+        lines.append("")  
         
         # Individual outer fold progress
         total_outer = self.neps_status['total_outer_folds']
