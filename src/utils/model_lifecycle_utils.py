@@ -205,31 +205,21 @@ def train_epoch(
                 outputs = model(inputs)
                 loss = criterion(outputs, targets)
 
-        # scaler.scale(loss).backward()
-
         # ---- NEW: scale loss for accumulation ----
         loss = loss / accumulation_steps
-
-        # # Log gradients before optimizer step if the method exists
-        # if hasattr(model, "log_gradients"):
-        #     model.log_gradients(epoch)
-
-        # # Optimizer step with gradient scaling
-        # scaler.step(optimizer)
-        # scaler.update()
 
         # Inside the training loop, modify the backward pass to handle both with and without scaler
         if scaler is not None:
             scaler.scale(loss).backward()
-            # scaler.step(optimizer)
-            # scaler.update()
-
         else:
             loss.backward()
-            # optimizer.step()
 
         # Update weights every accumulation_steps
         if (step % accumulation_steps == 0) or (step == len(train_loader)):
+            # Log gradients before optimizer step if the method exists
+            if hasattr(model, "log_gradients"):
+                model.log_gradients(epoch)
+            
             if scaler is not None:
                 scaler.step(optimizer)
                 scaler.update()
