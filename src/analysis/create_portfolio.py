@@ -226,15 +226,26 @@ class PortfolioCreator:
         return DEFAULT_META_FEATURES
     
     def _create_cost_dataframe(self, results: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Create cost DataFrame."""
-        # Try different possible keys for epochs
-        epoch_key = next((key for key in EPOCH_KEYS if key in results[0]), None)
+        """Create cost DataFrame by reading evaluation_duration from report.yaml files."""
+        costs = []
         
-        if epoch_key:
-            cost_data = {"cost": [r[epoch_key] for r in results]}
-        else:
-            logging.warning("No epoch key found, using default cost of 1")
-            cost_data = {"cost": [1 for _ in results]}
+        for idx, result in enumerate(results, start=1):
+            config_dir = self._find_config_directory(idx)
+            report_path = config_dir / "report.yaml"
+            
+            if report_path.exists():
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report_data = yaml.safe_load(f)
+                    # Use evaluation_duration as cost
+                    cost = report_data.get("evaluation_duration", 1.0)
+                    costs.append(cost)
+            else:
+                logging.warning(f"Report file not found for config {idx}, using default cost of 1")
+                costs.append(1.0)
+        
+        cost_data = {
+            "cost": costs
+        }
         
         return pd.DataFrame(cost_data)
     
