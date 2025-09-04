@@ -160,7 +160,7 @@ def main(experimental_setting: DictConfig) -> None:
     cv_folds = experimental_setting.cv_folds
     
     # Initialize experiment status logger for webapp dashboard
-    status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir)
+    status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="neps")
     
     # Set the total number of outer folds for cross-validation to calculate overall progress percentages
     status_logger.set_total_outer_folds(cv_folds)
@@ -171,7 +171,7 @@ def main(experimental_setting: DictConfig) -> None:
     # - total_outer_folds count
     # - all outer folds marked as "not_started"
     # - empty outer_folds_progress dictionary
-    status_logger._save_neps_status()
+    status_logger._save_main_status()
     
     print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
     
@@ -318,13 +318,13 @@ def main(experimental_setting: DictConfig) -> None:
             print(f"{'=' * 100}\n")
         
         # Mark outer fold as in progress
-        status_logger.neps_status['outer_folds_progress'][cv_fold + 1] = {
+        status_logger.main_status['outer_folds_progress'][cv_fold + 1] = {
             'status': 'in_progress',                                # Current fold is now running
             'inner_folds_completed': 0,                             # No inner folds completed yet
             'total_inner_folds': experimental_setting.data.k_folds  # Total inner folds for this outer fold
         }
         # Save status for webapp
-        status_logger._save_neps_status()
+        status_logger._save_main_status()
         
         # Run NePS optimization for current CV fold
         logging.basicConfig(level=logging.INFO)
@@ -359,7 +359,7 @@ def main(experimental_setting: DictConfig) -> None:
         # This ExperimentStatusLogger only tracks the main NePS status
         
         # Save updated status for webapp
-        status_logger._save_neps_status()
+        status_logger._save_main_status()
     
     print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
     

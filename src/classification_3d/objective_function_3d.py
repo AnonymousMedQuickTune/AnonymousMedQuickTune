@@ -33,6 +33,7 @@ def run_3d_pipeline(
     experimental_setting,
     dataset_dict=None,
     num_classes=None,
+    inner_fold_logger=None,
     **hyperparameters,
 ):
     """
@@ -285,12 +286,13 @@ def run_3d_pipeline(
 
             # Update inner fold progress in inner fold logger at the beginning of an epoch
             # This shows the current training epoch in the status file for real-time progress tracking
-            inner_fold_logger.update_inner_fold_progress(
-                inner_fold=fold + 1,
-                status="in_progress",           # Still running
-                epoch=training_epochs + 1,      # Current epoch (1-based for display)
-                total_inner_folds=k_folds       # Total for progress calculation
-            )
+            if inner_fold_logger is not None:
+                inner_fold_logger.update_inner_fold_progress(
+                    inner_fold=fold + 1,
+                    status="in_progress",           # Still running
+                    epoch=training_epochs + 1,      # Current epoch (1-based for display)
+                    total_inner_folds=k_folds       # Total for progress calculation
+                )
 
             # Training phase
             train_start_time = time.time()
@@ -536,11 +538,12 @@ def run_3d_pipeline(
             all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
         # Log completion of inner fold training and mark inner fold as completed.
-        inner_fold_logger.update_inner_fold_progress(
-            inner_fold=fold + 1,
-            status="completed",         # Mark as finished
-            total_inner_folds=k_folds   # Total for progress calculation
-        )
+        if inner_fold_logger is not None:
+            inner_fold_logger.update_inner_fold_progress(
+                inner_fold=fold + 1,
+                status="completed",         # Mark as finished
+                total_inner_folds=k_folds   # Total for progress calculation
+            )
         
         print("\nTraining completed!\n")
     

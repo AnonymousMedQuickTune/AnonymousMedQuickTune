@@ -30,6 +30,7 @@ from src.utils.quicktune_utils import (
     custom_extract_image_dataset_metafeat,
     FTPFNPerfPredictor,
 )
+from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
 
 # For debugging purposes:
 # from qtt.predictors import PerfPredictor, CostPredictor
@@ -40,7 +41,7 @@ from src.utils.quicktune_utils import (
 # from external.quicktunetool.src.qtt.utils.pretrained import get_pretrained_optimizer
 
 
-def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictConfig, cv_fold: int = 1) -> dict:
+def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictConfig, cv_fold: int = 1, status_logger: ExperimentStatusLogger = None) -> dict:
     """
     Wrapper function to adapt run_2d_pipeline and run_3d_pipeline for QuickTune's interface.
     
@@ -67,6 +68,9 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             - seed (int): Random seed for reproducibility
             - etc.
         cv_fold (int, optional): Cross-validation fold number. Defaults to 1.
+        status_logger (ExperimentStatusLogger, optional): Status logger for tracking experiment progress.
+            Used to log inner fold progress and create status files for webapp dashboard.
+            If None, no status logging is performed.
     
     Returns:
         dict: Result dictionary containing:
@@ -83,12 +87,17 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     
     Note:
         - Failed trials return -inf score and inf cost to signal optimization failure
+        - Status logging creates config-specific status files in experiment_status/config_X/outerfold_Y_status.txt format
     """
     start_time = time.time()
 
     # Prepare directories
     pipeline_dir = Path(trial_info["output-dir"]) / str(trial["config-id"])
     prev_pipeline_dir = None
+    
+    # Initialize inner fold progress logger for this configuration
+    if status_logger is not None:
+        inner_fold_logger = InnerFoldProgressLogger(str(pipeline_dir))
 
     # Load dataset based on dimensionality
     dimensionality = experimental_setting.data.dimensionality
@@ -198,6 +207,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         print("> Start Run Pipeline")
         print(f"{'-' * 100}")
 
+        # Log inner fold progress if status logger is available
+        if status_logger is not None:
+            inner_fold_logger.update_inner_fold_progress(
+                inner_fold=1,  # Start with first inner fold
+                status='in_progress',
+                total_inner_folds=experimental_setting.data.k_folds
+            )
+
         if dimensionality == "2d":
             result = run_2d_pipeline(
                 pipeline_directory=pipeline_dir,
@@ -205,6 +222,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                 experimental_setting=experimental_setting,
                 dataset_dict=dataset_dict,
                 num_classes=num_classes,
+                inner_fold_logger=inner_fold_logger if status_logger is not None else None,
                 **hyperparameters,
             )
         elif dimensionality == "3d":
@@ -214,12 +232,15 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                 experimental_setting=experimental_setting,
                 dataset_dict=dataset_dict,
                 num_classes=num_classes,
+                inner_fold_logger=inner_fold_logger if status_logger is not None else None,
                 **hyperparameters,
             )
         else:
             raise ValueError(
                 f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
             )
+        
+        # Inner fold progress is now logged within the pipeline functions
 
         # Extract metrics safely
         info_dict = result.get("extra", {})
@@ -334,6 +355,15 @@ def main(experimental_setting: DictConfig) -> None:
     # Cross-validation outer loop for different train+val/test splits (like in train_neps.py)
     cv_folds = experimental_setting.cv_folds if hasattr(experimental_setting, 'cv_folds') else 1
     
+    # Initialize experiment status logger for QuickTune
+    status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="quicktune")
+    
+    # Set the total number of outer folds for cross-validation to calculate overall progress percentages
+    status_logger.set_total_outer_folds(cv_folds)
+    
+    # Force save the initial status immediately after initialization to ensure the webapp can display "Active" status
+    status_logger._save_main_status()
+    
     print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
     
     for cv_fold in range(cv_folds):
@@ -344,6 +374,15 @@ def main(experimental_setting: DictConfig) -> None:
         # Create experiment directory for this CV fold
         cv_experiment_dir = Path(experimental_setting.experiment_base_dir) / f"cv_fold_{cv_fold}"
         cv_experiment_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Mark outer fold as in progress
+        status_logger.main_status['outer_folds_progress'][cv_fold + 1] = {
+            'status': 'in_progress',
+            'inner_folds_completed': 0,
+            'total_inner_folds': experimental_setting.data.k_folds
+        }
+        # Save status for webapp
+        status_logger._save_main_status()
         
         # STEP 2: Create a fresh optimizer for each CV fold to ensure independent optimization
         if experimental_setting.qt.use_medical_portfolio:
@@ -476,7 +515,7 @@ def main(experimental_setting: DictConfig) -> None:
                     print(f"\nConfiguration {config_id}: {configuration}")
 
                     # Run quicktune_wrapper with configuration
-                    result = quicktune_wrapper(configuration, trial_info, experimental_setting, cv_fold)
+                    result = quicktune_wrapper(configuration, trial_info, experimental_setting, cv_fold, status_logger)
 
                     # Tell the optimizer about the result
                     if result is not None:
@@ -498,14 +537,27 @@ def main(experimental_setting: DictConfig) -> None:
             print("\nUse QuickTuner\n")
             tuner = QuickTuner(
                 optimizer=optimizer,
-                f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, experimental_setting, cv_fold),
+                f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, experimental_setting, cv_fold, status_logger),
                 path=str(cv_experiment_dir),
             )
             tuner.run(fevals=experimental_setting.max_evaluations, time_budget=None, trial_info=trial_info)
         
+        # Update outer fold status to completed and mark all inner folds as done
+        status_logger.update_main_progress(
+            outer_fold=cv_fold + 1,                                   # Convert to 1-based indexing
+            inner_folds_completed=experimental_setting.data.k_folds,  # All inner folds are done
+            total_inner_folds=experimental_setting.data.k_folds       # Total inner folds for this outer fold
+        )
+        
+        # Save updated status for webapp
+        status_logger._save_main_status()
+        
         print(f"\n{'=' * 100}")
         print(f"Completed QuickTune optimization for CV fold {cv_fold + 1}/{cv_folds}")
         print(f"{'=' * 100}\n")
+    
+    # Mark QuickTune experiment as finished
+    status_logger.mark_main_finished()
     
     print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
 
