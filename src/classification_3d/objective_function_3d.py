@@ -81,10 +81,10 @@ def run_3d_pipeline(
 
     model = get_3d_model(
         {
-            "type": experimental_setting.model.type,
+            "type": model_type,  # Use the model type determined above (either from QuickTune or NePS)
             "task": experimental_setting.model.task,
             "num_classes": num_classes,
-        }, hyperparameters  # TODO @Diane: Check if hyperparams can be passed the same way for QuickTune as for NePS
+        }, hyperparameters
     ).to(device)
 
     # Get k-fold parameter from experimental_setting or default to 5

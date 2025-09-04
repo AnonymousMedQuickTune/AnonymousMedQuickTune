@@ -303,8 +303,8 @@ create-multi-dataset-portfolio DATASET_SPEC:
     run_mode=Portfolio \
     hydra.run.dir=experiments/Portfolio/logs
 
-# Run QuickTune on a portfolio of NePS runs
-run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+# Run QuickTune for 2d datasets on a portfolio of NePS runs
+run-2d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
   python -m src.run_quicktune \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
@@ -312,7 +312,21 @@ run-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTF
     portfolio_dir={{PORTFOLIO_DIR}} \
     data.path=datasets \
     run_mode=QuickTune \
-    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}}
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
+    developer_mode=true
+  
+# Run QuickTune for 3d datasets on a portfolio of NePS runs
+run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+  python -m src.run_quicktune \
+    data.dataset={{DATASET}} \
+    experiment_name={{EXPERIMENT_NAME}} \
+    seed={{SEED}} \
+    portfolio_dir={{PORTFOLIO_DIR}} \
+    data.path=datasets \
+    data.dimensionality=3d \
+    run_mode=QuickTune \
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
+    developer_mode=true
 
 # Evaluate NePS optimization results for a 2D dataset
 eval-2d-neps-local DATASET EXPERIMENT_NAME SEED:

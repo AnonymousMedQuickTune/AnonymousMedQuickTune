@@ -92,17 +92,31 @@ def custom_extract_image_dataset_metafeat(
     else:
         # Handle unsplit dataset (single directory)
         try:
-            # TODO: fix hardcoding for brain_tumor dataset > calculated in load_brain_tumor_dataset()
-            num_samples = 253
-            num_classes = 2
-            num_features = 224
-            num_channels = 3
+            # Dataset-specific meta-features
+            dataset_name = path_root.name
+            if dataset_name == "brain_tumor":  # calculated in load_brain_tumor_dataset()
+                num_samples = 253
+                num_classes = 2
+                num_features = 224
+                num_channels = 3
+            elif dataset_name == "lipo":
+                num_samples = 114  # Actual values from dataset statistics
+                num_classes = 2
+                num_features = 224  # Standard input size for medical images  # TODO @Diane: Update this
+                num_channels = 1  # Grayscale for medical images
+            elif dataset_name == "desmoid":
+                num_samples = 203  # Actual values from dataset statistics
+                num_classes = 2
+                num_features = 224  # Standard input size for medical images  # TODO @Diane: Update this
+                num_channels = 1  # Grayscale for medical images
+            else:
+                raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}")
 
         except Exception as e:
             raise ValueError(f"Could not process dataset directory: {str(e)}")
 
     # Output as needed for QuickTune
-    # TODO: for medical datasets might be good to add class distribution?: brain_tumor: {0: 98, 1: 155}
+    # TODO @Diane: for medical datasets might be good to add class distribution?: brain_tumor: {0: 98, 1: 155}
     metafeat = {
         "num-samples": num_samples,
         "num-classes": num_classes,
@@ -239,7 +253,7 @@ class FTPFNPerfPredictor(PerfPredictor):
         print("\nActual FTPFN parameters:")
         print(ftpfn_params)
         
-        return FTPFN(**ftpfn_params)  # Use the correct parameters for FTPFN
+        return FTPFN(**ftpfn_params)  # Use the correct parameters for FTPFN  # TODO @Diane: Double check this implementation
         # return FTPFNSurrogateModel(**params)
     
 
