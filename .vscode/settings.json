@@ -2,6 +2,7 @@
   "todo-tree.general.tags": [
     "TODO @Diane:",
     "TODO @Natalia:",
+    "TODO @Both:"
     "# NOTE:",
     "# NOTE @Diane:",
     "# NOTE @Natalia:",
@@ -14,26 +15,31 @@
       "background": "#007acc20",
       "iconColour": "#007acc"
     },
-      "TODO @Natalia:": {
-        "foreground": "#ff6b6b",
-        "background": "#ff6b6b20",
-        "iconColour": "#ff6b6b"
-      },
-      "# NOTE:": {
-        "foreground": "#bfb3b3",
-        "background": "#66666620",
-        "iconColour": "#bfb3b3"
-      },
-      "# NOTE @Diane:": {
-        "foreground": "#bfb3b3",
-        "background": "#66666620",
-        "iconColour": "#bfb3b3"
-      },
-      "# NOTE @Natalia:": {
-        "foreground": "#bfb3b3",
-        "background": "#66666620",
-        "iconColour": "#bfb3b3"
-      },
+    "TODO @Natalia:": {
+      "foreground": "#ff6b6b",
+      "background": "#ff6b6b20",
+      "iconColour": "#ff6b6b"
+    },
+    "TODO @Both:": {
+      "foreground": "#8a56b7",
+      "background": "#ff6b6b20",
+      "iconColour": "#8a56b7"
+    },
+    "# NOTE:": {
+      "foreground": "#bfb3b3",
+      "background": "#66666620",
+      "iconColour": "#bfb3b3"
+    },
+    "# NOTE @Diane:": {
+      "foreground": "#bfb3b3",
+      "background": "#66666620",
+      "iconColour": "#bfb3b3"
+    },
+    "# NOTE @Natalia:": {
+      "foreground": "#bfb3b3",
+      "background": "#66666620",
+      "iconColour": "#bfb3b3"
+    },
   },
   "todo-tree.general.enabled": true,
   "todo-tree.general.showInExplorer": true
