@@ -321,9 +321,9 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     )
 
     return {
-        "train_val_data": train_val_data,
+        "train_val_data": train_val_data,  # TODO @Diane: rename to train_val_images
         "train_val_labels": train_val_labels,
-        "test_data": test_data,
+        "test_images": test_data,  # TODO @Diane: rename to test_images
         "test_labels": test_labels,
         "num_classes": len(unique_labels),
         "voxel_size": voxel_size,

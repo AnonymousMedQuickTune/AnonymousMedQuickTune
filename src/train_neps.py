@@ -2,21 +2,25 @@ import logging
 import os
 import pickle
 from pathlib import Path
-import numpy as np
+import warnings
 
 import hydra
+import json
 import yaml
 from neps import run
 from omegaconf import DictConfig, OmegaConf
 
+# Suppress multiprocessing cleanup warnings
+warnings.filterwarnings("ignore", message=".*Directory not empty.*")
+
 from src.classification_2d.objective_function_2d import run_2d_pipeline
-from src.classification_2d.preprocess_data_2d import (get_max_batch_size,
-                                                      load_brain_tumor_dataset)
+from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
+from src.evaluate_neps_config import evaluate_config_on_test_set
 import datetime
 
 
@@ -58,8 +62,9 @@ def run_pipeline(
 
     dimensionality = experimental_setting.data.dimensionality.lower()
 
+    # Run the appropriate training pipeline (2D or 3D)
     if dimensionality == "2d":
-        return run_2d_pipeline(
+        pipeline_result = run_2d_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
             experimental_setting=experimental_setting,
@@ -68,7 +73,7 @@ def run_pipeline(
             **hyperparameters,
         )
     elif dimensionality == "3d":
-        return run_3d_pipeline(
+        pipeline_result = run_3d_pipeline(
             pipeline_directory=pipeline_directory,
             previous_pipeline_directory=previous_pipeline_directory,
             experimental_setting=experimental_setting,
@@ -80,7 +85,45 @@ def run_pipeline(
         raise ValueError(
             f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
         )
+    
+    # Evaluate the trained configuration on test set
+    print(f"\n{'='*100}")
+    print(f"STARTING TEST SET EVALUATION FOR CURRENT CONFIG")
+    print(f"{'='*100}\n")
+    
+    # Extract CV fold from pipeline directory path
+    cv_fold = 1  # Default to 1 if not found in path
+    if "cv_fold_" in pipeline_dir_str:
+        try:
+            cv_fold = int(pipeline_dir_str.split("cv_fold_")[-1].split("/")[0])
+        except (ValueError, IndexError):
+            cv_fold = 1
+    
+    # Evaluate configuration on test set
+    test_metrics = evaluate_config_on_test_set(
+        pipeline_directory=pipeline_directory,
+        experimental_setting=experimental_setting,
+        dataset_dict=dataset_dict,
+        num_classes=num_classes,
+        hyperparameters=hyperparameters,
+        cv_fold=cv_fold
+    )
 
+    # Persist only the test metrics as a JSON artifact; do not modify pipeline_result or report.yaml
+    if test_metrics is not None:
+        test_metrics_file = os.path.join(pipeline_directory, "test_evaluation_results.json")
+        with open(test_metrics_file, "w", encoding="utf-8") as f:
+            json.dump(test_metrics, f, indent=4)
+        print(f"Test evaluation completed and saved to: {test_metrics_file}")
+    else:
+        print(f"Warning: Test evaluation failed or no valid checkpoints found!")
+    
+    # Print pipeline result and test metrics
+    print(f"\n\nPipeline result: {pipeline_result}")
+    print(f"\nTest metrics: {test_metrics}\n\n")
+    
+    # Return the pipeline result to NePS
+    return pipeline_result
 
 @hydra.main(
     version_base=None,
