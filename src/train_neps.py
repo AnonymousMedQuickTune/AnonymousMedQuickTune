@@ -18,7 +18,7 @@ from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
-                                    yaml_to_neps_pipeline_space)
+                                    yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.evaluate_neps_config import evaluate_config_on_test_set
 import datetime
@@ -117,6 +117,10 @@ def run_pipeline(
         print(f"Test evaluation completed and saved to: {test_metrics_file}")
     else:
         print(f"Warning: Test evaluation failed or no valid checkpoints found!")
+    
+    # Delete model checkpoints to save disk space  # TODO @Diane: Keep incumbent model checkpoint?
+    # NOTE: After test evaluation, model checkpoints are no longer needed
+    cleanup_training_artifacts(pipeline_directory, experimental_setting.data.k_folds)
     
     # Print pipeline result and test metrics
     print(f"\n\nPipeline result: {pipeline_result}")

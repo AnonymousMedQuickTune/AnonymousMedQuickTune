@@ -5,6 +5,7 @@ import neps
 import numpy as np
 import torch
 import yaml
+import shutil
 
 
 def get_cache_file_path(data_path, dataset_name, dimensionality, cv_fold, voxel_calculation=None):
@@ -114,3 +115,56 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior
     torch.backends.cudnn.benchmark = False  # Disable benchmark mode
     os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
+
+def cleanup_training_artifacts(pipeline_directory, k_folds):
+    """
+    Delete model checkpoints after test evaluation to save disk space.
+    
+    Args:
+        pipeline_directory (str): Directory containing the pipeline results
+        k_folds (int): Number of cross-validation folds
+    """
+    print(f"\n{'='*80}")
+    print(f"CLEANING UP TRAINING ARTIFACTS")
+    print(f"{'='*80}")
+    
+    total_deleted_size = 0
+    deleted_files = 0
+    
+    # Delete checkpoints for each fold
+    for fold in range(k_folds):
+        fold_dir = os.path.join(pipeline_directory, f"fold_{fold}")
+        
+        if os.path.exists(fold_dir):
+            # Delete model checkpoint files
+            checkpoint_files = [
+                "model_latest_checkpoint.pth",
+                "best_model_checkpoint.pth"
+            ]
+            
+            for checkpoint_file in checkpoint_files:
+                checkpoint_path = os.path.join(fold_dir, checkpoint_file)
+                if os.path.exists(checkpoint_path):
+                    try:
+                        file_size = os.path.getsize(checkpoint_path)
+                        os.remove(checkpoint_path)
+                        total_deleted_size += file_size
+                        deleted_files += 1
+                        print(f"Deleted: {checkpoint_path} ({file_size / (1024*1024):.2f} MB)")
+                    except OSError as e:
+                        print(f"Warning: Could not delete {checkpoint_path}: {e}")
+            
+            # Delete entire fold directory if it's empty (except for normalization_stats.json)
+            try:
+                remaining_files = [f for f in os.listdir(fold_dir) if f != "normalization_stats.json"]
+                if not remaining_files:
+                    shutil.rmtree(fold_dir)
+                    print(f"Deleted empty fold directory: {fold_dir}")
+            except OSError as e:
+                print(f"Warning: Could not delete fold directory {fold_dir}: {e}")
+    
+    # Summary
+    print(f"\nCleanup Summary:")
+    print(f"  Files deleted: {deleted_files}")
+    print(f"  Total space freed: {total_deleted_size / (1024*1024):.2f} MB")
+    print(f"{'='*80}\n")
