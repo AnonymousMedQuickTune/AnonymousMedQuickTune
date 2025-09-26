@@ -401,6 +401,9 @@ def main(experimental_setting: DictConfig) -> None:
             overwrite_working_directory=False,
             ignore_errors=True,
             # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
+            # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
+            # We can think about some estimation like: max_cost_total = max_evaluations_total * max_epochs * max_cost_per_epoch
+            # TODO @Diane: Define max_cost_total
         )
         
         # Update outer fold status to completed and mark all inner folds as done
