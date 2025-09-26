@@ -34,7 +34,8 @@ def run_pipeline(
 ):
     """
     Main pipeline function that delegates to specific 2D or 3D implementations
-    based on experimental_setting.data.dimensionality.
+    based on experimental_setting.data.dimensionality and evaluates the trained
+    configuration on the test set.
 
     NOTE: The argument order and parameter names must strictly follow NePS conventions
     to ensure proper optimization and checkpointing functionality.
@@ -48,7 +49,14 @@ def run_pipeline(
         **hyperparameters: Configuration dictionary containing hyperparameters
 
     Returns:
-        dict: Dictionary containing optimization metrics
+        dict: Dictionary containing optimization metrics for NePS
+        
+    Process:
+        1. Run the appropriate training pipeline (2D or 3D) with cross-validation
+        2. Evaluate the trained configuration on the test set using ensemble predictions
+        3. Save test evaluation results to test_evaluation_results.json
+        4. Clean up training artifacts (model checkpoints) to save disk space
+        5. Return pipeline result to NePS for optimization
     """
     # Extract config number from pipeline directory to print in the console
     pipeline_dir_str = str(pipeline_directory)
