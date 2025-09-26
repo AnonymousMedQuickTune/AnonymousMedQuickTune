@@ -308,7 +308,7 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     checkpoint_path = (
         Path(pipeline_directory)
         / f"fold_{fold}"
-        / "model_latest_checkpoint.pth"
+        / "best_model_checkpoint.pth"
     )
     
     if not checkpoint_path.exists():

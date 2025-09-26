@@ -130,7 +130,7 @@ class CheckpointManager:
 
         # Save best model checkpoint if this is the best so far
         if is_best:
-            best_path = os.path.join(self.pipeline_directory, "best_model.pth")
+            best_path = os.path.join(self.pipeline_directory, "best_model_checkpoint.pth")
             torch.save(checkpoint, best_path)
             print(f"Best model saved to: {best_path}")
 
