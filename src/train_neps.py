@@ -92,12 +92,12 @@ def run_pipeline(
     print(f"{'='*100}\n")
     
     # Extract CV fold from pipeline directory path
-    cv_fold = 1  # Default to 1 if not found in path
-    if "cv_fold_" in pipeline_dir_str:
+    cv_outer_fold = 0  # Default to 0 if not found in path
+    if "cv_outer_fold_" in pipeline_dir_str:
         try:
-            cv_fold = int(pipeline_dir_str.split("cv_fold_")[-1].split("/")[0])
+            cv_outer_fold = int(pipeline_dir_str.split("cv_outer_fold_")[-1].split("/")[0])
         except (ValueError, IndexError):
-            cv_fold = 1
+            cv_outer_fold = 0
     
     # Evaluate configuration on test set
     test_metrics = evaluate_config_on_test_set(
@@ -106,7 +106,7 @@ def run_pipeline(
         dataset_dict=dataset_dict,
         num_classes=num_classes,
         hyperparameters=hyperparameters,
-        cv_fold=cv_fold
+        cv_outer_fold=cv_outer_fold
     )
 
     # Persist only the test metrics as a JSON artifact; do not modify pipeline_result or report.yaml
@@ -120,7 +120,7 @@ def run_pipeline(
     
     # Delete model checkpoints to save disk space  # TODO @Diane: Keep incumbent model checkpoint?
     # NOTE: After test evaluation, model checkpoints are no longer needed
-    cleanup_training_artifacts(pipeline_directory, experimental_setting.data.k_folds)
+    cleanup_training_artifacts(pipeline_directory, experimental_setting.cv_inner_folds)
     
     # Print pipeline result and test metrics
     print(f"\n\nPipeline result: {pipeline_result}")
@@ -147,10 +147,10 @@ def main(experimental_setting: DictConfig) -> None:
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
         experimental_setting.max_evaluations = 2
-        experimental_setting.data.k_folds = 2
+        experimental_setting.cv_inner_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 3
-        experimental_setting.cv_folds = 2
+        experimental_setting.cv_outer_folds = 2
     
     if experimental_setting.data.no_validation and not "baseline" in str(experimental_setting.pipeline_space):
         # TODO @Diane: Implement script that takes the best config of a NePS run and retrains it with no validation set
@@ -204,13 +204,13 @@ def main(experimental_setting: DictConfig) -> None:
     num_classes = None
 
     # Cross-validation outer loop for different train+val/test splits
-    cv_folds = experimental_setting.cv_folds
+    cv_outer_folds = experimental_setting.cv_outer_folds
     
     # Initialize experiment status logger for webapp dashboard
     status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="neps")
     
     # Set the total number of outer folds for cross-validation to calculate overall progress percentages
-    status_logger.set_total_outer_folds(cv_folds)
+    status_logger.set_total_outer_folds(cv_outer_folds)
     
     # Force save the initial status immediately after initialization to ensure the webapp can display "Active" status
     # The initial status file contains:
@@ -220,13 +220,13 @@ def main(experimental_setting: DictConfig) -> None:
     # - empty outer_folds_progress dictionary
     status_logger._save_main_status()
     
-    print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
+    print(f"\n=== Starting Cross-Validation with {cv_outer_folds} outer folds ===\n")
     
-    for cv_fold in range(cv_folds):        
+    for cv_outer_fold in range(cv_outer_folds):        
         # Load data for current CV fold
         if experimental_setting.data.use_smart_preprocessing:
             print(f"\n{'=' * 100}")
-            print(f"Preloading data for CV fold {cv_fold + 1}/{cv_folds} depending on the selected voxel calculation method")
+            print(f"Preloading data for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds} based on the selected voxel calculation method")
             print(f"{'=' * 100}\n")
             # Reload data with current CV fold
             dimensionality = experimental_setting.data.dimensionality.lower()
@@ -236,12 +236,12 @@ def main(experimental_setting: DictConfig) -> None:
                     raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet for cache_data=True.")
                 else:
                     # TODO @Diane: Implement cross-validation for 2D datasets
-                    if cv_folds > 1:
+                    if cv_outer_folds > 1:
                         raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet.")
                     else:
                         if experimental_setting.data.dataset == "brain_tumor":
                             dataset_dict = load_brain_tumor_dataset(
-                                data_path=experimental_setting.data.path, seed=experimental_setting.seed, cv_fold=cv_fold
+                                data_path=experimental_setting.data.path, seed=experimental_setting.seed, cv_outer_fold=cv_outer_fold
                             )
                         else:
                             raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}.")
@@ -253,19 +253,19 @@ def main(experimental_setting: DictConfig) -> None:
                         data_path, 
                         experimental_setting.data.dataset, 
                         "3d", 
-                        cv_fold, 
+                        cv_outer_fold, 
                         experimental_setting.data.voxel_calculation
                     )
 
                     # Cache mechanism further improves performance by avoiding repeated data processing
                     if cache_file.exists():
-                        print(f"> Loading 3D data from cache for CV fold {cv_fold + 1}/{cv_folds}...")
+                        print(f"> Loading 3D data from cache for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds}...")
                         with open(cache_file, "rb") as f:
                             cached_data = pickle.load(f)
                             dataset_dict = cached_data["dataset_dict"]
                             num_classes = cached_data["num_classes"]
                     else:
-                        print(f"> No cache found for CV fold {cv_fold + 1}/{cv_folds}. Loading 3D data directly...\n")
+                        print(f"> No cache found for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds}. Loading 3D data directly...\n")
                         # Create cache directory if it doesn't exist
                         cache_file.parent.mkdir(parents=True, exist_ok=True)
                         
@@ -281,7 +281,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="mean",
-                                cv_fold=cv_fold,
+                                cv_outer_fold=cv_outer_fold,
                                 mode="train"
                             )
                             print(f"----------")
@@ -294,7 +294,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="median",
-                                cv_fold=cv_fold,
+                                cv_outer_fold=cv_outer_fold,
                                 mode="train"
                             )
                             print(f"-------------")
@@ -307,7 +307,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="isotropic",
-                                cv_fold=cv_fold,
+                                cv_outer_fold=cv_outer_fold,
                                 mode="train"
                             )
                             print(f"------------------------")
@@ -320,7 +320,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="volumetric_isotropic",
-                                cv_fold=cv_fold,
+                                cv_outer_fold=cv_outer_fold,
                                 mode="train"
                             )
                             num_classes = dataset_dict_mean["num_classes"]
@@ -338,7 +338,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 seed=experimental_setting.seed,
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation=experimental_setting.data.voxel_calculation,
-                                cv_fold=cv_fold,
+                                cv_outer_fold=cv_outer_fold,
                                 mode="train"
                             )
                             num_classes = dataset_dict["num_classes"]
@@ -347,7 +347,7 @@ def main(experimental_setting: DictConfig) -> None:
                         cache_data = {
                             "dataset_dict": dataset_dict,
                             "num_classes": num_classes,
-                            "cv_fold": cv_fold,
+                            "cv_outer_fold": cv_outer_fold,
                             "voxel_calculation": experimental_setting.data.voxel_calculation,
                             "dataset": experimental_setting.data.dataset,
                             "seed": experimental_setting.seed
@@ -361,14 +361,14 @@ def main(experimental_setting: DictConfig) -> None:
                 raise ValueError(f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'")
 
             print(f"\n{'=' * 100}")
-            print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes for CV fold {cv_fold + 1}/{cv_folds}")
+            print(f"Dataset '{experimental_setting.data.dataset}' loaded with {num_classes} classes for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds}")
             print(f"{'=' * 100}\n")
         
         # Mark outer fold as in progress
-        status_logger.main_status['outer_folds_progress'][cv_fold + 1] = {
+        status_logger.main_status['outer_folds_progress'][cv_outer_fold + 1] = {
             'status': 'in_progress',                                # Current fold is now running
             'inner_folds_completed': 0,                             # No inner folds completed yet
-            'total_inner_folds': experimental_setting.data.k_folds  # Total inner folds for this outer fold
+            'total_inner_folds': experimental_setting.cv_inner_folds  # Total inner folds for this outer fold
         }
         # Save status for webapp
         status_logger._save_main_status()
@@ -386,7 +386,7 @@ def main(experimental_setting: DictConfig) -> None:
                 **kwargs,
             ),
             optimizer=experimental_setting.searcher,  # HPO algorithm
-            root_directory=f"{experimental_setting.neps_directory}/cv_fold_{cv_fold}",
+            root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
             max_evaluations_total=(
                 1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
             ),
@@ -397,9 +397,9 @@ def main(experimental_setting: DictConfig) -> None:
         
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_neps_progress(
-            outer_fold=cv_fold + 1,                                   # Convert to 1-based indexing
-            inner_folds_completed=experimental_setting.data.k_folds,  # All inner folds are done
-            total_inner_folds=experimental_setting.data.k_folds       # Total inner folds for this outer fold
+            outer_fold=cv_outer_fold + 1,                                   # Convert to 1-based indexing
+            inner_folds_completed=experimental_setting.cv_inner_folds,  # All inner folds are done
+            total_inner_folds=experimental_setting.cv_inner_folds       # Total inner folds for this outer fold
         )
         
         # Note: Inner fold progress is tracked by InnerFoldProgressLogger in the pipeline
@@ -408,22 +408,22 @@ def main(experimental_setting: DictConfig) -> None:
         # Save updated status for webapp
         status_logger._save_main_status()
     
-    print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
+    print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
     
     # This sets the 'finished' timestamp in neps_status.txt and the webapp will display "Completed" status.
     status_logger.mark_neps_finished()
     
     # Save cross-validation summary to text file
-    save_cv_summary(experimental_setting, cv_folds)
+    save_cv_summary(experimental_setting, cv_outer_folds)
 
 
-def save_cv_summary(experimental_setting, cv_folds):
+def save_cv_summary(experimental_setting, cv_outer_folds):
     """
     Save cross-validation summary to a text file.
     
     Args:
         experimental_setting (DictConfig): Hydra configuration object
-        cv_folds (int): Number of cross-validation folds
+        cv_outer_folds (int): Number of cross-validation folds
     """
     # Create summary directory
     summary_dir = os.path.join(experimental_setting.experiment_base_dir, "cv_summary")
@@ -444,7 +444,7 @@ def save_cv_summary(experimental_setting, cv_folds):
         f.write(f"Dataset: {experimental_setting.data.dataset}\n")
         f.write(f"Dimensionality: {experimental_setting.data.dimensionality}\n")
         f.write(f"Voxel Calculation: {experimental_setting.data.voxel_calculation}\n")
-        f.write(f"Number of CV Folds: {cv_folds}\n")
+        f.write(f"Number of Outer Cross-Validation Folds: {cv_outer_folds}\n")
         f.write(f"Seed: {experimental_setting.seed}\n")
         f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
         f.write(f"Optimizer: {experimental_setting.searcher}\n")
@@ -455,9 +455,9 @@ def save_cv_summary(experimental_setting, cv_folds):
         # CV Fold directories
         f.write("CROSS-VALIDATION FOLD DIRECTORIES:\n")
         f.write("-" * 40 + "\n")
-        for cv_fold in range(cv_folds):
-            cv_dir = f"{experimental_setting.neps_directory}/cv_fold_{cv_fold}"
-            f.write(f"CV Fold {cv_fold}: {cv_dir}\n")
+        for cv_outer_fold in range(cv_outer_folds):
+            cv_dir = f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}"
+            f.write(f"CV Fold {cv_outer_fold}: {cv_dir}\n")
         f.write("\n")
         
         # Configuration files
@@ -476,7 +476,7 @@ def save_cv_summary(experimental_setting, cv_folds):
         f.write(f"Data Path: {experimental_setting.data.path}\n")
         f.write(f"Cache Data: {experimental_setting.data.cache_data}\n")
         f.write(f"Use Smart Preprocessing: {experimental_setting.data.use_smart_preprocessing}\n")
-        f.write(f"K-Folds: {experimental_setting.data.k_folds}\n")
+        f.write(f"K-Folds: {experimental_setting.cv_inner_folds}\n")
         f.write(f"Num Workers: {experimental_setting.data.num_workers}\n\n")
         
         # Pipeline space information
@@ -488,7 +488,7 @@ def save_cv_summary(experimental_setting, cv_folds):
         # Summary
         f.write("SUMMARY:\n")
         f.write("-" * 40 + "\n")
-        f.write(f"Total NePS Runs: {cv_folds}\n")
+        f.write(f"Total NePS Runs: {cv_outer_folds}\n")
         f.write(f"Each run uses different train+val/test split\n")
         f.write(f"Results saved in separate directories per fold\n")
         f.write(f"Cross-validation ensures robust evaluation\n\n")

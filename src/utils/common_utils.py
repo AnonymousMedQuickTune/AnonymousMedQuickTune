@@ -8,7 +8,7 @@ import yaml
 import shutil
 
 
-def get_cache_file_path(data_path, dataset_name, dimensionality, cv_fold, voxel_calculation=None):
+def get_cache_file_path(data_path, dataset_name, dimensionality, cv_outer_fold, voxel_calculation=None):
     """
     Generate cache file path for different dataset types and configurations.
     
@@ -16,7 +16,7 @@ def get_cache_file_path(data_path, dataset_name, dimensionality, cv_fold, voxel_
         data_path (Path): Base path to datasets
         dataset_name (str): Name of the dataset
         dimensionality (str): '2d' or '3d'
-        cv_fold (int): Cross-validation fold number
+        cv_outer_fold (int): Cross-validation fold number
         voxel_calculation (str, optional): Voxel calculation method for 3D
         
     Returns:
@@ -26,13 +26,13 @@ def get_cache_file_path(data_path, dataset_name, dimensionality, cv_fold, voxel_
         cache_file = (
             data_path
             / "cache"
-            / f"{dataset_name}_2d_cv{cv_fold}.pkl"
+            / f"{dataset_name}_2d_cv{cv_outer_fold}.pkl"
         )
     elif dimensionality == "3d":
         cache_file = (
             data_path
             / "cache"
-            / f"{dataset_name}_3d_cv{cv_fold}_voxel{voxel_calculation}.pkl"
+            / f"{dataset_name}_3d_cv{cv_outer_fold}_voxel{voxel_calculation}.pkl"
         )
     else:
         raise ValueError(f"Unsupported dimensionality: {dimensionality}")
@@ -116,13 +116,13 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False  # Disable benchmark mode
     os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
 
-def cleanup_training_artifacts(pipeline_directory, k_folds):
+def cleanup_training_artifacts(pipeline_directory, cv_inner_folds):
     """
     Delete model checkpoints after test evaluation to save disk space.
     
     Args:
         pipeline_directory (str): Directory containing the pipeline results
-        k_folds (int): Number of cross-validation folds
+        cv_inner_folds (int): Number of cross-validation folds
     """
     print(f"\n{'='*80}")
     print(f"CLEANING UP TRAINING ARTIFACTS")
@@ -132,8 +132,8 @@ def cleanup_training_artifacts(pipeline_directory, k_folds):
     deleted_files = 0
     
     # Delete checkpoints for each fold
-    for fold in range(k_folds):
-        fold_dir = os.path.join(pipeline_directory, f"fold_{fold}")
+    for fold in range(cv_inner_folds):
+        fold_dir = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
         
         if os.path.exists(fold_dir):
             # Delete model checkpoint files

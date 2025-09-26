@@ -41,7 +41,7 @@ from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFold
 # from external.quicktunetool.src.qtt.utils.pretrained import get_pretrained_optimizer
 
 
-def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictConfig, cv_fold: int = 1, status_logger: ExperimentStatusLogger = None) -> dict:
+def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictConfig, cv_outer_fold: int = 1, status_logger: ExperimentStatusLogger = None) -> dict:
     """
     Wrapper function to adapt run_2d_pipeline and run_3d_pipeline for QuickTune's interface.
     
@@ -67,7 +67,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             - metric (str): Evaluation metric to optimize
             - seed (int): Random seed for reproducibility
             - etc.
-        cv_fold (int, optional): Cross-validation fold number. Defaults to 1.
+        cv_outer_fold (int, optional): Outer cross-validation fold number. Defaults to 1.
         status_logger (ExperimentStatusLogger, optional): Status logger for tracking experiment progress.
             Used to log inner fold progress and create status files for webapp dashboard.
             If None, no status logging is performed.
@@ -126,7 +126,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     seed=experimental_setting.seed,
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="mean",
-                    cv_fold=cv_fold,  # Use current CV fold
+                    cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train"
                 )
                 print(f"----------")
@@ -139,7 +139,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     seed=experimental_setting.seed,
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="median",
-                    cv_fold=cv_fold,  # Use current CV fold
+                    cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train"
                 )
                 print(f"-------------")
@@ -152,7 +152,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     seed=experimental_setting.seed,
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="isotropic",
-                    cv_fold=cv_fold,  # Use current CV fold
+                    cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train"
                 )
                 print(f"------------------------")
@@ -165,7 +165,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     seed=experimental_setting.seed,
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="volumetric_isotropic",
-                    cv_fold=cv_fold,  # Use current CV fold
+                    cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train"
                 )
                 num_classes = dataset_dict_mean["num_classes"]
@@ -184,7 +184,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     seed=experimental_setting.seed,
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation=voxel_calculation,
-                    cv_fold=cv_fold,  # Use current CV fold
+                    cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train"
                 )
                 num_classes = dataset_dict["num_classes"]
@@ -212,7 +212,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             inner_fold_logger.update_inner_fold_progress(
                 inner_fold=1,  # Start with first inner fold
                 status='in_progress',
-                total_inner_folds=experimental_setting.data.k_folds
+                total_inner_folds=experimental_setting.cv_inner_folds
             )
 
         if dimensionality == "2d":
@@ -295,10 +295,10 @@ def main(experimental_setting: DictConfig) -> None:
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
         experimental_setting.max_evaluations = 2
-        experimental_setting.data.k_folds = 2
+        experimental_setting.cv_inner_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 3
-        experimental_setting.cv_folds = 2
+        experimental_setting.cv_outer_folds = 2
 
     # Create directory for configuration files and logs
     exp_base_dir = Path(experimental_setting.experiment_base_dir)
@@ -353,33 +353,33 @@ def main(experimental_setting: DictConfig) -> None:
     print("\nMeta features:\n", metafeat, "\n")
 
     # Cross-validation outer loop for different train+val/test splits (like in train_neps.py)
-    cv_folds = experimental_setting.cv_folds if hasattr(experimental_setting, 'cv_folds') else 1
+    cv_outer_folds = experimental_setting.cv_outer_folds if hasattr(experimental_setting, 'cv_outer_folds') else 1
     
     # Initialize experiment status logger for QuickTune
     status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="quicktune")
     
     # Set the total number of outer folds for cross-validation to calculate overall progress percentages
-    status_logger.set_total_outer_folds(cv_folds)
+    status_logger.set_total_outer_folds(cv_outer_folds)
     
     # Force save the initial status immediately after initialization to ensure the webapp can display "Active" status
     status_logger._save_main_status()
     
-    print(f"\n=== Starting Cross-Validation with {cv_folds} folds ===\n")
+    print(f"\n=== Starting Cross-Validation with {cv_outer_folds} folds ===\n")
     
-    for cv_fold in range(cv_folds):
+    for cv_outer_fold in range(cv_outer_folds):
         print(f"\n{'=' * 100}")
-        print(f"Starting QuickTune optimization for CV fold {cv_fold + 1}/{cv_folds}")
+        print(f"Starting QuickTune optimization for CV fold {cv_outer_fold + 1}/{cv_outer_folds}")
         print(f"{'=' * 100}\n")
         
         # Create experiment directory for this CV fold
-        cv_experiment_dir = Path(experimental_setting.experiment_base_dir) / f"cv_fold_{cv_fold}"
+        cv_experiment_dir = Path(experimental_setting.experiment_base_dir) / f"cv_outer_fold_{cv_outer_fold}"
         cv_experiment_dir.mkdir(parents=True, exist_ok=True)
         
         # Mark outer fold as in progress
-        status_logger.main_status['outer_folds_progress'][cv_fold + 1] = {
+        status_logger.main_status['outer_folds_progress'][cv_outer_fold + 1] = {
             'status': 'in_progress',
             'inner_folds_completed': 0,
-            'total_inner_folds': experimental_setting.data.k_folds
+            'total_inner_folds': experimental_setting.cv_inner_folds
         }
         # Save status for webapp
         status_logger._save_main_status()
@@ -515,7 +515,7 @@ def main(experimental_setting: DictConfig) -> None:
                     print(f"\nConfiguration {config_id}: {configuration}")
 
                     # Run quicktune_wrapper with configuration
-                    result = quicktune_wrapper(configuration, trial_info, experimental_setting, cv_fold, status_logger)
+                    result = quicktune_wrapper(configuration, trial_info, experimental_setting, cv_outer_fold, status_logger)
 
                     # Tell the optimizer about the result
                     if result is not None:
@@ -537,29 +537,29 @@ def main(experimental_setting: DictConfig) -> None:
             print("\nUse QuickTuner\n")
             tuner = QuickTuner(
                 optimizer=optimizer,
-                f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, experimental_setting, cv_fold, status_logger),
+                f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, experimental_setting, cv_outer_fold, status_logger),
                 path=str(cv_experiment_dir),
             )
             tuner.run(fevals=experimental_setting.max_evaluations, time_budget=None, trial_info=trial_info)
         
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_main_progress(
-            outer_fold=cv_fold + 1,                                   # Convert to 1-based indexing
-            inner_folds_completed=experimental_setting.data.k_folds,  # All inner folds are done
-            total_inner_folds=experimental_setting.data.k_folds       # Total inner folds for this outer fold
+            outer_fold=cv_outer_fold + 1,                                   # Convert to 1-based indexing
+            inner_folds_completed=experimental_setting.cv_inner_folds,  # All inner folds are done
+            total_inner_folds=experimental_setting.cv_inner_folds       # Total inner folds for this outer fold
         )
         
         # Save updated status for webapp
         status_logger._save_main_status()
         
         print(f"\n{'=' * 100}")
-        print(f"Completed QuickTune optimization for CV fold {cv_fold + 1}/{cv_folds}")
+        print(f"Completed QuickTune optimization for CV fold {cv_outer_fold + 1}/{cv_outer_folds}")
         print(f"{'=' * 100}\n")
     
     # Mark QuickTune experiment as finished
     status_logger.mark_main_finished()
     
-    print(f"\n=== All {cv_folds} Cross-Validation folds completed! ===\n")
+    print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
 
 
 if __name__ == "__main__":

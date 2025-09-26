@@ -207,7 +207,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_fold=0, mode="train"):
+def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train"):
     """
     Load and preprocess a medical image dataset with cross-validation support.
 
@@ -218,7 +218,7 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         seed (int): Random seed for reproducibility
         use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing
         voxel_calculation (str): Method to calculate voxel size for preprocessing
-        cv_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
+        cv_outer_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
         mode (str): Mode of the experiment ('train' or 'test')
 
     Returns:
@@ -274,7 +274,7 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
 
     # Cross-validation for train+val/test splits
     # Use different seeds for different CV folds to get different splits
-    cv_seed = seed + cv_fold
+    cv_seed = seed + cv_outer_fold
     
     # Split into train+val and test (80-20) with CV fold-specific seed
     test_size = 0.2
@@ -282,18 +282,18 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         images, labels, test_size=test_size, random_state=cv_seed, stratify=labels
     )
 
-    print(f"\n> CV Fold {cv_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a {int(100-(test_size*100))}%/{int(test_size*100)}% split\n")
+    print(f"\n> CV Fold {cv_outer_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a {int(100-(test_size*100))}%/{int(test_size*100)}% split\n")
 
     # Save CV split information to cv_summary folder
     cv_split_dir = os.path.join(experiment_base_dir, "cv_summary", "cv_splits")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    split_file = os.path.join(cv_split_dir, f"cv_fold_{cv_fold}_split_info_{timestamp}.txt")
+    split_file = os.path.join(cv_split_dir, f"cv_outer_fold_{cv_outer_fold}_split_info_{timestamp}.txt")
 
     save_cv_split_info( 
         cv_split_dir,
         split_file,
         dataset_name, 
-        cv_fold, 
+        cv_outer_fold, 
         train_val_data, 
         test_data, 
         train_val_labels, 
@@ -305,13 +305,13 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     # Save CV split in the preprocessed dataset folder
     cv_split_dir = os.path.join(preprocessed_dataset_path, "cv_splits")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    split_file = os.path.join(cv_split_dir, f"{mode}_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_fold_{cv_fold}_split_info_{timestamp}.txt")
+    split_file = os.path.join(cv_split_dir, f"{mode}_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_outer_fold_{cv_outer_fold}_split_info_{timestamp}.txt")
     
     save_cv_split_info( 
         cv_split_dir,
         split_file,
         dataset_name, 
-        cv_fold, 
+        cv_outer_fold, 
         train_val_data, 
         test_data, 
         train_val_labels, 
@@ -472,7 +472,7 @@ def get_kfold_dataloaders(
     dataset_name,
     data,
     labels,
-    k_folds,
+    cv_inner_folds,
     batch_size,
     num_workers,
     fold_idx,
@@ -489,7 +489,7 @@ def get_kfold_dataloaders(
         dataset_name (str): Name of the dataset (e.g., 'lipo', 'desmoid', 'gist')
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
-        k_folds (int): Number of folds for cross-validation
+        cv_inner_folds (int): Number of folds for cross-validation
         batch_size (int): Batch size for data loaders
         num_workers (int): Number of workers for data loading
         fold_idx (int): Current fold index
@@ -511,7 +511,7 @@ def get_kfold_dataloaders(
         valid_data = []  # Empty validation set
     else:
         # Create k-fold splitter
-        kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+        kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=42)
 
         # Get indices for current fold
         indices = np.arange(len(data))

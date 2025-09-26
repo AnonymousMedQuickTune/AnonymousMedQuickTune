@@ -196,7 +196,7 @@ def load_brain_tumor_dataset(data_path="datasets", seed=42):
         images, labels, test_size=0.2, random_state=seed, stratify=labels
     )
 
-    print(f"\n> CV Fold {cv_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a 80%/20% split")
+    print(f"\n> CV Fold {cv_outer_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a 80%/20% split")
 
     # Calculate class distribution
     unique_labels, counts = np.unique(labels, return_counts=True)
@@ -214,7 +214,7 @@ def load_brain_tumor_dataset(data_path="datasets", seed=42):
 def get_brain_tumor_kfold_loaders(
     data,
     labels,
-    k_folds,
+    cv_inner_folds,
     batch_size,
     num_workers,
     fold_idx,
@@ -227,7 +227,7 @@ def get_brain_tumor_kfold_loaders(
     Args:
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
-        k_folds (int): Number of folds for cross-validation
+        cv_inner_folds (int): Number of folds for cross-validation
         batch_size (int): Batch size for data loaders
         num_workers (int): Number of workers for data loading
         fold_idx (int): Current fold index
@@ -238,7 +238,7 @@ def get_brain_tumor_kfold_loaders(
         tuple: (train_loader, val_loader) for the current fold
     """
     # Create k-fold splitter
-    kfold = StratifiedKFold(n_splits=k_folds, shuffle=True, random_state=42)
+    kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=42)
 
     # Get indices for current fold
     indices = np.arange(len(data))

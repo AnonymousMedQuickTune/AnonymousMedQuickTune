@@ -307,7 +307,7 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     # Load the trained model checkpoint for this fold
     checkpoint_path = (
         Path(pipeline_directory)
-        / f"fold_{fold}"
+        / f"cv_inner_fold_{fold}"
         / "best_model_checkpoint.pth"
     )
     
@@ -364,7 +364,7 @@ def evaluate_config_on_test_set(
     dataset_dict,
     num_classes,
     hyperparameters,
-    cv_fold=1
+    cv_outer_fold=1
 ):
     """
     Evaluate a trained NePS configuration on the test set using cross-validation ensemble predictions.
@@ -381,7 +381,7 @@ def evaluate_config_on_test_set(
         dataset_dict (dict): Dictionary containing dataset information and metadata
         num_classes (int): Number of classes in the classification task
         hyperparameters (dict): Hyperparameters used for training the model
-        cv_fold (int): Current cross-validation fold index (0-based, default: 1)
+        cv_outer_fold (int): Current cross-validation fold index (0-based, default: 1)
     
     Returns:
         dict: Comprehensive test metrics dictionary containing:
@@ -395,7 +395,7 @@ def evaluate_config_on_test_set(
         - Ensemble predictions are created by averaging softmax probabilities across folds
     """
     print(f"\n{'='*80}")
-    print(f"EVALUATING CONFIG ON TEST SET (CV Fold {cv_fold})")
+    print(f"EVALUATING CONFIG ON TEST SET (CV Fold {cv_outer_fold})")
     print(f"{'='*80}\n")
     
     # Set seed for reproducibility
@@ -422,7 +422,7 @@ def evaluate_config_on_test_set(
             seed=experimental_setting.seed,
             use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
             voxel_calculation=voxel_calc,
-            cv_fold=cv_fold,
+            cv_outer_fold=cv_outer_fold,
             mode="test"
         )
         
@@ -443,7 +443,7 @@ def evaluate_config_on_test_set(
         per_fold_summaries = []
 
         # Evaluate each fold's model on the complete test set
-        for fold in range(experimental_setting.data.k_folds):
+        for fold in range(experimental_setting.cv_inner_folds):
             # Normalization stats are calculated from the preprocessed training data separately for each inner fold!
             normalization_stats = None  # TODO @Diane: get normalization stats based on the inner fold!
 
@@ -464,7 +464,7 @@ def evaluate_config_on_test_set(
             # EVALUATE THE FOLD ON THE TEST SET
             # ------------------------------------------------------------------------------------------------
             # Evaluate the fold on the test set
-            print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.data.k_folds} on Test Set ===")
+            print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.cv_inner_folds} on Test Set ===")
             fold_probabilities, fold_targets = evaluate_fold(
                 fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory
             )

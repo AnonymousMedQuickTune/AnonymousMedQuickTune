@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 
-def analyze_training_validation_metrics(neps_output_dir, k_folds):
+def analyze_training_validation_metrics(neps_output_dir, cv_inner_folds):
     """
     Analyzes training and validation metrics across all NePS configurations and folds.
     """
@@ -51,7 +51,7 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
             log_print(f"Performance: {-row['objective_to_minimize']:.2f}%", f)
 
             # Get metrics for each fold if available
-            for fold in range(k_folds):
+            for fold in range(cv_inner_folds):
                 fold_dir = config_dir / f"fold_{fold}"
                 metrics_file = fold_dir / "metrics.csv"
 
@@ -70,7 +70,7 @@ def analyze_training_validation_metrics(neps_output_dir, k_folds):
     print(f"\nGeneralization analysis saved to: {output_file}")
 
 
-def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_folds):
+def analyze_validation_test_generalization(neps_output_dir, test_metrics, cv_inner_folds):
     """
     Analyzes generalization between validation and test set for the best NePS configuration.
     """
@@ -103,7 +103,7 @@ def analyze_validation_test_generalization(neps_output_dir, test_metrics, k_fold
         }
 
         # Collect validation metrics from each fold
-        for fold in range(k_folds):
+        for fold in range(cv_inner_folds):
             metrics_file = config_dir / f"fold_{fold}" / "metrics.csv"
             if metrics_file.exists():
                 fold_metrics = pd.read_csv(metrics_file)

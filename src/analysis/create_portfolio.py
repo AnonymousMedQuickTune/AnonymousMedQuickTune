@@ -31,7 +31,7 @@ SUMMARY_FILE = "full.csv"
 METRICS_FILE = "metrics.csv"
 CONFIG_DIR_PREFIX = "config_"
 FOLD_DIR_PREFIX = "fold_"
-CV_FOLD_DIR = "cv_fold_0"
+CV_FOLD_DIR = "cv_outer_fold_0"
 
 # Default meta-features (can be overridden by dataset-specific configs)
 DEFAULT_META_FEATURES = {
@@ -261,8 +261,8 @@ class PortfolioCreator:
                 curves_data.append(np.zeros(1))
                 continue
                 
-            k_folds = self._count_folds(config_dir)
-            fold_curves = self.get_fold_metrics(idx, k_folds, str(config_dir))
+            cv_inner_folds = self._count_folds(config_dir)
+            fold_curves = self.get_fold_metrics(idx, cv_inner_folds, str(config_dir))
 
             if fold_curves:
                 # Ensure all folds have same number of epochs
@@ -292,7 +292,7 @@ class PortfolioCreator:
         return sum(1 for d in config_dir.iterdir() 
                   if d.is_dir() and d.name.startswith(FOLD_DIR_PREFIX))
 
-    def get_fold_metrics(self, config_idx: int, k_folds: int, config_dir: str = None) -> List[np.ndarray]:
+    def get_fold_metrics(self, config_idx: int, cv_inner_folds: int, config_dir: str = None) -> List[np.ndarray]:
         """Helper function to read metrics from each fold."""
         fold_curves = []
         
@@ -300,7 +300,7 @@ class PortfolioCreator:
         if config_dir is None:
             config_dir = str(self._find_config_directory(config_idx))
 
-        for fold in range(k_folds):
+        for fold in range(cv_inner_folds):
             metrics_path = Path(config_dir) / f"{FOLD_DIR_PREFIX}{fold}" / LOGGING_SUBDIR / METRICS_FILE
             
             if not metrics_path.exists():

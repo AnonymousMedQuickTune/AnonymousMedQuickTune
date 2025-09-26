@@ -88,7 +88,7 @@ def run_2d_pipeline(
     ).to(device)
 
     # Get k-fold parameter from experimental_setting or default to 5
-    k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
+    cv_inner_folds = experimental_setting.cv_inner_folds if hasattr(experimental_setting, "cv_inner_folds") else 5
 
     # Initialize metrics storage for all folds
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
@@ -125,8 +125,8 @@ def run_2d_pipeline(
         normalization_stats = None
 
     # Run k-fold cross validation
-    for fold in range(k_folds):
-        print(f"\nTraining Fold {fold + 1}/{k_folds}")
+    for fold in range(cv_inner_folds):
+        print(f"\nTraining Fold {fold + 1}/{cv_inner_folds}")
 
         # Create fold-specific directory
         fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
@@ -140,7 +140,7 @@ def run_2d_pipeline(
         train_loader, val_loader = get_brain_tumor_kfold_loaders(
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
-            k_folds=k_folds,
+            cv_inner_folds=cv_inner_folds,
             batch_size=hyperparameters.get("batch_size", 32),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,

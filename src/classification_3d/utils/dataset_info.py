@@ -4,7 +4,7 @@ import datetime
 from tqdm import tqdm
 
 
-def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_fold, train_val_data, test_data, train_val_labels, test_labels, voxel_calculation, seed, suffix=""):
+def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, train_val_data, test_data, train_val_labels, test_labels, voxel_calculation, seed, suffix=""):
     """
     Save cross-validation split information to a text file for reproducibility and debugging.
     
@@ -12,7 +12,7 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_fold, train_va
         cv_split_dir (str): Path to cross-validation split directory
         split_file (str): Path to cross-validation split file
         dataset_name (str): Name of the dataset
-        cv_fold (int): Cross-validation fold number
+        cv_outer_fold (int): Cross-validation fold number
         train_val_data (list): Training and validation data paths
         test_data (list): Test data paths
         train_val_labels (list): Training and validation labels
@@ -24,17 +24,17 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_fold, train_va
     
     with open(split_file, "w", encoding="utf-8") as f:
         f.write("=" * 80 + "\n")
-        f.write(f"CROSS-VALIDATION SPLIT INFORMATION - CV FOLD {cv_fold}\n")
+        f.write(f"CROSS-VALIDATION SPLIT INFORMATION - CV FOLD {cv_outer_fold}\n")
         f.write("=" * 80 + "\n\n")
         
         # Dataset information
         f.write("DATASET INFORMATION:\n")
         f.write("-" * 40 + "\n")
         f.write(f"Dataset: {dataset_name}\n")
-        f.write(f"CV Fold: {cv_fold}\n")
+        f.write(f"CV Fold: {cv_outer_fold}\n")
         f.write(f"Voxel Calculation: {voxel_calculation}\n")
         f.write(f"Random Seed: {seed}\n")
-        f.write(f"CV Seed (seed + cv_fold): {seed + cv_fold}\n")
+        f.write(f"CV Seed (seed + cv_outer_fold): {seed + cv_outer_fold}\n")
         f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         
         # Split statistics

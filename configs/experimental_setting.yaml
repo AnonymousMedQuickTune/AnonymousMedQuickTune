@@ -14,7 +14,8 @@ quicktune_directory: ${experiment_base_dir}/QuickTune_output
 experiment_name: test
 run_mode: NePS  # Options: 'NePS', 'QuickTune', 'Baseline', 'Portfolio'
 developer_mode: false
-cv_folds: 5
+cv_outer_folds: 5       # Number of outer folds for cross-validation: train_val/test splits
+cv_inner_folds: 5       # Number of inner folds for cross-validation: train/val splits
 
 #------------------------------------------------------------------------------
 # Training Configuration
@@ -60,7 +61,6 @@ data:
   debug_mode: False       # Enable/disable debug mode
   num_workers: 4          # Number of parallel data loading workers
   augmentation_type: basic   # Type of augmentation to use ('basic''medical' or 'trivial')
-  k_folds: 5              # Number of folds for K-Fold Cross Validation
   cache_data: True        # Whether to preload the data into memory
   use_smart_preprocessing: True  # Whether to apply Natalia's smart preprocessing (3D only)
   voxel_calculation: all  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic', or 'all'

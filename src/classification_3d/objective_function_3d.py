@@ -89,7 +89,7 @@ def run_3d_pipeline(
     ).to(device)
 
     # Get k-fold parameter from experimental_setting or default to 5
-    k_folds = experimental_setting.data.k_folds if hasattr(experimental_setting.data, "k_folds") else 5
+    cv_inner_folds = experimental_setting.cv_inner_folds if hasattr(experimental_setting, "cv_inner_folds") else 5
 
     # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics? No
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
@@ -130,9 +130,9 @@ def run_3d_pipeline(
     inner_fold_logger = InnerFoldProgressLogger(pipeline_directory)
     
     # Run k-fold cross validation
-    for fold in range(k_folds):
+    for fold in range(cv_inner_folds):
         print(f"{'-' * 50}")
-        print(f"Training Fold {fold + 1}/{k_folds}")
+        print(f"Training Inner Cross-Validation Fold {fold + 1}/{cv_inner_folds}")
         print(f"{'-' * 50}\n")
         
         # Log start of inner fold training
@@ -141,11 +141,11 @@ def run_3d_pipeline(
             inner_fold=fold + 1,        # Convert to 1-based indexing (Python uses 0-based, we need 1-based)
             status="in_progress",       # Mark as currently running
             epoch=0,                    # Starting at epoch 0
-            total_inner_folds=k_folds   # Total number of inner folds for progress calculation
+            total_inner_folds=cv_inner_folds   # Total number of inner folds for progress calculation
         )
 
         # Create fold-specific directory
-        fold_directory = os.path.join(pipeline_directory, f"fold_{fold}")
+        fold_directory = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
         os.makedirs(fold_directory, exist_ok=True)
 
         # Initialize logging files for this fold
@@ -159,7 +159,7 @@ def run_3d_pipeline(
             dataset_name=experimental_setting.data.dataset,
             data=dataset_dict["train_val_data"],
             labels=dataset_dict["train_val_labels"],
-            k_folds=k_folds,
+            cv_inner_folds=cv_inner_folds,
             batch_size=hyperparameters.get("batch_size", 1),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
@@ -291,7 +291,7 @@ def run_3d_pipeline(
                     inner_fold=fold + 1,
                     status="in_progress",           # Still running
                     epoch=training_epochs + 1,      # Current epoch (1-based for display)
-                    total_inner_folds=k_folds       # Total for progress calculation
+                    total_inner_folds=cv_inner_folds       # Total for progress calculation
                 )
 
             # Training phase
@@ -453,48 +453,48 @@ def run_3d_pipeline(
                     all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
             # Log metrics to TensorBoard
-            writer.add_scalar(f"Loss/train/fold_{fold}", train_metrics["loss"], training_epochs)
+            writer.add_scalar(f"Loss/train/cv_inner_fold_{fold}", train_metrics["loss"], training_epochs)
             writer.add_scalar(
-                f"Accuracy/train/fold_{fold}", train_metrics["accuracy"], training_epochs
+                f"Accuracy/train/cv_inner_fold_{fold}", train_metrics["accuracy"], training_epochs
             )
             writer.add_scalar(
-                f"Precision/train/fold_{fold}",
+                f"Precision/train/cv_inner_fold_{fold}",
                 np.mean(train_metrics["precision"]),
                 training_epochs,
             )
             writer.add_scalar(
-                f"Recall/train/fold_{fold}", np.mean(train_metrics["recall"]), training_epochs
+                f"Recall/train/cv_inner_fold_{fold}", np.mean(train_metrics["recall"]), training_epochs
             )
             writer.add_scalar(
-                f"F1/train/fold_{fold}", np.mean(train_metrics["f1"]), training_epochs
+                f"F1/train/cv_inner_fold_{fold}", np.mean(train_metrics["f1"]), training_epochs
             )
             writer.add_scalar(
-                f"AUC/train/fold_{fold}", np.mean(train_metrics["auc"]), training_epochs
+                f"AUC/train/cv_inner_fold_{fold}", np.mean(train_metrics["auc"]), training_epochs
             )
 
             # Log learning rate (moved outside the val_metrics check)
             writer.add_scalar(
-                f"Learning_Rate/fold_{fold}", optimizer.param_groups[0]["lr"], training_epochs
+                f"Learning_Rate/cv_inner_fold_{fold}", optimizer.param_groups[0]["lr"], training_epochs
             )
 
             if val_metrics is not None:
-                writer.add_scalar(f"Loss/val/fold_{fold}", val_metrics["loss"], training_epochs)
+                writer.add_scalar(f"Loss/val/cv_inner_fold_{fold}", val_metrics["loss"], training_epochs)
                 writer.add_scalar(
-                    f"Accuracy/val/fold_{fold}", val_metrics["accuracy"], training_epochs
+                    f"Accuracy/val/cv_inner_fold_{fold}", val_metrics["accuracy"], training_epochs
                 )
                 writer.add_scalar(
-                    f"Precision/val/fold_{fold}",
+                    f"Precision/val/cv_inner_fold_{fold}",
                     np.mean(val_metrics["precision"]),
                     training_epochs,
                 )
                 writer.add_scalar(
-                    f"Recall/val/fold_{fold}", np.mean(val_metrics["recall"]), training_epochs
+                    f"Recall/val/cv_inner_fold_{fold}", np.mean(val_metrics["recall"]), training_epochs
                 )
                 writer.add_scalar(
-                    f"F1/val/fold_{fold}", np.mean(val_metrics["f1"]), training_epochs
+                    f"F1/val/cv_inner_fold_{fold}", np.mean(val_metrics["f1"]), training_epochs
                 )
                 writer.add_scalar(
-                    f"AUC/val/fold_{fold}", np.mean(val_metrics["auc"]), training_epochs
+                    f"AUC/val/cv_inner_fold_{fold}", np.mean(val_metrics["auc"]), training_epochs
                 )
 
                 # Add confusion matrix as image
@@ -503,7 +503,7 @@ def run_3d_pipeline(
                     plt.imshow(val_metrics["confusion_matrices"][-1], cmap="Blues")
                     plt.colorbar()
                     plt.title(f"Confusion Matrix - Epoch {training_epochs}")
-                    writer.add_figure(f"Confusion_Matrix/fold_{fold}", fig, training_epochs)
+                    writer.add_figure(f"Confusion_Matrix/cv_inner_fold_{fold}", fig, training_epochs)
                     plt.close()
 
             # Log sample images with predictions (every N epochs or at the end)
@@ -542,7 +542,7 @@ def run_3d_pipeline(
             inner_fold_logger.update_inner_fold_progress(
                 inner_fold=fold + 1,
                 status="completed",         # Mark as finished
-                total_inner_folds=k_folds   # Total for progress calculation
+                total_inner_folds=cv_inner_folds   # Total for progress calculation
             )
         
         print("\nTraining completed!\n")
