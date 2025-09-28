@@ -57,7 +57,7 @@ preprocess-brain-tumor-cluster:
 
 # Run an HPO experiment on the local machine
 run-2d-hpo-local DATASET EXPERIMENT_NAME SEED:
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
@@ -67,7 +67,7 @@ run-2d-hpo-local DATASET EXPERIMENT_NAME SEED:
 
 # Run an HPO experiment on a 3D dataset on the local machine
 run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
     seed={{SEED}} \
@@ -78,7 +78,7 @@ run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
 # Run multiple HPO experiments sequentially for portfolio cration on the local machine
 run-portfolio-experiments:
   # Lipo
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_1 \
     seed=42 \
@@ -95,7 +95,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_1 \
     seed=43 \
@@ -112,7 +112,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_2 \
     seed=43 \
@@ -129,7 +129,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_2 \
     seed=44 \
@@ -147,7 +147,7 @@ run-portfolio-experiments:
     developer_mode=true
   
   # Desmoid
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_1 \
     seed=42 \
@@ -164,7 +164,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
 
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_1 \
     seed=43 \
@@ -181,7 +181,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_2 \
     seed=43 \
@@ -198,7 +198,7 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.train_neps \
+  python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_2 \
     seed=44 \
@@ -223,7 +223,7 @@ run-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
-    cluster_scripts/train_neps_2d.sh
+    cluster_scripts/run_neps_2d.sh
 
 # Submit an HPO experiment for a 3D dataset to the cluster
 run-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
@@ -233,7 +233,7 @@ run-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
-    cluster_scripts/train_neps_3d.sh
+    cluster_scripts/run_neps_3d.sh
 
 # TEST EXPERIMENTS ---------------------------------------------------------------------------------
 

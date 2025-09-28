@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import time
@@ -31,6 +32,8 @@ from src.utils.quicktune_utils import (
     FTPFNPerfPredictor,
 )
 from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
+from src.evaluate_trained_config import evaluate_config_on_test_set
+from src.utils.common_utils import cleanup_training_artifacts
 
 # For debugging purposes:
 # from qtt.predictors import PerfPredictor, CostPredictor
@@ -47,7 +50,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     
     This function serves as a bridge between QuickTune's optimization framework and the existing
     NePS-compatible pipeline functions. It handles dataset loading, dimensionality detection,
-    and result formatting to ensure seamless integration with QuickTune's optimization process.
+    pipeline execution, test set evaluation, and result formatting to ensure seamless integration 
+    with QuickTune's optimization process.
     
     Args:
         trial (dict): QuickTune trial configuration containing:
@@ -81,6 +85,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             - fidelity (int): Fidelity level used
             - config (dict): Hyperparameter configuration
     
+    Process:
+        1. Load dataset based on dimensionality and dataset type
+        2. Run the appropriate training pipeline (2D or 3D) with cross-validation
+        3. Evaluate the trained configuration on the test set using ensemble predictions
+        4. Save test evaluation results to test_evaluation_results.json
+        5. Clean up model checkpoints to save disk space
+        6. Return formatted result to QuickTune for optimization
+    
     Raises:
         ValueError: If unsupported dataset or dimensionality is specified
         Exception: If pipeline execution fails (caught and returned as FAILED status)
@@ -88,6 +100,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     Note:
         - Failed trials return -inf score and inf cost to signal optimization failure
         - Status logging creates config-specific status files in experiment_status/config_X/outerfold_Y_status.txt format
+        - Test evaluation uses cross-validation ensemble predictions for robust performance assessment
+        - Test metrics are saved as JSON files for detailed analysis
     """
     start_time = time.time()
 
@@ -115,7 +129,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
 
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
-                # Load all voxel calculation methods like in train_neps.py
+                # Load all voxel calculation methods like in run_neps.py
                 print(f"--------")
                 print(f"- MEAN -")
                 print(f"--------")
@@ -242,6 +256,34 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         
         # Inner fold progress is now logged within the pipeline functions
 
+        # Evaluate the trained configuration on test set
+        print(f"\n{'='*100}")
+        print(f"STARTING TEST SET EVALUATION FOR CURRENT CONFIG")
+        print(f"{'='*100}\n")
+        
+        # Evaluate configuration on test set
+        test_metrics = evaluate_config_on_test_set(
+            pipeline_directory=str(pipeline_dir),
+            experimental_setting=experimental_setting,
+            dataset_dict=dataset_dict,
+            num_classes=num_classes,
+            hyperparameters=hyperparameters,
+            cv_outer_fold=cv_outer_fold,
+            framework="quicktune"
+        )
+
+        # Persist test metrics as a JSON artifact
+        if test_metrics is not None:
+            test_metrics_file = pipeline_dir / "test_evaluation_results.json"
+            with open(test_metrics_file, "w", encoding="utf-8") as f:
+                json.dump(test_metrics, f, indent=4)
+            print(f"Test evaluation completed and saved to: {test_metrics_file}")
+        else:
+            print(f"Warning: Test evaluation failed or no valid checkpoints found!")
+
+        # Delete model checkpoints to save disk space after test evaluation
+        cleanup_training_artifacts(str(pipeline_dir), experimental_setting.cv_inner_folds)
+
         # Extract metrics safely
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
@@ -352,7 +394,7 @@ def main(experimental_setting: DictConfig) -> None:
     print("\nTrial info:\n", trial_info, "\n")
     print("\nMeta features:\n", metafeat, "\n")
 
-    # Cross-validation outer loop for different train+val/test splits (like in train_neps.py)
+    # Cross-validation outer loop for different train+val/test splits (like in run_neps.py)
     cv_outer_folds = experimental_setting.cv_outer_folds if hasattr(experimental_setting, 'cv_outer_folds') else 1
     
     # Initialize experiment status logger for QuickTune

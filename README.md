@@ -186,7 +186,7 @@ MEDQUICKTUNE
 │   ├── utils/                      # Core utilities for model training, logging, checkpointing, and configuration management
 │   ├── _init_.py                   # Empty file to make the directory a package
 │   ├── test_best_config.py         # Evaluation script
-│   └── train_neps.py               # Training script
+│   └── run_neps.py               # Training script
 │
 └── ...
 ```

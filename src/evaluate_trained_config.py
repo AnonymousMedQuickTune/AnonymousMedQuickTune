@@ -256,7 +256,7 @@ def calculate_per_fold_metrics(folds_probabilities, ground_truth_targets, num_cl
     return per_fold_summaries
 
 
-def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory):
+def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework="neps"):
     """
     Evaluate a single fold's trained model on the test set and return prediction probabilities.
     
@@ -270,6 +270,7 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         hyperparameters (dict): Hyperparameters used for training the model
         num_classes (int): Number of classes in the classification task
         pipeline_directory (str): Directory containing the trained model checkpoints
+        framework (str): Framework being used ("neps" or "quicktune"), affects model loading
     
     Returns:
         tuple: (fold_probabilities, fold_targets) containing:
@@ -283,22 +284,35 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         - Returns probabilities (not predictions) for ensemble averaging
         - Ground truth targets are the same for all folds (same test set)
         - Model is loaded with fold-specific hyperparameters
+        - Works for both NePS and QuickTune frameworks
     """
     # Set device for evaluation
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     # MODEL INITIALIZATION
     # ------------------------------------------------------------------------------------------------
-    # Initialize the model
+    # Initialize the model based on framework
     if experimental_setting.data.dimensionality.lower() == "3d":
-        model = get_3d_model(
-            {
-                "type": experimental_setting.model.type,
-                "task": experimental_setting.model.task,
-                "num_classes": num_classes,
-            }, 
-            hyperparameters
-        )
+        if framework == "quicktune" and "model" in hyperparameters:
+            # QuickTune: model type is in hyperparameters
+            model = get_3d_model(
+                {
+                    "type": hyperparameters["model"],
+                    "task": experimental_setting.model.task,
+                    "num_classes": num_classes,
+                }, 
+                hyperparameters
+            )
+        else:
+            # NePS: model type is in experimental_setting
+            model = get_3d_model(
+                {
+                    "type": experimental_setting.model.type,
+                    "task": experimental_setting.model.task,
+                    "num_classes": num_classes,
+                }, 
+                hyperparameters
+            )
     else:
         raise NotImplementedError("2D evaluation is not supported for config evaluation yet.")
     
@@ -316,10 +330,20 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         return None, None
     
     # Add safe globals for NumPy objects that might be in the checkpoint
-    torch.serialization.add_safe_globals([np.core.multiarray.scalar, np.dtype, np.dtypes.Float64DType])  # TODO @Diane: check this out!
+    # TODO @Diane: check this out!
+    torch.serialization.add_safe_globals([
+        np.core.multiarray.scalar, 
+        np.dtype, 
+        np.dtypes.Float64DType,
+        np.dtypes.StrDType,  # For string dtypes that might be in checkpoints
+    ])
     
-    # Load the model checkpoint
-    checkpoint = torch.load(checkpoint_path, weights_only=True)
+    # Load the model checkpoint with minimal fallback
+    try:
+        checkpoint = torch.load(checkpoint_path, weights_only=True)
+    except Exception:
+        # Fallback for checkpoints with unsupported NumPy types
+        checkpoint = torch.load(checkpoint_path, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     model = model.to(device)
     model.eval()
@@ -364,10 +388,11 @@ def evaluate_config_on_test_set(
     dataset_dict,
     num_classes,
     hyperparameters,
-    cv_outer_fold=1
+    cv_outer_fold=1,
+    framework="neps"  # "neps" or "quicktune"
 ):
     """
-    Evaluate a trained NePS configuration on the test set using cross-validation ensemble predictions.
+    Evaluate a trained configuration on the test set using cross-validation ensemble predictions.
     
     This function implements cross-validation ensemble learning (bagging) where:
     1. Each fold's trained model predicts on the entire test set
@@ -382,6 +407,7 @@ def evaluate_config_on_test_set(
         num_classes (int): Number of classes in the classification task
         hyperparameters (dict): Hyperparameters used for training the model
         cv_outer_fold (int): Current cross-validation fold index (0-based, default: 1)
+        framework (str): Framework being used ("neps" or "quicktune"), affects model loading
     
     Returns:
         dict: Comprehensive test metrics dictionary containing:
@@ -393,6 +419,7 @@ def evaluate_config_on_test_set(
         - Each fold uses its own normalization_stats.json file
         - Ground truth labels are the same for all folds (same test set)
         - Ensemble predictions are created by averaging softmax probabilities across folds
+        - Works for both NePS and QuickTune frameworks
     """
     print(f"\n{'='*80}")
     print(f"EVALUATING CONFIG ON TEST SET (CV Fold {cv_outer_fold})")
@@ -466,7 +493,7 @@ def evaluate_config_on_test_set(
             # Evaluate the fold on the test set
             print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.cv_inner_folds} on Test Set ===")
             fold_probabilities, fold_targets = evaluate_fold(
-                fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory
+                fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework
             )
             
             # Skip if checkpoint not found

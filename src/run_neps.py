@@ -20,7 +20,7 @@ from src.classification_3d.preprocess_data_3d import load_3d_dataset
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
-from src.evaluate_neps_config import evaluate_config_on_test_set
+from src.evaluate_trained_config import evaluate_config_on_test_set
 import datetime
 
 

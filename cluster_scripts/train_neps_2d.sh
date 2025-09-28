@@ -15,7 +15,7 @@ DATA_DIR="$BASE_DIR/datasets/"
 # PIPELINE_SPACE="configs/pipeline_spaces/autonorm_without_user_priors.yaml"
 PIPELINE_SPACE="configs/pipeline_spaces/baseline.yaml"
 
-python -m src.train_neps \
+python -m src.run_neps \
     data.dataset=$DATASET \
     experiment_name=$EXPERIMENT_NAME \
     seed=$SEED \
