@@ -2,7 +2,9 @@
 list:
   just --list
 
-# BASH SCRIPS --------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# BASH SCRIPS
+# --------------------------------------------------------------------------------------------------
 
 # Format Python code using shell_scripts/format.sh
 format:
@@ -13,18 +15,20 @@ pylint:
   bash shell_scripts/pylint.sh
 
 # Delete all experiments whose names start with 'test'
-delete-tests:
+delete-tests:  # TODO @Diane: test if this still works!
   bash shell_scripts/delete_test_experiments.sh
 
 # Download all the datasets
-download-datasets:
+download-datasets:  # TODO @Diane: implement or delete this!
   bash shell_scripts/download_datasets.sh
 
 # Download a mini version of datasets for testing/debugging
-download-mini-datasets:
+download-mini-datasets:  # TODO @Diane: implement or delete this!
   bash shell_scripts/download_mini_datasets.sh
 
-# DATA PROCESSING ----------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# DATA PROCESSING
+# --------------------------------------------------------------------------------------------------
 
 # Convert NePS output to QuickTune format (cluster)
 neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
@@ -53,10 +57,12 @@ preprocess-brain-tumor-cluster:
         --export=DATA_PATH="/work/dlclarge1/wagnerd-medquicktune/datasets" \
         cluster_scripts/preprocess_brain_tumor.sh
 
-# NEPS EXPERIMENTS ---------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# NEPS EXPERIMENTS
+# --------------------------------------------------------------------------------------------------
 
-# Run an HPO experiment on the local machine
-run-2d-hpo-local DATASET EXPERIMENT_NAME SEED:
+# Run an HPO experiment with NePSon the local machine for a 2D dataset
+run-2d-neps-local DATASET EXPERIMENT_NAME SEED:
   python -m src.run_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
@@ -65,8 +71,8 @@ run-2d-hpo-local DATASET EXPERIMENT_NAME SEED:
     data.dimensionality=2d \
     developer_mode=true
 
-# Run an HPO experiment on a 3D dataset on the local machine
-run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
+# Run an HPO experiment with NePS on the local machine for a 3D dataset
+run-3d-neps-local DATASET EXPERIMENT_NAME SEED:
   python -m src.run_neps \
     data.dataset={{DATASET}} \
     experiment_name={{EXPERIMENT_NAME}} \
@@ -75,8 +81,8 @@ run-3d-hpo-local DATASET EXPERIMENT_NAME SEED:
     data.dimensionality=3d \
     developer_mode=true
 
-# Run multiple HPO experiments sequentially for portfolio cration on the local machine
-run-portfolio-experiments:
+# Run multiple HPO experiments sequentially for portfolio cration with NePS on the local machine for 3D datasets
+run-portfolio-test-experiments:
   # Lipo
   python -m src.run_neps \
     data.dataset=lipo \
@@ -86,15 +92,6 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_1 \
-    data.dataset=lipo \
-    seed=42 \
-    data.path=datasets \
-    model.type=densenetv1 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
   python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_1 \
@@ -103,28 +100,10 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_1 \
-    data.dataset=lipo \
-    seed=43 \
-    data.path=datasets \
-    model.type=densenetv1 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
   python -m src.run_neps \
     data.dataset=lipo \
     experiment_name=test_portfolio_2 \
     seed=43 \
-    model.type=densenetv2 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_2 \
-    data.dataset=lipo \
-    seed=43 \
-    data.path=datasets \
     model.type=densenetv2 \
     data.dimensionality=3d \
     developer_mode=true
@@ -133,15 +112,6 @@ run-portfolio-experiments:
     data.dataset=lipo \
     experiment_name=test_portfolio_2 \
     seed=44 \
-    model.type=densenetv2 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_2 \
-    data.dataset=lipo \
-    seed=44 \
-    data.path=datasets \
     model.type=densenetv2 \
     data.dimensionality=3d \
     developer_mode=true
@@ -155,15 +125,6 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
 
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_1 \
-    data.dataset=desmoid \
-    seed=42 \
-    data.path=datasets \
-    model.type=densenetv1 \
-    data.dimensionality=3d \
-    developer_mode=true
-
   python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_1 \
@@ -172,28 +133,10 @@ run-portfolio-experiments:
     data.dimensionality=3d \
     developer_mode=true
   
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_1 \
-    data.dataset=desmoid \
-    seed=43 \
-    data.path=datasets \
-    model.type=densenetv1 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
   python -m src.run_neps \
     data.dataset=desmoid \
     experiment_name=test_portfolio_2 \
     seed=43 \
-    model.type=densenetv2 \
-    data.dimensionality=3d \
-    developer_mode=true
-  
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_2 \
-    data.dataset=desmoid \
-    seed=43 \
-    data.path=datasets \
     model.type=densenetv2 \
     data.dimensionality=3d \
     developer_mode=true
@@ -205,17 +148,8 @@ run-portfolio-experiments:
     model.type=densenetv2 \
     data.dimensionality=3d \
     developer_mode=true
-  
-  python -m src.evaluate_neps \
-    experiment_name=test_portfolio_2 \
-    data.dataset=desmoid \
-    seed=44 \
-    data.path=datasets \
-    model.type=densenetv2 \
-    data.dimensionality=3d \
-    developer_mode=true
 
-# Submit an HPO experiment for a 2D dataset to the cluster
+# Submit an HPO experiment with NePS to the cluster for a 2D dataset      
 run-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
@@ -225,7 +159,7 @@ run-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/run_neps_2d.sh
 
-# Submit an HPO experiment for a 3D dataset to the cluster
+# Submit an HPO experiment with NePS to the cluster for a 3D dataset
 run-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
   #!/usr/bin/env bash
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/NePS/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
@@ -235,28 +169,53 @@ run-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/run_neps_3d.sh
 
-# TEST EXPERIMENTS ---------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------------
+# PORTFOLIO EXPERIMENTS
+# --------------------------------------------------------------------------------------------------
 
-# Evaluate with best hyperparameter configuration
-eval-local DATASET EXPERIMENT_NAME SEED FOLDS:
-  python -m src.test_best_config \
-    --config_path experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt \
-    --hydra_config configs/experimental_setting.yaml \
-    --dataset {{DATASET}} \
-    --data_dir datasets \
-    --k_folds {{FOLDS}}
+# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
+# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio
+create-multi-dataset-portfolio DATASET_SPEC:
+  python -m src.analysis.create_portfolio \
+    +dataset_spec="'{{DATASET_SPEC}}'" \
+    portfolio_dir=experiments/Portfolio \
+    merge_runs=true \
+    +multi_dataset=true \
+    run_mode=Portfolio \
+    hydra.run.dir=experiments/Portfolio/logs
 
-# Submit an evaluation of the best hyperparameter configuration to the cluster
-eval-cluster DATASET EXPERIMENT_NAME SEED:
-  #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
-  sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},CONFIG_PATH="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/NePS_output/best_loss_with_config_trajectory.txt",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
-    cluster_scripts/test_best_config.sh
+# --------------------------------------------------------------------------------------------------
+# QUICKTUNE EXPERIMENTS
+# --------------------------------------------------------------------------------------------------
 
-# ANALYSIS -----------------------------------------------------------------------------------------
+# Run an HPO experiment with QuickTune for 2d datasets on a portfolio of NePS runs
+run-2d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+  python -m src.run_quicktune \
+    data.dataset={{DATASET}} \
+    experiment_name={{EXPERIMENT_NAME}} \
+    seed={{SEED}} \
+    portfolio_dir={{PORTFOLIO_DIR}} \
+    data.path=datasets \
+    run_mode=QuickTune \
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
+    developer_mode=true
+  
+# Run an HPO experiment with QuickTune for 3d datasets on a portfolio of NePS runs
+run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+  python -m src.run_quicktune \
+    data.dataset={{DATASET}} \
+    experiment_name={{EXPERIMENT_NAME}} \
+    seed={{SEED}} \
+    portfolio_dir={{PORTFOLIO_DIR}} \
+    data.path=datasets \
+    data.dimensionality=3d \
+    run_mode=QuickTune \
+    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
+    developer_mode=true
+
+# --------------------------------------------------------------------------------------------------
+# ANALYSIS  # TODO @Diane: test if this still works or delete this!
+# --------------------------------------------------------------------------------------------------
 
 # Analyze and compare generalization performance between two NePS runs
 analyze-generalization-local DATASET EXP1 SEED1 EXP2 SEED2:
@@ -291,78 +250,3 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/analyze_fidelity_correlation.sh
-
-# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
-# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio
-create-multi-dataset-portfolio DATASET_SPEC:
-  python -m src.analysis.create_portfolio \
-    +dataset_spec="'{{DATASET_SPEC}}'" \
-    portfolio_dir=experiments/Portfolio \
-    merge_runs=true \
-    +multi_dataset=true \
-    run_mode=Portfolio \
-    hydra.run.dir=experiments/Portfolio/logs
-
-# Run QuickTune for 2d datasets on a portfolio of NePS runs
-run-2d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
-  python -m src.run_quicktune \
-    data.dataset={{DATASET}} \
-    experiment_name={{EXPERIMENT_NAME}} \
-    seed={{SEED}} \
-    portfolio_dir={{PORTFOLIO_DIR}} \
-    data.path=datasets \
-    run_mode=QuickTune \
-    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
-    developer_mode=true
-  
-# Run QuickTune for 3d datasets on a portfolio of NePS runs
-run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
-  python -m src.run_quicktune \
-    data.dataset={{DATASET}} \
-    experiment_name={{EXPERIMENT_NAME}} \
-    seed={{SEED}} \
-    portfolio_dir={{PORTFOLIO_DIR}} \
-    data.path=datasets \
-    data.dimensionality=3d \
-    run_mode=QuickTune \
-    qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
-    developer_mode=true
-
-# Evaluate NePS optimization results for a 2D dataset
-eval-2d-neps-local DATASET EXPERIMENT_NAME SEED:
-  python -m src.evaluate_neps \
-    experiment_name={{EXPERIMENT_NAME}} \
-    data.dataset={{DATASET}} \
-    seed={{SEED}} \
-    data.path=datasets
-
-# Evaluate NePS optimization results for a 3D dataset
-eval-3d-neps-local DATASET EXPERIMENT_NAME SEED:
-  python -m src.evaluate_neps \
-    experiment_name={{EXPERIMENT_NAME}} \
-    data.dataset={{DATASET}} \
-    seed={{SEED}} \
-    data.path=datasets \
-    model.type=densenetv2 \
-    data.dimensionality=3d \
-    developer_mode=true
-
-# Submit a NePS evaluation to the cluster for a 2D dataset
-eval-2d-neps-cluster DATASET EXPERIMENT_NAME SEED:
-  #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
-  sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
-    cluster_scripts/evaluate_neps_2d.sh
-
-# Submit a NePS evaluation to the cluster for a 3D dataset
-eval-3d-neps-cluster DATASET EXPERIMENT_NAME SEED:
-  #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/
-  sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}},EXPERIMENT_DIR="/work/dlclarge1/wagnerd-medquicktune/experiments/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_{{SEED}}",HYDRA_CONFIG="configs/experimental_setting.yaml",DATA_DIR="/work/dlclarge1/wagnerd-medquicktune/datasets" \
-    cluster_scripts/evaluate_neps_3d.sh
