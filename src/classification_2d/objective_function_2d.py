@@ -138,7 +138,7 @@ def run_2d_pipeline(
 
         # Get data loaders for this fold
         train_loader, val_loader = get_brain_tumor_kfold_loaders(
-            data=dataset_dict["train_val_data"],
+            data=dataset_dict["train_val_images"],
             labels=dataset_dict["train_val_labels"],
             cv_inner_folds=cv_inner_folds,
             batch_size=hyperparameters.get("batch_size", 32),

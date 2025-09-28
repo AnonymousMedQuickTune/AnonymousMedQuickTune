@@ -8,7 +8,7 @@ from pathlib import Path
 from src.classification_2d.models_2d import get_2d_model
 from src.classification_2d.preprocess_data_2d import BrainTumorDataset, get_max_batch_size, load_brain_tumor_dataset
 from src.classification_3d.models_3d import get_3d_model
-from src.classification_3d.preprocess_data_3d import load_3d_dataset, calculate_voxel_size_from_images
+from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 from src.classification_3d.preprocess_data_3d import EvaluationTransform
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
@@ -436,29 +436,16 @@ def evaluate_config_on_test_set(
         
     elif experimental_setting.data.dimensionality.lower() == "3d":
         # Determine voxel calculation method
-        if "baseline" in str(experimental_setting.pipeline_space):
-            voxel_calc = "median"
-        else:
-            voxel_calc = hyperparameters.get("voxel_calculation", "median")
-        
-        # Load test data
-        test_dataset_dict = load_3d_dataset(
-            experimental_setting.experiment_base_dir,
-            experimental_setting.data.dataset,
-            data_path=experimental_setting.data.path, 
-            seed=experimental_setting.seed,
-            use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
-            voxel_calculation=voxel_calc,
-            cv_outer_fold=cv_outer_fold,
-            mode="test"
-        )
+        voxel_calc = hyperparameters.get("voxel_calculation", "median")
+        dataset_dict_key = f"dataset_dict_{voxel_calc}"
+        dataset_dict = dataset_dict[dataset_dict_key]
         
         # Create test data in the format expected by 3D dataloaders
         test_data = [{"index": idx, "image": img, "label": label} 
-                           for idx, (img, label) in enumerate(zip(test_dataset_dict["test_images"], test_dataset_dict["test_labels"]))]
+                           for idx, (img, label) in enumerate(zip(dataset_dict["test_images"], dataset_dict["test_labels"]))]
         
         # Get voxel size for the dataset
-        voxel_size = test_dataset_dict["voxel_size"]
+        voxel_size = dataset_dict["voxel_size"]
 
         # Storage for cross-fold evaluation
         # - We collect per-fold class probabilities for the entire test set
@@ -466,8 +453,6 @@ def evaluate_config_on_test_set(
         # - We also keep per-fold metric summaries for optional reporting
         folds_probabilities = []
         ground_truth_targets = None  # Ground truth test labels are identical across folds, so we only need to store them once
-        all_fold_metrics = []
-        per_fold_summaries = []
 
         # Evaluate each fold's model on the complete test set
         for fold in range(experimental_setting.cv_inner_folds):

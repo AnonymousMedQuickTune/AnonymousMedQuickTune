@@ -4,7 +4,7 @@ import datetime
 from tqdm import tqdm
 
 
-def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, train_val_data, test_data, train_val_labels, test_labels, voxel_calculation, seed, suffix=""):
+def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, train_val_images, test_images, train_val_labels, test_labels, voxel_calculation, seed, suffix=""):
     """
     Save cross-validation split information to a text file for reproducibility and debugging.
     
@@ -13,8 +13,8 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, tr
         split_file (str): Path to cross-validation split file
         dataset_name (str): Name of the dataset
         cv_outer_fold (int): Cross-validation fold number
-        train_val_data (list): Training and validation data paths
-        test_data (list): Test data paths
+        train_val_images (list): Training and validation images paths
+        test_images (list): Test images paths
         train_val_labels (list): Training and validation labels
         test_labels (list): Test labels
         voxel_calculation (str): Voxel calculation method used
@@ -40,9 +40,9 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, tr
         # Split statistics
         f.write("SPLIT STATISTICS:\n")
         f.write("-" * 40 + "\n")
-        f.write(f"Total Samples: {len(train_val_data) + len(test_data)}\n")
-        f.write(f"Train+Val Samples: {len(train_val_data)} ({len(train_val_data)/(len(train_val_data) + len(test_data))*100:.1f}%)\n")
-        f.write(f"Test Samples: {len(test_data)} ({len(test_data)/(len(train_val_data) + len(test_data))*100:.1f}%)\n\n")
+        f.write(f"Total Samples: {len(train_val_images) + len(test_images)}\n")
+        f.write(f"Train+Val Samples: {len(train_val_images)} ({len(train_val_images)/(len(train_val_images) + len(test_images))*100:.1f}%)\n")
+        f.write(f"Test Samples: {len(test_images)} ({len(test_images)/(len(train_val_images) + len(test_images))*100:.1f}%)\n\n")
         
         # Class distribution
         f.write("CLASS DISTRIBUTION:\n")
@@ -62,7 +62,7 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, tr
         # Train+Val samples
         f.write("TRAIN+VAL SAMPLES:\n")
         f.write("-" * 40 + "\n")
-        for i, (data_path, label) in enumerate(zip(train_val_data, train_val_labels)):
+        for i, (data_path, label) in enumerate(zip(train_val_images, train_val_labels)):
             # Extract sample name from path (e.g., "Lipo-001" from "datasets/lipo_cleaned/preprocessed_median/Lipo-001/image.nii.gz")
             sample_name = os.path.basename(os.path.dirname(data_path))
             f.write(f"{i+1:3d}. {sample_name} (Class {label})\n")
@@ -71,7 +71,7 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, tr
         # Test samples
         f.write("TEST SAMPLES:\n")
         f.write("-" * 40 + "\n")
-        for i, (data_path, label) in enumerate(zip(test_data, test_labels)):
+        for i, (data_path, label) in enumerate(zip(test_images, test_labels)):
             # Extract sample name from path
             sample_name = os.path.basename(os.path.dirname(data_path))
             f.write(f"{i+1:3d}. {sample_name} (Class {label})\n")
@@ -81,18 +81,18 @@ def save_cv_split_info(cv_split_dir, split_file, dataset_name, cv_outer_fold, tr
         f.write("FULL PATHS (for debugging):\n")
         f.write("-" * 40 + "\n")
         f.write("Train+Val Paths:\n")
-        for i, data_path in enumerate(train_val_data):
+        for i, data_path in enumerate(train_val_images):
             f.write(f"{i+1:3d}. {data_path}\n")
         
         f.write("\nTest Paths:\n")
-        for i, data_path in enumerate(test_data):
+        for i, data_path in enumerate(test_images):
             f.write(f"{i+1:3d}. {data_path}\n")
         
         f.write("\n" + "=" * 80 + "\n")
         f.write("END OF CV SPLIT INFORMATION\n")
         f.write("=" * 80 + "\n")
     
-    print(f"CV split information saved to: {split_file}\n")
+    print(f"CV split information saved to: {split_file}")
 
 
 def analyze_dataset_statistics(cleaned_path, labels_df):

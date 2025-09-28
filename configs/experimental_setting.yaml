@@ -14,8 +14,9 @@ quicktune_directory: ${experiment_base_dir}/QuickTune_output
 experiment_name: test
 run_mode: NePS  # Options: 'NePS', 'QuickTune', 'Baseline', 'Portfolio'
 developer_mode: false
-cv_outer_folds: 5       # Number of outer folds for cross-validation: train_val/test splits
-cv_inner_folds: 5       # Number of inner folds for cross-validation: train/val splits
+cv_outer_folds_repeats: 5   # Number of repetitions for repeated stratified K-fold for outer folds for cross-validation: train_val/test splits
+cv_outer_folds_splits: 3    # Number of splits per repetition forouter folds for cross-validation: train_val/test splits
+cv_inner_folds: 5           # Number of inner folds for cross-validation: train/val splits
 
 #------------------------------------------------------------------------------
 # Training Configuration

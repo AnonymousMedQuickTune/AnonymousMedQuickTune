@@ -19,7 +19,7 @@ from qtt import QuickOptimizer, QuickTuner, QuickImageCLSTuner, get_pretrained_o
 from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
-from src.classification_3d.preprocess_data_3d import load_3d_dataset
+from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_cv_splits
 from src.utils.common_utils import set_seed
 from src.utils.quicktune_utils import (
     CustomQuickImageCLSTuner,
@@ -130,10 +130,10 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
                 # Load all voxel calculation methods like in run_neps.py
-                print(f"--------")
+                print(f"\n--------")
                 print(f"- MEAN -")
                 print(f"--------")
-                dataset_dict_mean = load_3d_dataset(
+                dataset_dict_mean = load_3d_dataset_with_outer_cv_splits(
                     experimental_setting.experiment_base_dir,
                     experimental_setting.data.dataset,
                     data_path=experimental_setting.data.path,
@@ -141,12 +141,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="mean",
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
-                    mode="train"
+                    mode="train",
+                    cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                 )
-                print(f"----------")
+                print(f"\n----------")
                 print(f"- MEDIAN -")
                 print(f"----------")
-                dataset_dict_median = load_3d_dataset(
+                dataset_dict_median = load_3d_dataset_with_outer_cv_splits(
                     experimental_setting.experiment_base_dir,
                     experimental_setting.data.dataset,
                     data_path=experimental_setting.data.path,
@@ -154,12 +156,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="median",
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
-                    mode="train"
+                    mode="train",
+                    cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                 )
-                print(f"-------------")
+                print(f"\n-------------")
                 print(f"- ISOTROPIC -")
                 print(f"-------------")
-                dataset_dict_isotropic = load_3d_dataset(
+                dataset_dict_isotropic = load_3d_dataset_with_outer_cv_splits(
                     experimental_setting.experiment_base_dir,
                     experimental_setting.data.dataset,
                     data_path=experimental_setting.data.path,
@@ -167,12 +171,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="isotropic",
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
-                    mode="train"
+                    mode="train",
+                    cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                 )
-                print(f"------------------------")
+                print(f"\n------------------------")
                 print(f"- VOLUMETRIC ISOTROPIC -")
                 print(f"------------------------")
-                dataset_dict_volumetric_isotropic = load_3d_dataset(
+                dataset_dict_volumetric_isotropic = load_3d_dataset_with_outer_cv_splits(
                     experimental_setting.experiment_base_dir,
                     experimental_setting.data.dataset,
                     data_path=experimental_setting.data.path,
@@ -180,7 +186,9 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation="volumetric_isotropic",
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
-                    mode="train"
+                    mode="train",
+                    cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                 )
                 num_classes = dataset_dict_mean["num_classes"]
                 dataset_dict = {
@@ -191,7 +199,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                 }
             else:
                 # Load single voxel calculation method
-                dataset_dict = load_3d_dataset(
+                dataset_dict = load_3d_dataset_with_outer_cv_splits(
                     experimental_setting.experiment_base_dir,
                     experimental_setting.data.dataset,
                     data_path=experimental_setting.data.path,
@@ -199,7 +207,9 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                     voxel_calculation=voxel_calculation,
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
-                    mode="train"
+                    mode="train",
+                    cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                 )
                 num_classes = dataset_dict["num_classes"]
         else:
@@ -340,7 +350,9 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.cv_inner_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 3
-        experimental_setting.cv_outer_folds = 2
+        # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
+        experimental_setting.cv_outer_folds_repeats = 2  # 2 repeats
+        experimental_setting.cv_outer_folds_splits = 2   # 3 splits per repeat
 
     # Create directory for configuration files and logs
     exp_base_dir = Path(experimental_setting.experiment_base_dir)
@@ -394,8 +406,13 @@ def main(experimental_setting: DictConfig) -> None:
     print("\nTrial info:\n", trial_info, "\n")
     print("\nMeta features:\n", metafeat, "\n")
 
-    # Cross-validation outer loop for different train+val/test splits (like in run_neps.py)
-    cv_outer_folds = experimental_setting.cv_outer_folds if hasattr(experimental_setting, 'cv_outer_folds') else 1
+    # Calculate total outer CV folds for N-repeated 3-fold stratified cross-validation
+    cv_outer_folds = experimental_setting.cv_outer_folds_repeats * experimental_setting.cv_outer_folds_splits
+    
+    print(f"\n=== Using N-repeated 3-fold stratified cross-validation ===")
+    print(f"N repeats: {experimental_setting.cv_outer_folds_repeats}")
+    print(f"N splits per repeat: {experimental_setting.cv_outer_folds_splits}")
+    print(f"Total CV folds: {cv_outer_folds}")
     
     # Initialize experiment status logger for QuickTune
     status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="quicktune")

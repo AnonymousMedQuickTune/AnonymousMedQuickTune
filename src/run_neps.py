@@ -16,7 +16,7 @@ warnings.filterwarnings("ignore", message=".*Directory not empty.*")
 from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.objective_function_3d import run_3d_pipeline
-from src.classification_3d.preprocess_data_3d import load_3d_dataset
+from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_cv_splits
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
@@ -158,7 +158,9 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.cv_inner_folds = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 3
-        experimental_setting.cv_outer_folds = 2
+        # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
+        experimental_setting.cv_outer_folds_repeats = 2  # 2 repeats
+        experimental_setting.cv_outer_folds_splits = 2   # 2 splits per repeat
     
     if experimental_setting.data.no_validation and not "baseline" in str(experimental_setting.pipeline_space):
         # TODO @Diane: Implement script that takes the best config of a NePS run and retrains it with no validation set
@@ -211,8 +213,13 @@ def main(experimental_setting: DictConfig) -> None:
     dataset_dict = None
     num_classes = None
 
-    # Cross-validation outer loop for different train+val/test splits
-    cv_outer_folds = experimental_setting.cv_outer_folds
+    # Calculate total outer CV folds for N-repeated 3-fold stratified cross-validation
+    cv_outer_folds = experimental_setting.cv_outer_folds_repeats * experimental_setting.cv_outer_folds_splits
+    
+    print(f"\n=== Using N-repeated 3-fold stratified cross-validation ===")
+    print(f"N repeats: {experimental_setting.cv_outer_folds_repeats}")
+    print(f"N splits per repeat: {experimental_setting.cv_outer_folds_splits}")
+    print(f"Total CV folds: {cv_outer_folds}")
     
     # Initialize experiment status logger for webapp dashboard
     status_logger = ExperimentStatusLogger(experimental_setting.experiment_base_dir, experiment_type="neps")
@@ -273,16 +280,16 @@ def main(experimental_setting: DictConfig) -> None:
                             dataset_dict = cached_data["dataset_dict"]
                             num_classes = cached_data["num_classes"]
                     else:
-                        print(f"> No cache found for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds}. Loading 3D data directly...\n")
+                        print(f"> No cache found for outer cross-validation fold {cv_outer_fold + 1}/{cv_outer_folds}. Loading 3D data directly...")
                         # Create cache directory if it doesn't exist
                         cache_file.parent.mkdir(parents=True, exist_ok=True)
                         
                         # Load data and cache it
                         if experimental_setting.data.voxel_calculation == "all":
-                            print(f"--------")
+                            print(f"\n--------")
                             print(f"- MEAN -")
                             print(f"--------")
-                            dataset_dict_mean = load_3d_dataset(
+                            dataset_dict_mean = load_3d_dataset_with_outer_cv_splits(
                                 experimental_setting.experiment_base_dir,
                                 experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
@@ -290,12 +297,14 @@ def main(experimental_setting: DictConfig) -> None:
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="mean",
                                 cv_outer_fold=cv_outer_fold,
-                                mode="train"
+                                mode="train",
+                                cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                             )
-                            print(f"----------")
+                            print(f"\n----------")
                             print(f"- MEDIAN -")
                             print(f"----------")
-                            dataset_dict_median = load_3d_dataset(
+                            dataset_dict_median = load_3d_dataset_with_outer_cv_splits(
                                 experimental_setting.experiment_base_dir,
                                 experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
@@ -303,12 +312,14 @@ def main(experimental_setting: DictConfig) -> None:
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="median",
                                 cv_outer_fold=cv_outer_fold,
-                                mode="train"
+                                mode="train",
+                                cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                             )
-                            print(f"-------------")
+                            print(f"\n-------------")
                             print(f"- ISOTROPIC -")
                             print(f"-------------")
-                            dataset_dict_isotropic = load_3d_dataset(
+                            dataset_dict_isotropic = load_3d_dataset_with_outer_cv_splits(
                                 experimental_setting.experiment_base_dir,
                                 experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
@@ -316,12 +327,14 @@ def main(experimental_setting: DictConfig) -> None:
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="isotropic",
                                 cv_outer_fold=cv_outer_fold,
-                                mode="train"
+                                mode="train",
+                                cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                             )
-                            print(f"------------------------")
+                            print(f"\n------------------------")
                             print(f"- VOLUMETRIC ISOTROPIC -")
                             print(f"------------------------")
-                            dataset_dict_volumetric_isotropic = load_3d_dataset(
+                            dataset_dict_volumetric_isotropic = load_3d_dataset_with_outer_cv_splits(
                                 experimental_setting.experiment_base_dir,
                                 experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
@@ -329,7 +342,9 @@ def main(experimental_setting: DictConfig) -> None:
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation="volumetric_isotropic",
                                 cv_outer_fold=cv_outer_fold,
-                                mode="train"
+                                mode="train",
+                                cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                             )
                             num_classes = dataset_dict_mean["num_classes"]
                             dataset_dict = {
@@ -339,7 +354,7 @@ def main(experimental_setting: DictConfig) -> None:
                                 "dataset_dict_volumetric_isotropic": dataset_dict_volumetric_isotropic,
                             }
                         else:
-                            dataset_dict = load_3d_dataset(
+                            dataset_dict = load_3d_dataset_with_outer_cv_splits(
                                 experimental_setting.experiment_base_dir,
                                 experimental_setting.data.dataset,
                                 data_path=experimental_setting.data.path, 
@@ -347,7 +362,9 @@ def main(experimental_setting: DictConfig) -> None:
                                 use_smart_preprocessing=experimental_setting.data.use_smart_preprocessing,
                                 voxel_calculation=experimental_setting.data.voxel_calculation,
                                 cv_outer_fold=cv_outer_fold,
-                                mode="train"
+                                mode="train",
+                                cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
                             )
                             num_classes = dataset_dict["num_classes"]
                         
@@ -456,6 +473,8 @@ def save_cv_summary(experimental_setting, cv_outer_folds):
         f.write(f"Dimensionality: {experimental_setting.data.dimensionality}\n")
         f.write(f"Voxel Calculation: {experimental_setting.data.voxel_calculation}\n")
         f.write(f"Number of Outer Cross-Validation Folds: {cv_outer_folds}\n")
+        f.write(f"N Repeats: {experimental_setting.cv_outer_folds_repeats}\n")
+        f.write(f"N Splits per Repeat: {experimental_setting.cv_outer_folds_splits}\n")
         f.write(f"Seed: {experimental_setting.seed}\n")
         f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
         f.write(f"Optimizer: {experimental_setting.searcher}\n")

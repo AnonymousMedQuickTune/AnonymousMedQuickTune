@@ -156,8 +156,9 @@ def run_3d_pipeline(
 
         # Get data loaders for this fold
         train_loader, val_loader = get_kfold_dataloaders(
+            seed=experimental_setting.seed,
             dataset_name=experimental_setting.data.dataset,
-            data=dataset_dict["train_val_data"],
+            data=dataset_dict["train_val_images"],
             labels=dataset_dict["train_val_labels"],
             cv_inner_folds=cv_inner_folds,
             batch_size=hyperparameters.get("batch_size", 1),

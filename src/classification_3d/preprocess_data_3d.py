@@ -3,10 +3,11 @@ import sys
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 import nibabel as nib
 import shutil
 import re
+import pickle
 
 from monai.transforms import (
     Compose,
@@ -207,9 +208,10 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train"):
+def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3):
     """
-    Load and preprocess a medical image dataset with cross-validation support.
+    Load and preprocess a medical image dataset with N-repeated K-fold stratified cross-validation.
+    Automatically checks for existing CV splits and creates them if they don't exist.
 
     Args:
         experiment_base_dir (str): Path to the experiment base directory
@@ -220,6 +222,8 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         voxel_calculation (str): Method to calculate voxel size for preprocessing
         cv_outer_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
         mode (str): Mode of the experiment ('train' or 'test')
+        cv_outer_folds_repeats (int): Number of repeats for repeated stratified K-fold
+        cv_outer_folds_splits (int): Number of splits per repeat
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
@@ -272,17 +276,64 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     unique_labels, counts = np.unique(labels, return_counts=True)
     print(f"\nClass distribution after filtering: {dict(zip(unique_labels, counts))}")
 
-    # Cross-validation for train+val/test splits
-    # Use different seeds for different CV folds to get different splits
-    cv_seed = seed + cv_outer_fold
-    
-    # Split into train+val and test (80-20) with CV fold-specific seed
-    test_size = 0.2
-    train_val_data, test_data, train_val_labels, test_labels = train_test_split(
-        images, labels, test_size=test_size, random_state=cv_seed, stratify=labels
-    )
+    # STEP 1: Check if CV splits already exist
+    cv_splits_dir = os.path.join(experiment_base_dir, "cv_splits")
+    splits_file = os.path.join(cv_splits_dir, f"cv_splits_base_seed_{seed}_repeats_{cv_outer_folds_repeats}_splits_{cv_outer_folds_splits}.pkl")
+    cv_splits = None
+    print(f"\nCV splits:\n----------")
 
-    print(f"\n> CV Fold {cv_outer_fold}: Dataset split (train+val/test): {len(train_val_data)}/{len(test_data)} in a {int(100-(test_size*100))}%/{int(test_size*100)}% split\n")
+    if os.path.exists(splits_file):
+        print(f"> Loading existing CV splits from: {splits_file}")
+        with open(splits_file, "rb") as f:
+            splits_data = pickle.load(f)
+        cv_splits = splits_data["cv_splits"]
+    else:
+        print(f"> No existing CV splits found. Generating new ones...")
+        
+        # STEP 2: Generate CV splits using RepeatedStratifiedKFold
+        rskf = RepeatedStratifiedKFold(
+            n_splits=cv_outer_folds_splits, 
+            n_repeats=cv_outer_folds_repeats, 
+            random_state=seed  # Base seed - RepeatedStratifiedKFold generates different seeds internally
+        )
+        
+        # Generate all splits
+        cv_splits = list(rskf.split(images, labels))
+        
+        # Save CV splits to file
+        os.makedirs(cv_splits_dir, exist_ok=True)
+        splits_data = {
+            "cv_splits": cv_splits,
+            "n_repeats": cv_outer_folds_repeats,
+            "n_splits": cv_outer_folds_splits,
+            "base_seed": seed,
+            "total_splits": len(cv_splits),
+            "dataset_info": {
+                "total_samples": len(images),
+                "n_classes": len(np.unique(labels)),
+                "class_distribution": {str(i): int(np.sum(np.array(labels) == i)) for i in np.unique(labels)}
+            }
+        }
+        
+        with open(splits_file, "wb") as f:
+            pickle.dump(splits_data, f)
+        
+        print(f"> Generated {len(cv_splits)} CV splits using RepeatedStratifiedKFold (N={cv_outer_folds_repeats} * {cv_outer_folds_splits} folds)")
+        print(f"> CV splits saved to: {splits_file}")
+    
+    # STEP 3: Use the CV splits for current fold
+    if cv_outer_fold < len(cv_splits):
+        train_indices, test_indices = cv_splits[cv_outer_fold]
+        
+        # Split data using the pre-generated indices
+        train_val_images = [images[i] for i in train_indices]
+        test_images = [images[i] for i in test_indices]
+        train_val_labels = [labels[i] for i in train_indices]
+        test_labels = [labels[i] for i in test_indices]
+        
+        print(f"\n> CV Fold {cv_outer_fold}: Dataset split (train+val/test): {len(train_val_images)}/{len(test_images)} using pre-generated CV splits")
+    else:
+        raise ValueError(f"CV fold {cv_outer_fold} >= number of available splits {len(cv_splits)}")
 
     # Save CV split information to cv_summary folder
     cv_split_dir = os.path.join(experiment_base_dir, "cv_summary", "cv_splits")
@@ -294,8 +345,8 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         split_file,
         dataset_name, 
         cv_outer_fold, 
-        train_val_data, 
-        test_data, 
+        train_val_images, 
+        test_images, 
         train_val_labels, 
         test_labels, 
         voxel_calculation,
@@ -312,8 +363,8 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
         split_file,
         dataset_name, 
         cv_outer_fold, 
-        train_val_data, 
-        test_data, 
+        train_val_images, 
+        test_images, 
         train_val_labels, 
         test_labels, 
         voxel_calculation,
@@ -321,9 +372,9 @@ def load_3d_dataset(experiment_base_dir, dataset_name, data_path="datasets", see
     )
 
     return {
-        "train_val_data": train_val_data,  # TODO @Diane: rename to train_val_images
+        "train_val_images": train_val_images,
         "train_val_labels": train_val_labels,
-        "test_images": test_data,  # TODO @Diane: rename to test_images
+        "test_images": test_images,
         "test_labels": test_labels,
         "num_classes": len(unique_labels),
         "voxel_size": voxel_size,
@@ -469,6 +520,7 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
     return Compose(transforms)
 
 def get_kfold_dataloaders(
+    seed,
     dataset_name,
     data,
     labels,
@@ -486,6 +538,7 @@ def get_kfold_dataloaders(
     Create data loaders for k-fold cross validation of brain tumor dataset.
 
     Args:
+        seed (int): Random seed for reproducibility
         dataset_name (str): Name of the dataset (e.g., 'lipo', 'desmoid', 'gist')
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
@@ -511,7 +564,7 @@ def get_kfold_dataloaders(
         valid_data = []  # Empty validation set
     else:
         # Create k-fold splitter
-        kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=42)
+        kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=seed)
 
         # Get indices for current fold
         indices = np.arange(len(data))
