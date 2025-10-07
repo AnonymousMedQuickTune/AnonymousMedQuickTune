@@ -2,7 +2,7 @@
   "todo-tree.general.tags": [
     "TODO @Diane:",
     "TODO @Natalia:",
-    "TODO @Both:"
+    "TODO @Both:",
     "# NOTE:",
     "# NOTE @Diane:",
     "# NOTE @Natalia:",
@@ -39,8 +39,53 @@
       "foreground": "#bfb3b3",
       "background": "#66666620",
       "iconColour": "#bfb3b3"
-    },
+    }
   },
   "todo-tree.general.enabled": true,
-  "todo-tree.general.showInExplorer": true
+  "todo-tree.general.showInExplorer": true,
+
+  // ===== LaTeX Workshop =====
+  "latex-workshop.latex.tools": [
+    {
+      "name": "latexmk",
+      "command": "latexmk",
+      "args": [
+        "-pdf",
+        "-interaction=nonstopmode",
+        "-synctex=1",
+        "%DOC%"
+      ]
+    }
+  ],
+  "latex-workshop.latex.recipes": [
+    {
+      "name": "latexmk 🔁",
+      "tools": ["latexmk"]
+    }
+  ],
+  // Build-Ausgabe in ./build neben der .tex-Datei
+  "latex-workshop.latex.outDir": "%DIR%/build",
+  // PDF-Viewer im Editor-Tab
+  "latex-workshop.view.pdf.viewer": "tab",
+  // Automatisch beim Speichern bauen
+  "latex-workshop.latex.autoBuild.run": "onSave",
+  // Synctex: Klick im PDF springt zur Quelle (und umgekehrt)
+  "latex-workshop.synctex.afterBuild.enabled": true,
+
+  // Dateizuordnung (falls nötig)
+  "files.associations": {
+    "*.tex": "latex",
+    "*.tikz": "latex"
+  },
+
+  // Build-Folder im Explorer/Suche ausblenden
+  "files.exclude": {
+    "**/build/**": true
+  },
+  "search.exclude": {
+    "**/build/**": true
+  },
+  "files.watcherExclude": {
+    "**/build/**": true
+  }
 }
