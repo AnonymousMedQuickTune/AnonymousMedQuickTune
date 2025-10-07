@@ -65,7 +65,6 @@ data:
   cache_data: True        # Whether to preload the data into memory
   use_smart_preprocessing: True  # Whether to apply Natalia's smart preprocessing (3D only)
   voxel_calculation: all  # Voxel calculation method: 'mean', 'median', 'isotropic', 'volumetric_isotropic', or 'all'
-  no_validation: False    # Whether to use no validation set
 
 #------------------------------------------------------------------------------
 # Experiment Monitoring & Checkpointing

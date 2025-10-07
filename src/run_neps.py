@@ -161,11 +161,6 @@ def main(experimental_setting: DictConfig) -> None:
         # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
         experimental_setting.cv_outer_folds_repeats = 2  # 2 repeats
         experimental_setting.cv_outer_folds_splits = 2   # 2 splits per repeat
-    
-    if experimental_setting.data.no_validation and not "baseline" in str(experimental_setting.pipeline_space):
-        # TODO @Diane: Implement script that takes the best config of a NePS run and retrains it with no validation set
-        # NOTE: Update this if after the script is implemented
-        raise ValueError("'No validation set' mode is only supported for baseline pipeline space.")
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions

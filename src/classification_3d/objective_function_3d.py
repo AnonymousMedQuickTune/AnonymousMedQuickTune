@@ -168,7 +168,6 @@ def run_3d_pipeline(
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
-            no_validation=experimental_setting.data.no_validation,
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
