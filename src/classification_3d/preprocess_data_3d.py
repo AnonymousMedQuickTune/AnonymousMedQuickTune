@@ -394,7 +394,7 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
         monai.transforms.Compose: Compose object containing the transformations
     """
     if developer_mode:
-        spatial_size = (100, 100, 50)  # spatial_size in (H, W, D) format
+        spatial_size = (50, 50, 25)  # spatial_size in (H, W, D) format
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
@@ -467,7 +467,7 @@ def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
         monai.transforms.Compose: Compose object containing the transformations
     """
     if developer_mode:
-        spatial_size = (100, 100, 50)  # spatial_size in (H, W, D) format
+        spatial_size = (50, 50, 25)  # spatial_size in (H, W, D) format
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
