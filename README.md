@@ -71,6 +71,10 @@ After installing Poetry, install the project dependencies:
 ```bash
 poetry install
 ```
+Install QuickTune manually:
+```bash
+poetry run pip install quicktunetool==0.0.4 --force-reinstall --no-deps
+```
 
 ### **3. Install `just`**
 `just` is used to simplify task automation in this project. To install `just`, run:

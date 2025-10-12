@@ -410,7 +410,6 @@ def main(experimental_setting: DictConfig) -> None:
             max_evaluations_total=(
                 1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
             ),
-            overwrite_working_directory=False,
             ignore_errors=True,
             # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
             # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
