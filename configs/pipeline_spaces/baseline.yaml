@@ -1,11 +1,4 @@
-weight_decay:
+imaginary_hyparam:
   type: float
-  log: true
-  lower: 1e-6
-  upper: 1e-2
-  
-number_of_epochs:  # for multifidelity
-  type: int
-  lower: 99
-  upper: 100
-  is_fidelity: true  # explicitly marked as fidelity parameter
+  lower: 1.0
+  upper: 2.0

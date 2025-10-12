@@ -293,6 +293,16 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     # ------------------------------------------------------------------------------------------------
     # Initialize the model based on framework
     if experimental_setting.data.dimensionality.lower() == "3d":
+        # Use smaller model for baseline run in developer mode
+        if experimental_setting.developer_mode and experimental_setting.run_mode == "Baseline":
+            hyperparameters["conv0_stride"] = 1
+            hyperparameters["init_features"] = 8
+            hyperparameters["bn_size"] = 1
+            hyperparameters["growth_rate"] = 6
+            hyperparameters["num_layers_block1"] = 2
+            hyperparameters["num_layers_block2"] = 4
+            hyperparameters["num_layers_block3"] = 8
+            hyperparameters["num_layers_block4"] = 4
         if framework == "quicktune" and "model" in hyperparameters:
             # QuickTune: model type is in hyperparameters
             model = get_3d_model(
@@ -437,8 +447,8 @@ def evaluate_config_on_test_set(
     elif experimental_setting.data.dimensionality.lower() == "3d":
         # Determine voxel calculation method
         voxel_calc = hyperparameters.get("voxel_calculation", "median")
-        dataset_dict_key = f"dataset_dict_{voxel_calc}"
-        dataset_dict = dataset_dict[dataset_dict_key]
+        # TODO @Diane: delete: dataset_dict_key = f"dataset_dict_{voxel_calc}"
+        dataset_dict = dataset_dict if experimental_setting.run_mode == "Baseline" else dataset_dict[f"dataset_dict_{voxel_calc}"]
         
         # Create test data in the format expected by 3D dataloaders
         test_data = [{"index": idx, "image": img, "label": label} 

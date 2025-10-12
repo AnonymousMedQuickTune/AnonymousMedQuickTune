@@ -70,6 +70,18 @@ def run_3d_pipeline(
     # TODO @Natalia: Is the search space complete? Yes
     # TODO @Both: Discuss search space in a meeting
     print(f"\nHyperparameters: {hyperparameters}\n")  
+
+    # Use smaller model for baseline run in developer mode
+    if experimental_setting.developer_mode and experimental_setting.run_mode == "Baseline":
+        hyperparameters["conv0_stride"] = 1
+        hyperparameters["init_features"] = 8
+        hyperparameters["bn_size"] = 1
+        hyperparameters["growth_rate"] = 6
+        hyperparameters["num_layers_block1"] = 2
+        hyperparameters["num_layers_block2"] = 4
+        hyperparameters["num_layers_block3"] = 8
+        hyperparameters["num_layers_block4"] = 4
+        print(f"\nHyperparameters (incl. smaller model hyparams): {hyperparameters}\n") 
     
     # Initialize model and move it to the appropriate device
     if "model" in hyperparameters:
@@ -244,7 +256,7 @@ def run_3d_pipeline(
                 epochs = pipeline_config["number_of_epochs"]
         else:
             # For non-multi-fidelity search spaces: Use the number of epochs from the experimental_setting
-            print(f"\nNon-multi-fidelity optimization:\nTrain model over {experimental_setting.training.number_of_epochs} epochs!")
+            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {experimental_setting.training.number_of_epochs} epochs!")
             epochs = experimental_setting.training.number_of_epochs
         
         # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset? 50-100

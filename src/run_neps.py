@@ -156,15 +156,23 @@ def main(experimental_setting: DictConfig) -> None:
     # Set seed for NePS reproducibility
     set_seed(experimental_setting.seed)
 
+    if experimental_setting.run_mode == "Baseline":
+        print(f"\n\nBaseline run!\n\n")
+        experimental_setting.training.number_of_epochs = 50
+        experimental_setting.max_evaluations = 1
+        experimental_setting.pipeline_space = "configs/pipeline_spaces/baseline.yaml"
+        experimental_setting.data.voxel_calculation = "median"
+
     if experimental_setting.developer_mode:
-        print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
-        experimental_setting.max_evaluations = 2
-        experimental_setting.cv_inner_folds = 2
-        experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
+        print(f"\n\nDeveloper mode is enabled!\n\n")
+        if experimental_setting.run_mode != "Baseline":
+            experimental_setting.max_evaluations = 2
+            experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this + check #epochs in QT
         experimental_setting.training.number_of_epochs = 3
-        # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
-        experimental_setting.cv_outer_folds_repeats = 2  # 2 repeats
-        experimental_setting.cv_outer_folds_splits = 2   # 2 splits per repeat
+        experimental_setting.cv_inner_folds = 2
+        # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
+        experimental_setting.cv_outer_folds_repeats = 1
+        experimental_setting.cv_outer_folds_splits = 2   # splits  (minimum!) per repeat
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
@@ -411,9 +419,7 @@ def main(experimental_setting: DictConfig) -> None:
             ),
             optimizer=experimental_setting.searcher,  # HPO algorithm
             root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
-            max_evaluations_total=(
-                1 if "baseline" in str(experimental_setting.pipeline_space) else experimental_setting.max_evaluations
-            ),
+            max_evaluations_total=experimental_setting.max_evaluations,
             ignore_errors=True,
             # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
             # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
