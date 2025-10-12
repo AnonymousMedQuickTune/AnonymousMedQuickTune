@@ -94,6 +94,10 @@ def run_pipeline(
             f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
         )
     
+    # Save pipeline_result to a file
+    with open(os.path.join(pipeline_directory, "pipeline_result.json"), "w", encoding="utf-8") as f:
+        json.dump(pipeline_result, f, indent=4)
+    
     # Evaluate the trained configuration on test set
     print(f"\n{'='*100}")
     print(f"STARTING TEST SET EVALUATION FOR CURRENT CONFIG")
