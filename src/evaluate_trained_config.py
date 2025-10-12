@@ -87,28 +87,28 @@ def calculate_metrics_from_probabilities(probabilities, ground_truth_targets, nu
     # Structure: scalar metrics for summary + detailed per-class breakdown
     metrics = {
         # Basic metrics
-        "accuracy": float(accuracy),
+        "accuracy": float(accuracy * 100),
         
         # AUC metrics (macro and micro)
-        "auc_macro": float(auc_macro),
-        "auc_micro": float(auc_micro),
+        "auc_macro": float(auc_macro * 100),
+        "auc_micro": float(auc_micro * 100),
         
         # Macro-averaged metrics (equal weight to all classes)
-        "precision_macro": float(precision_macro),
-        "recall_macro": float(recall_macro),
-        "f1_macro": float(f1_macro),
+        "precision_macro": float(precision_macro * 100),
+        "recall_macro": float(recall_macro * 100),
+        "f1_macro": float(f1_macro * 100),
         
         # Micro-averaged metrics (weighted by class frequency)
-        "precision_micro": float(precision_micro),
-        "recall_micro": float(recall_micro),
-        "f1_micro": float(f1_micro),
+        "precision_micro": float(precision_micro * 100),
+        "recall_micro": float(recall_micro * 100),
+        "f1_micro": float(f1_micro * 100),
         
         # Detailed breakdowns
         "confusion_matrix": conf_matrix.tolist(),  # Convert numpy array to list for JSON serialization
         "per_class": {
-            "precision": precision_per_class.tolist(),
-            "recall": recall_per_class.tolist(),
-            "f1": f1_per_class.tolist(),
+            "precision": (precision_per_class * 100).tolist(),
+            "recall": (recall_per_class * 100).tolist(),
+            "f1": (f1_per_class * 100).tolist(),
         },
     }
     
@@ -171,18 +171,18 @@ def calculate_ensemble_metrics(folds_probabilities, ground_truth_targets, num_cl
     # PRINT ENSEMBLE RESULTS
     # ------------------------------------------------------------------------------------------------
     print(f"\n=== Final Test Set Results (Ensemble Predictions) ===")
-    print(f"Accuracy: {ensemble_metrics['accuracy']*100:.2f}%")
+    print(f"Accuracy: {ensemble_metrics['accuracy']:.2f}%")
     print(f"\nAUC metrics:")
-    print(f"  Macro-averaged AUC: {ensemble_metrics['auc_macro']*100:.2f}%")
-    print(f"  Micro-averaged AUC: {ensemble_metrics['auc_micro']*100:.2f}%")
+    print(f"  Macro-averaged AUC: {ensemble_metrics['auc_macro']:.2f}%")
+    print(f"  Micro-averaged AUC: {ensemble_metrics['auc_micro']:.2f}%")
     print(f"\nMacro-averaged metrics (equal weight to all classes):")
-    print(f"  Precision: {ensemble_metrics['precision_macro']*100:.2f}%")
-    print(f"  Recall: {ensemble_metrics['recall_macro']*100:.2f}%")
-    print(f"  F1: {ensemble_metrics['f1_macro']*100:.2f}%")
+    print(f"  Precision: {ensemble_metrics['precision_macro']:.2f}%")
+    print(f"  Recall: {ensemble_metrics['recall_macro']:.2f}%")
+    print(f"  F1: {ensemble_metrics['f1_macro']:.2f}%")
     print(f"\nMicro-averaged metrics (weighted by class frequency):")
-    print(f"  Precision: {ensemble_metrics['precision_micro']*100:.2f}%")
-    print(f"  Recall: {ensemble_metrics['recall_micro']*100:.2f}%")
-    print(f"  F1: {ensemble_metrics['f1_micro']*100:.2f}%")
+    print(f"  Precision: {ensemble_metrics['precision_micro']:.2f}%")
+    print(f"  Recall: {ensemble_metrics['recall_micro']:.2f}%")
+    print(f"  F1: {ensemble_metrics['f1_micro']:.2f}%")
     print(f"{'='*80}\n")
     
     return ensemble_metrics
@@ -240,18 +240,18 @@ def calculate_per_fold_metrics(folds_probabilities, ground_truth_targets, num_cl
         
         # Print fold results
         print(f"Fold {fold_idx + 1} Test Results:")
-        print(f"Accuracy: {fold_metrics['accuracy']*100:.2f}%")
+        print(f"Accuracy: {fold_metrics['accuracy']:.2f}%")
         print(f"AUC metrics:")
-        print(f"  Macro-averaged AUC: {fold_metrics['auc_macro']*100:.2f}%")
-        print(f"  Micro-averaged AUC: {fold_metrics['auc_micro']*100:.2f}%")
+        print(f"  Macro-averaged AUC: {fold_metrics['auc_macro']:.2f}%")
+        print(f"  Micro-averaged AUC: {fold_metrics['auc_micro']:.2f}%")
         print(f"Macro-averaged metrics (equal weight to all classes):")
-        print(f"  Precision: {fold_metrics['precision_macro']*100:.2f}%")
-        print(f"  Recall: {fold_metrics['recall_macro']*100:.2f}%")
-        print(f"  F1: {fold_metrics['f1_macro']*100:.2f}%")
+        print(f"  Precision: {fold_metrics['precision_macro']:.2f}%")
+        print(f"  Recall: {fold_metrics['recall_macro']:.2f}%")
+        print(f"  F1: {fold_metrics['f1_macro']:.2f}%")
         print(f"Micro-averaged metrics (weighted by class frequency):")
-        print(f"  Precision: {fold_metrics['precision_micro']*100:.2f}%")
-        print(f"  Recall: {fold_metrics['recall_micro']*100:.2f}%")
-        print(f"  F1: {fold_metrics['f1_micro']*100:.2f}%\n")
+        print(f"  Precision: {fold_metrics['precision_micro']:.2f}%")
+        print(f"  Recall: {fold_metrics['recall_micro']:.2f}%")
+        print(f"  F1: {fold_metrics['f1_micro']:.2f}%\n")
     
     return per_fold_summaries
 

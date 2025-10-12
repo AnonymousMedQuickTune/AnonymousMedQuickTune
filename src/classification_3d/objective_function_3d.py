@@ -455,21 +455,21 @@ def run_3d_pipeline(
             # Log metrics to TensorBoard
             writer.add_scalar(f"Loss/train/cv_inner_fold_{fold}", train_metrics["loss"], training_epochs)
             writer.add_scalar(
-                f"Accuracy/train/cv_inner_fold_{fold}", train_metrics["accuracy"], training_epochs
+                f"Accuracy/train/cv_inner_fold_{fold}", train_metrics["accuracy"] * 100, training_epochs
             )
             writer.add_scalar(
                 f"Precision/train/cv_inner_fold_{fold}",
-                np.mean(train_metrics["precision"]),
+                np.mean(train_metrics["precision"]) * 100,
                 training_epochs,
             )
             writer.add_scalar(
-                f"Recall/train/cv_inner_fold_{fold}", np.mean(train_metrics["recall"]), training_epochs
+                f"Recall/train/cv_inner_fold_{fold}", np.mean(train_metrics["recall"]) * 100, training_epochs
             )
             writer.add_scalar(
-                f"F1/train/cv_inner_fold_{fold}", np.mean(train_metrics["f1"]), training_epochs
+                f"F1/train/cv_inner_fold_{fold}", np.mean(train_metrics["f1"]) * 100, training_epochs
             )
             writer.add_scalar(
-                f"AUC/train/cv_inner_fold_{fold}", np.mean(train_metrics["auc"]), training_epochs
+                f"AUC/train/cv_inner_fold_{fold}", np.mean(train_metrics["auc"]) * 100, training_epochs
             )
 
             # Log learning rate (moved outside the val_metrics check)
@@ -480,21 +480,21 @@ def run_3d_pipeline(
             if val_metrics is not None:
                 writer.add_scalar(f"Loss/val/cv_inner_fold_{fold}", val_metrics["loss"], training_epochs)
                 writer.add_scalar(
-                    f"Accuracy/val/cv_inner_fold_{fold}", val_metrics["accuracy"], training_epochs
+                    f"Accuracy/val/cv_inner_fold_{fold}", val_metrics["accuracy"] * 100, training_epochs
                 )
                 writer.add_scalar(
                     f"Precision/val/cv_inner_fold_{fold}",
-                    np.mean(val_metrics["precision"]),
+                    np.mean(val_metrics["precision"]) * 100,
                     training_epochs,
                 )
                 writer.add_scalar(
-                    f"Recall/val/cv_inner_fold_{fold}", np.mean(val_metrics["recall"]), training_epochs
+                    f"Recall/val/cv_inner_fold_{fold}", np.mean(val_metrics["recall"]) * 100, training_epochs
                 )
                 writer.add_scalar(
-                    f"F1/val/cv_inner_fold_{fold}", np.mean(val_metrics["f1"]), training_epochs
+                    f"F1/val/cv_inner_fold_{fold}", np.mean(val_metrics["f1"]) * 100, training_epochs
                 )
                 writer.add_scalar(
-                    f"AUC/val/cv_inner_fold_{fold}", np.mean(val_metrics["auc"]), training_epochs
+                    f"AUC/val/cv_inner_fold_{fold}", np.mean(val_metrics["auc"]) * 100, training_epochs
                 )
 
                 # Add confusion matrix as image
