@@ -182,6 +182,7 @@ def log_model_info(model_info_file, model, experimental_setting, hyperparameters
 def log_validation_images(writer, model, val_loader, device, fold, epoch):
     """
     Log sample validation images and their predictions to TensorBoard.
+    Simplified version for better debugging and performance.
 
     Args:
         writer: TensorBoard SummaryWriter instance
@@ -193,14 +194,13 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
     """
     model.eval()
     with torch.no_grad():
-        # Get a batch of images
-        batch = next(iter(val_loader))
+        # Get a batch of images - use epoch to get different batches
+        batch_idx = epoch % len(val_loader)
+        batch = list(val_loader)[batch_idx]
         if isinstance(batch, dict):
-            # Batch is a dict for 3D datasets
             images = batch.get("image")
             labels = batch.get("label")
         else:
-            # Batch is a tuple for 2D datasets
             images, labels = batch
         images, labels = images.to(device), labels.to(device)
 
@@ -214,79 +214,138 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
             std = torch.tensor(val_loader.dataset.std).view(3, 1, 1).to(device)
             images = images * std + mean
 
-        # Convert to numpy and add text to images
+        # Process images
         images_with_text = []
-        for i in range(min(16, len(images))):
+        for i in range(min(2, len(images))):
             img = images[i].cpu().numpy()
             
-            # Handle different image dimensions
             if len(img.shape) == 4:  # 3D image: [C, D, H, W]
-                # Take middle slice for visualization  # TODO @Natalia: Does middle slice make sense?
-                middle_slice = img.shape[1] // 2
-                img = img[:, middle_slice, :, :]  # [C, H, W]
-                img = img.transpose(1, 2, 0)  # [H, W, C]
+                depth = img.shape[1]
+                slice_indices = [depth // 4, depth // 2, 3 * depth // 4]
+                slice_indices = [idx for idx in slice_indices if idx < depth]
+                
+                for slice_idx in slice_indices:
+                    img_slice = img[:, slice_idx, :, :]  # [C, H, W]
+                    img_slice = img_slice.transpose(1, 2, 0)  # [H, W, C]
+                    
+                    # Normalize
+                    img_min = np.percentile(img_slice, 5)
+                    img_max = np.percentile(img_slice, 95)
+                    
+                    if img_max > img_min:
+                        img_slice = np.clip((img_slice - img_min) / (img_max - img_min), 0, 1)
+                    else:
+                        img_slice = np.zeros_like(img_slice)
+
+                    # Handle channels
+                    if img_slice.shape[-1] == 1:
+                        img_slice = np.repeat(img_slice, 3, axis=-1)
+                    elif img_slice.shape[-1] != 3:
+                        raise ValueError(f"Unexpected number of channels: {img_slice.shape[-1]}")
+
+                    # Convert to PIL and resize
+                    img_slice = (img_slice * 255).astype(np.uint8)
+                    img_pil = Image.fromarray(img_slice)
+                    
+                    width, height = img_pil.size
+                    if width < 256 or height < 256:
+                        img_pil = img_pil.resize((max(256, width), max(256, height)), Image.LANCZOS)
+                    
+                    final_img = img_pil.copy()
+                    draw = ImageDraw.Draw(final_img)
+
+                    # Load font
+                    font_size = max(18, final_img.width // 16)
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", font_size)
+                    except:
+                        try:
+                            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+                        except:
+                            font = ImageFont.load_default()
+
+                    # Add text
+                    true_label = labels[i].item()
+                    pred_label = predicted[i].item()
+                    
+                    text_lines = [
+                        f"T:{true_label} P:{pred_label}",
+                        f"S:{slice_idx}/{depth} E:{epoch}"
+                    ]
+                    
+                    text_height = len(text_lines) * (font_size + 6) + 16
+                    text_width = max(140, final_img.width // 3)
+                    
+                    draw.rectangle([10, 10, text_width, text_height], fill="white", outline="black", width=3)
+                    
+                    for j, line in enumerate(text_lines):
+                        draw.text((15, 15 + j * (font_size + 6)), line, fill="black", font=font)
+
+                    img_tensor = torch.from_numpy(np.array(final_img).transpose(2, 0, 1)) / 255.0
+                    images_with_text.append(img_tensor)
+                    
             elif len(img.shape) == 3:  # 2D image: [C, H, W]
-                img = img.transpose(1, 2, 0)  # [H, W, C]
+                img_slice = img.transpose(1, 2, 0)  # [H, W, C]
+                
+                # Normalize
+                img_min = np.percentile(img_slice, 5)
+                img_max = np.percentile(img_slice, 95)
+                
+                if img_max > img_min:
+                    img_slice = np.clip((img_slice - img_min) / (img_max - img_min), 0, 1)
+                else:
+                    img_slice = np.zeros_like(img_slice)
+
+                if img_slice.shape[-1] == 1:
+                    img_slice = np.repeat(img_slice, 3, axis=-1)
+
+                # Convert to PIL and resize
+                img_slice = (img_slice * 255).astype(np.uint8)
+                img_pil = Image.fromarray(img_slice)
+                
+                width, height = img_pil.size
+                if width < 256 or height < 256:
+                    img_pil = img_pil.resize((max(256, width), max(256, height)), Image.LANCZOS)
+                
+                final_img = img_pil.copy()
+                draw = ImageDraw.Draw(final_img)
+
+                # Load font
+                font_size = max(18, final_img.width // 16)
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", font_size)
+                except:
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+                    except:
+                        font = ImageFont.load_default()
+
+                # Add text
+                true_label = labels[i].item()
+                pred_label = predicted[i].item()
+                
+                text_lines = [
+                    f"T:{true_label} P:{pred_label}",
+                    f"2D E:{epoch}"
+                ]
+                
+                text_height = len(text_lines) * (font_size + 6) + 16
+                text_width = max(140, final_img.width // 3)
+                
+                draw.rectangle([10, 10, text_width, text_height], fill="white", outline="black", width=3)
+                
+                for j, line in enumerate(text_lines):
+                    draw.text((15, 15 + j * (font_size + 6)), line, fill="black", font=font)
+
+                img_tensor = torch.from_numpy(np.array(final_img).transpose(2, 0, 1)) / 255.0
+                images_with_text.append(img_tensor)
             else:
                 raise ValueError(f"Unexpected image shape: {img.shape}")
 
-            # Normalize to [0,1] range if needed
-            if img.max() > 1.0 or img.min() < 0.0:
-                img = (img - img.min()) / (img.max() - img.min())
-
-            # Handle different number of channels for PIL
-            # print(f"Image shape: {img.shape}")
-            if img.shape[-1] == 1:  # Single channel (grayscale)
-                # Convert to RGB by repeating the channel
-                img = np.repeat(img, 3, axis=-1)
-                # print(f"Single channel image (grayscale) gets converted to RGB. New shape: {img.shape}")
-            elif img.shape[-1] == 3:  # Three channels
-                pass
-                # print(f"Three channel image already is in the right RGB format: {img.shape}")
-            else:
-                raise ValueError(f"Unexpected number of channels: {img.shape[-1]}")
-
-            # Convert to PIL Image for text drawing
-            img = (img * 255).astype(np.uint8)
-            img_pil = Image.fromarray(img)
-            draw = ImageDraw.Draw(img_pil)
-
-            # Load a font (you might need to adjust the font path and size)
-            try:
-                font = ImageFont.truetype(
-                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20
-                )
-            except:
-                font = ImageFont.load_default()
-
-            # Add text
-            true_label = labels[i].item()
-            pred_label = predicted[i].item()
-            text = f"True: {true_label}\nPred: {pred_label}"
-
-            # Add white background behind text for better visibility
-            text_bbox = draw.textbbox((10, 10), text, font=font)
-            draw.rectangle(
-                [
-                    text_bbox[0] - 5,
-                    text_bbox[1] - 5,
-                    text_bbox[2] + 5,
-                    text_bbox[3] + 5,
-                ],
-                fill="white",
-                outline="black",
+        # Create grid
+        if images_with_text:
+            images_with_text = torch.stack(images_with_text)
+            img_grid = torchvision.utils.make_grid(
+                images_with_text, nrow=3, normalize=False, padding=3, pad_value=0.0
             )
-            draw.text((10, 10), text, fill="black", font=font)
-
-            # Convert back to tensor
-            img_tensor = torch.from_numpy(np.array(img_pil).transpose(2, 0, 1)) / 255.0
-            images_with_text.append(img_tensor)
-
-        # Stack images and create grid
-        images_with_text = torch.stack(images_with_text)
-        img_grid = torchvision.utils.make_grid(
-            images_with_text, nrow=4, normalize=False
-        )
-
-        # Add to TensorBoard
-        writer.add_image(f"Images/fold_{fold}", img_grid, epoch)
+            writer.add_image(f"Images/fold_{fold}", img_grid, epoch)
