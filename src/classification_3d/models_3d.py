@@ -31,7 +31,12 @@ def get_3d_model(
 
     # Modern, widely used architectures
     if model_type == "densenetv1":
-        model = monai.networks.nets.DenseNet121(spatial_dims=3, in_channels=1, out_channels=num_classes)
+        model = monai.networks.nets.DenseNet121(
+            spatial_dims=3, 
+            in_channels=1, 
+            out_channels=num_classes,
+            norm="instance"  # Use instance normalization instead of batch norm for batch_size=1
+        )
 
     elif model_type == "densenetv2":
         model = DenseModel(hyperparameters)
