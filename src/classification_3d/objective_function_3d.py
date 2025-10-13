@@ -10,7 +10,7 @@ import yaml
 from torch.utils.tensorboard import SummaryWriter
 import matplotlib.pyplot as plt
 
-from src.classification_3d.models_3d import get_3d_model 
+from src.classification_3d.models_3d import get_3d_model
 from src.utils.common_utils import set_seed
 from src.utils.logging_utils import (initialize_logging_files, log_gradients,
                                      log_initial_state, log_learning_rate,
@@ -26,6 +26,62 @@ from src.classification_3d.preprocess_data_3d import (
 from src.classification_3d.utils.normalization_stats import autonorm
 from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.utils.experiment_status_logger import InnerFoldProgressLogger
+
+# TODO @Diane: Improve this function in a more general way to be used for all datasets
+# TODO @Diane: Put this function to a different place and import it
+def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
+    """
+    Extract image size based on model type and voxel size.
+    
+    Args:
+        model_type (str): Type of model (e.g., "vit", "densenet", etc.)
+        voxel_size (tuple): Voxel size from dataset
+        dataset_name (str): Name of the dataset
+        developer_mode (bool): Whether the developer mode is enabled
+        
+    Returns:
+        tuple: Image size in (H, W, D) format, or None if not needed
+    """
+    if developer_mode:
+        image_size = (64, 64, 32)  # image in (H, W, D) format
+    
+    else:
+        # Only ViT and SwinUNETR need specific image sizes
+        if model_type in ["vit", "swin_unetr"]:
+            print(f"Extracting image size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
+            print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
+            
+            if dataset_name == "lipo":
+                # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
+                # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
+                # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
+                # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
+                # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
+                # Use approximate comparison with tolerance for floating point precision issues
+                if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
+                    image_size = (466, 558, 50)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
+                    image_size = (446, 534, 50)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
+                    image_size = (381, 382, 176)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
+                    image_size = (274, 275, 176)  # spatial_size in (H, W, D) format
+                else:
+                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+            else:
+                raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
+            
+            # Update image size to be divisible by 32
+            h = (image_size[0] // 32) * 32
+            w = (image_size[1] // 32) * 32
+            d = (image_size[2] // 32) * 32
+            image_size = (h, w, d)
+
+        else:
+            image_size = None
+    
+    print(f"Image size: {image_size}")
+    return image_size
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -70,20 +126,8 @@ def run_3d_pipeline(
     # TODO @Natalia: Is the search space complete? Yes
     # TODO @Both: Discuss search space in a meeting
     print(f"\nHyperparameters: {hyperparameters}\n")  
-
-    # Use smaller model for baseline run in developer mode
-    if experimental_setting.developer_mode and experimental_setting.run_mode == "Baseline":
-        hyperparameters["conv0_stride"] = 1
-        hyperparameters["init_features"] = 8
-        hyperparameters["bn_size"] = 1
-        hyperparameters["growth_rate"] = 6
-        hyperparameters["num_layers_block1"] = 2
-        hyperparameters["num_layers_block2"] = 4
-        hyperparameters["num_layers_block3"] = 8
-        hyperparameters["num_layers_block4"] = 4
-        print(f"\nHyperparameters (incl. smaller model hyparams): {hyperparameters}\n") 
     
-    # Initialize model and move it to the appropriate device
+    # Get model type from hyperparameters or experimental_setting
     if "model" in hyperparameters:
         model_type = hyperparameters["model"]  # For QuickTune
         print(f"\nQuickTune selected model: {model_type}\n")
@@ -92,13 +136,49 @@ def run_3d_pipeline(
         model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
 
+    # Initialize normalization parameters and select the dataset_dict based on the selected voxel calculation
+    if "autonorm" in str(experimental_setting.pipeline_space):
+        # Use normalization stats from NePS hyperparameters
+        normalization_stats = autonorm(hyperparameters)
+        # Use dataset_dict with median voxel calculation
+        dataset = dataset_dict["dataset_dict_median"]  # TODO @Diane: Keep an eye on this!
+        voxel_size = dataset["voxel_size"]
+    elif "baseline" in str(experimental_setting.pipeline_space):
+        # For k-fold CV, normalization stats will be calculated per fold
+        normalization_stats = None
+        # Use dataset_dict with median voxel calculation
+        dataset = dataset_dict
+        voxel_size = dataset["voxel_size"]
+    else:
+        # For k-fold CV, normalization stats will be calculated per fold
+        normalization_stats = None
+        # Select the dataset_dict based on the voxel calculation hyperparameter
+        if hyperparameters["voxel_calculation"] == "mean":
+            dataset = dataset_dict["dataset_dict_mean"]
+        elif hyperparameters["voxel_calculation"] == "median":
+            dataset = dataset_dict["dataset_dict_median"]
+        elif hyperparameters["voxel_calculation"] == "isotropic":
+            dataset = dataset_dict["dataset_dict_isotropic"]
+        elif hyperparameters["voxel_calculation"] == "volumetric_isotropic":
+            dataset = dataset_dict["dataset_dict_volumetric_isotropic"]
+        else:
+            raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
+        voxel_size = dataset["voxel_size"]
+
+    # Get image size based on developer mode, model type and voxel size
+    image_size = extract_image_size(model_type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
+
+    # Initialize model and move it to the appropriate device
+    # Use the model type determined above (either from QuickTune or NePS)
+    model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
     model = get_3d_model(
-        {
-            "type": model_type,  # Use the model type determined above (either from QuickTune or NePS)
-            "task": experimental_setting.model.task,
-            "num_classes": num_classes,
-        }, hyperparameters
+        model_config=model_config,
+        hyperparameters=hyperparameters,
+        developer_mode=experimental_setting.developer_mode,
+        image_size=image_size
     ).to(device)
+
+    print(f"\nModel initialized: {model_type}\n")
 
     # Get k-fold parameter from experimental_setting or default to 5
     cv_inner_folds = experimental_setting.cv_inner_folds if hasattr(experimental_setting, "cv_inner_folds") else 5
@@ -109,32 +189,6 @@ def run_3d_pipeline(
     # Initialize TensorBoard writer
     tensorboard_dir = os.path.join(pipeline_directory, "tensorboard")
     writer = SummaryWriter(tensorboard_dir)
-    
-    # Initialize normalization parameters and select the dataset_dict based on the selected voxel calculation
-    if "autonorm" in str(experimental_setting.pipeline_space):
-        # Use normalization stats from NePS hyperparameters
-        normalization_stats = autonorm(hyperparameters)
-        # Use dataset_dict with median voxel calculation
-        dataset = dataset_dict["dataset_dict_median"]  # TODO @Diane: Keep an eye on this!
-    elif "baseline" in str(experimental_setting.pipeline_space):
-        # For k-fold CV, normalization stats will be calculated per fold
-        normalization_stats = None
-        # Use dataset_dict with median voxel calculation
-        dataset = dataset_dict
-    else:
-        # For k-fold CV, normalization stats will be calculated per fold
-        normalization_stats = None
-        # Select the dataset_dict based on the voxel calculation hyperparameter
-        if hyperparameters["voxel_calculation"] == "mean":
-            dataset_dict = dataset_dict["dataset_dict_mean"]
-        elif hyperparameters["voxel_calculation"] == "median":
-            dataset_dict = dataset_dict["dataset_dict_median"]
-        elif hyperparameters["voxel_calculation"] == "isotropic":
-            dataset_dict = dataset_dict["dataset_dict_isotropic"]
-        elif hyperparameters["voxel_calculation"] == "volumetric_isotropic":
-            dataset_dict = dataset_dict["dataset_dict_volumetric_isotropic"]
-        else:
-            raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
 
     # Initialize the inner fold progress logger
     # This logger tracks progress of individual inner folds within each outer fold
@@ -170,16 +224,17 @@ def run_3d_pipeline(
         train_loader, val_loader = get_kfold_dataloaders(
             seed=experimental_setting.seed,
             dataset_name=experimental_setting.data.dataset,
-            data=dataset_dict["train_val_images"],
-            labels=dataset_dict["train_val_labels"],
+            data=dataset["train_val_images"],
+            labels=dataset["train_val_labels"],
             cv_inner_folds=cv_inner_folds,
             batch_size=hyperparameters.get("batch_size", 1),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
-            voxel_size=dataset_dict["voxel_size"],
+            voxel_size=dataset["voxel_size"],
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
+            image_size=image_size
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)

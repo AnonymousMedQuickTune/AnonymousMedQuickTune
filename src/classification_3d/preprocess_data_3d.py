@@ -381,30 +381,31 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
     }
     
 
-def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
+def BasicAugmentTransform(voxel_size, image_size, normalization_stats, developer_mode):
     """
     Transform for training on the training set with basic data augmentation.
     
     Args:
         voxel_size (tuple): Voxel size in (x, y, z) format
+        image_size (tuple): Image size in (H, W, D) format for ViT; default None
         normalization_stats (dict): Normalization statistics
         developer_mode (bool): If True, uses smaller model target shape for faster development
 
     Returns:
         monai.transforms.Compose: Compose object containing the transformations
     """
-    if developer_mode:
-        spatial_size = (50, 50, 25)  # spatial_size in (H, W, D) format
+    if developer_mode or image_size is not None:
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
             Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
             # TODO @Diane: Double check if normalization stats are correctly used and calculated!
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
             
             # NOTE: Use smaller image size in the developer mode for faster development!
-            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+            # NOTE: Use special image size for some models
+            ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
 
             # Data augmentation  # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
             RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
@@ -412,38 +413,13 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
             RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
         ]
     else:
-        # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
-        # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
-        # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
-        # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
-        # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
-        # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-        # Use approximate comparison with tolerance for floating point precision issues
-        if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
-            spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
-            spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
-            spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
-            spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
-        else:
-            print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-        
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
             Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
             # TODO @Diane: Double check if normalization stats are correctly used and calculated!
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
-            
-            
-            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
-            # We use pad to reach the maximum sizes to make the model work for now.
-            # NOTE: This is hardcoded for lipo dataset!!
-            # TODO @Natalia: Delete after model is able to handle different input sizes!
-            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
 
             # Data augmentation  # TODO @Diane: Improve data augmentation strategy + add hyperparameters to the search space
             RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
@@ -454,65 +430,42 @@ def BasicAugmentTransform(voxel_size, normalization_stats, developer_mode):
     return Compose(transforms)
 
 
-def EvaluationTransform(voxel_size, normalization_stats, developer_mode):
+def EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode):
     """
     Transform for evaluation on validation and test set without data augmentation.
 
     Args:
         voxel_size (tuple): Voxel size in (x, y, z) format
+        image_size (tuple): Image size in (H, W, D) format for ViT; default None
         normalization_stats (dict): Normalization statistics
         developer_mode (bool): If True, uses smaller model target shape for faster development
 
     Returns:
         monai.transforms.Compose: Compose object containing the transformations
     """
-    if developer_mode:
-        spatial_size = (50, 50, 25)  # spatial_size in (H, W, D) format
+    if developer_mode or image_size is not None:
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
             Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
             # TODO @Diane: Double check if normalization stats are correctly used and calculated!
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
 
             # NOTE: Use smaller image size in the developer mode for faster development!
-            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+            # NOTE: Use special image size for some models
+            ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
 
             # No data augmentation for evaluation!
         ]
     else:
-        # TODO @Natalia: Delete spatial_size after model is able to handle different input sizes!
-        # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
-        # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
-        # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
-        # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
-        # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-        # Use approximate comparison with tolerance for floating point precision issues
-        if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
-            spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
-            spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
-            spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-        elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
-            spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
-        else:
-            print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-
         transforms = [
             LoadImaged(keys="image", image_only=True),  # Load NIfTI images
             EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
             Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
             # TODO @Diane: Double check if normalization stats are correctly used and calculated!
             # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
-
-            # Neither DenseNetV1 nor DenseNetV2 model can handle variable size inputs. # TODO @Natalia: Please check this out
-            # We use pad to reach the maximum sizes to make the model work for now.
-            # NOTE: This is hardcoded for lipo dataset!!
-            # TODO @Natalia: Delete after model is able to handle different input sizes!
-            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0),
+            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
 
             # No data augmentation for evaluation!
         ]
@@ -532,6 +485,7 @@ def get_kfold_dataloaders(
     normalization_stats,
     augmentation_type,
     developer_mode,
+    image_size=None,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -548,6 +502,7 @@ def get_kfold_dataloaders(
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
+        image_size (tuple): Image size in (H, W, D) format for ViT; default None
 
     Returns:
         tuple: (train_loader, val_loader) for the current fold
@@ -579,7 +534,7 @@ def get_kfold_dataloaders(
 
     # Create train and validation datasets
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=BasicAugmentTransform(voxel_size, normalization_stats, developer_mode))
+        train_dataset = Dataset(train_data, transform=BasicAugmentTransform(voxel_size, image_size, normalization_stats, developer_mode))
     elif augmentation_type == "trivial":
         raise NotImplementedError("Trivial augmentation is not implemented yet.")  # TODO @Diane: Integrate TrivialAugment
     elif augmentation_type == "groupaugment":
@@ -589,7 +544,7 @@ def get_kfold_dataloaders(
 
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, normalization_stats, developer_mode))
+        val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode))
     else:
         val_dataset = None
 

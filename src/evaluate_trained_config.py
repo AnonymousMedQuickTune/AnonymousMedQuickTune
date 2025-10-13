@@ -10,6 +10,7 @@ from src.classification_2d.preprocess_data_2d import BrainTumorDataset, get_max_
 from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 from src.classification_3d.preprocess_data_3d import EvaluationTransform
+from src.classification_3d.objective_function_3d import extract_image_size  # TODO @Diane: clean this up
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
@@ -256,7 +257,7 @@ def calculate_per_fold_metrics(folds_probabilities, ground_truth_targets, num_cl
     return per_fold_summaries
 
 
-def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework="neps"):
+def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework="neps", image_size=None):
     """
     Evaluate a single fold's trained model on the test set and return prediction probabilities.
     
@@ -271,6 +272,7 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         num_classes (int): Number of classes in the classification task
         pipeline_directory (str): Directory containing the trained model checkpoints
         framework (str): Framework being used ("neps" or "quicktune"), affects model loading
+        image_size (tuple): Image size in (H, W, D) format for ViT; default None
     
     Returns:
         tuple: (fold_probabilities, fold_targets) containing:
@@ -293,36 +295,28 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     # ------------------------------------------------------------------------------------------------
     # Initialize the model based on framework
     if experimental_setting.data.dimensionality.lower() == "3d":
-        # Use smaller model for baseline run in developer mode
-        if experimental_setting.developer_mode and experimental_setting.run_mode == "Baseline":
-            hyperparameters["conv0_stride"] = 1
-            hyperparameters["init_features"] = 8
-            hyperparameters["bn_size"] = 1
-            hyperparameters["growth_rate"] = 6
-            hyperparameters["num_layers_block1"] = 2
-            hyperparameters["num_layers_block2"] = 4
-            hyperparameters["num_layers_block3"] = 8
-            hyperparameters["num_layers_block4"] = 4
-        if framework == "quicktune" and "model" in hyperparameters:
-            # QuickTune: model type is in hyperparameters
-            model = get_3d_model(
-                {
-                    "type": hyperparameters["model"],
-                    "task": experimental_setting.model.task,
-                    "num_classes": num_classes,
-                }, 
-                hyperparameters
-            )
+        # Get model type from hyperparameters or experimental_setting
+        if framework == "quicktune":
+            model_type = hyperparameters["model"]  # For QuickTune
+            print(f"\nQuickTune selected model: {model_type}\n")
+        elif framework == "neps":
+            model_type = experimental_setting.model.type  # For NePS
+            print(f"\nNePS selected model: {model_type}\n")
         else:
-            # NePS: model type is in experimental_setting
-            model = get_3d_model(
-                {
-                    "type": experimental_setting.model.type,
-                    "task": experimental_setting.model.task,
-                    "num_classes": num_classes,
-                }, 
-                hyperparameters
-            )
+            raise ValueError(f"Unsupported framework: {framework}. Must be either 'quicktune' or 'neps'.")
+
+         # Initialize model and move it to the appropriate device
+        # Use the model type determined above (either from QuickTune or NePS)
+        model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
+        model = get_3d_model(
+            model_config=model_config,
+            hyperparameters=hyperparameters,
+            developer_mode=experimental_setting.developer_mode,
+            image_size=image_size
+        ).to(device)
+
+        print(f"\nModel initialized: {model_type}\n")
+
     else:
         raise NotImplementedError("2D evaluation is not supported for config evaluation yet.")
     
@@ -454,8 +448,11 @@ def evaluate_config_on_test_set(
         test_data = [{"index": idx, "image": img, "label": label} 
                            for idx, (img, label) in enumerate(zip(dataset_dict["test_images"], dataset_dict["test_labels"]))]
         
-        # Get voxel size for the dataset
+        # TODO @Diane: initialize model here?
+
+        # Get voxel size and image size for the dataset
         voxel_size = dataset_dict["voxel_size"]
+        image_size = extract_image_size(experimental_setting.model.type, dataset_dict["voxel_size"], experimental_setting.data.dataset, experimental_setting.developer_mode)
 
         # Storage for cross-fold evaluation
         # - We collect per-fold class probabilities for the entire test set
@@ -472,7 +469,7 @@ def evaluate_config_on_test_set(
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(
                 test_data, 
-                transform=EvaluationTransform(voxel_size, normalization_stats, developer_mode=experimental_setting.developer_mode)
+                transform=EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode=experimental_setting.developer_mode)
             )
             
             # Create test loader
@@ -488,7 +485,7 @@ def evaluate_config_on_test_set(
             # Evaluate the fold on the test set
             print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.cv_inner_folds} on Test Set ===")
             fold_probabilities, fold_targets = evaluate_fold(
-                fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework
+                fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework, image_size
             )
             
             # Skip if checkpoint not found
