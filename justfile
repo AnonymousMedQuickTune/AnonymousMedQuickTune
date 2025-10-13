@@ -273,3 +273,7 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED={{SEED}} \
     cluster_scripts/analyze_fidelity_correlation.sh
+
+# Summarize test results across all cross-validation folds for NePS experiments
+summarize-test-results EXPERIMENT_PATH SEED="42":
+  python src/analysis/summarize_evaluation_results.py {{EXPERIMENT_PATH}} --seed {{SEED}}
