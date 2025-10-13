@@ -24,4 +24,4 @@ python -m src.run_neps \
     pipeline_space=$PIPELINE_SPACE \
     model.type=resnet \
     data.dimensionality=2d \
-    # developer_mode=true
+    # developer_mode=false
