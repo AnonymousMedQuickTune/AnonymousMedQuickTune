@@ -142,18 +142,21 @@ def get_3d_model(model_config, hyperparameters, developer_mode, image_size=None)
             - feature_size (int): Feature size (default: 24)
             - depths (tuple): Number of layers in each stage (default: (2, 2, 2, 2))
             - num_heads (tuple): Number of attention heads per stage (default: (3, 6, 12, 24))
-            - window_size (int): Local window size (default: 7)
+            - window_size (int): Local window size (default: 4, 4, 1),
+              Note: Changed from MONAI's default 7 to (4,4,1) to minimize Z padding across stages and match (… , … , 1) at stage 3
             - mlp_ratio (float): MLP ratio (default: 4.0)
             - drop_rate (float): Dropout probability (default: 0.0)
             - attn_drop_rate (float): Attention dropout rate (default: 0.0)
             - dropout_path_rate (float): Drop path rate (default: 0.0)
             
             ViT:
-            - patch_size (tuple): Patch size (default: (8, 8, 4))
+            - patch_size (tuple): Patch size (default: (16, 16, 8))
+              Note: Increased from MONAI's default (8, 8, 4) to (16, 16, 8) due to memory reasons
             - hidden_size (int): Hidden size (default: 768)
             - mlp_dim (int): MLP dimension (default: 3072)
             - num_layers (int): Number of transformer layers (default: 12)
-            - num_heads (int): Number of attention heads (default: 12)
+            - num_heads (int): Number of attention heads (default: 6)
+              Note: Decreased from MONAI's default 12 to 6 due to memory reasons
             - pos_embed (str): Position embedding type (default: "learnable")
             - dropout_rate (float): Dropout probability (default: 0.0)
             - qkv_bias (bool): Whether to use bias in QKV projection (default: False)
@@ -164,9 +167,10 @@ def get_3d_model(model_config, hyperparameters, developer_mode, image_size=None)
         nn.Module: Initialized PyTorch model with customizable architecture
         
     Note:
-        * Normalization strategy:
+        Normalization strategy:
         - CNNs (DenseNet, ResNet, EfficientNet): Instance Normalization (batch_size=1 compatible)
-        - Transformers (SwinUNETR, ViT): Layer Normalization (batch_size agnostic)
+        - SwinUNETR: Instance Normalization (batch_size=1 compatible, MONAI compatibility)
+        - ViT: Layer Normalization (batch_size agnostic)
         This ensures optimal performance for medical image classification with batch_size=1.
     """
     model_type = model_config["type"]

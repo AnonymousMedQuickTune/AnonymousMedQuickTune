@@ -55,7 +55,7 @@ class ParameterizedDenseNet(nn.Module):
         growth_rate = 6 if developer_mode else hyperparameters.get("growth_rate", 32)
         bn_size = 1 if developer_mode else hyperparameters.get("bn_size", 4)
         act = hyperparameters.get("act", "relu")
-        dropout_prob = hyperparameters.get("dropout_rate", 0.0)
+        dropout_prob = hyperparameters.get("dropout_prob", 0.0)
         # --------------------------------
         
         # Build model
@@ -261,19 +261,59 @@ class ParameterizedSwinUNETR(nn.Module):
         
         # Extract hyperparameters
         # --------------------------------
-        # TODO @Diane: Check this out deeper, especially for search space design!
+        # 
+        # CONSTRAINTS:
+        #
+        # 1. image_size & patch_size
+        # ----------------------------
         # SwinUNETR requires spatial dimensions to be divisible by patch_size * 2^(num_stages-1)
-        # With depths=(1,1,1,1), we have 4 stages, so need divisibility by patch_size * 2^3 = patch_size * 8
-        # For (64, 64, 32), we need patch_size such that 64 % (patch_size * 8) == 0
+        # With depths=(1,1,1,1) or (2,2,2,2), we have 4 stages, so need divisibility by patch_size * 2^3 = patch_size * 8
+        # For image_size (64, 64, 32), we need patch_size such that 64 % (patch_size * 8) == 0 and 32 % (patch_size * 8) == 0
         # patch_size=2: 64 % 16 = 0, 32 % 16 = 0
         # patch_size=4: 64 % 32 = 0, 32 % 32 = 0
-        patch_size = 2 if developer_mode else hyperparameters.get("patch_size", 2)  # Must be 2 for (64,64,32); larger patches = fewer tokens
+        # Stage 0: image_size / patchsize > e.g., patch_site=4: (64, 64, 32) / 4 = (16, 16, 8)
+        # Stage 1: Stage 0 / 2 > e.g., (16, 16, 8) / 2 = (8, 8, 4)
+        # Stage 2: Stage 1 / 2 > e.g., (8, 8, 4) / 2 = (4, 4, 2)
+        # Stage 3: Stage 2 / 2 > e.g., (4, 4, 2) / 2 = (2, 2, 1)
+        # > If each of our image dimensions are divisible by 32, we can use a patch_size of 2 and 4
+        #
+        # 2. window_size
+        # ----------------------------
+        # Swin window attention operates on the token grid of each stage.
+        # Let T_s = image_size / (patch_size * 2^s) be the token resolution at stage s (s in {0,1,2,3}).
+        # CONSTRAINTS:
+        # - window_size must be <= T_s in each dimension (otherwise heavy padding/masking is required).
+        # - Ideally, window_size divides T_s with minimal remainder to reduce masks and VRAM.
+        # - Anisotropic windows are often best for anisotropic volumes (e.g., Z << X,Y).
+        # PRACTICAL EXAMPLE (image_size=(416,512,32), patch_size=4):
+        # - Tokens per stage: (104,128,8) -> (52,64,4) -> (26,32,2) -> (13,16,1)
+        # - Isotropic window_size=7 fits poorly (rarely divides, Z=1 in the last stage).
+        # - Good choices: window_size=(4,4,1) or (4,4,2);
+        #   * (4,4,1) minimizes Z padding across stages and matches (… , … , 1) at stage 3.
+        #   * (4,4,2) is fine up to stage 2 but causes padding/masking at stage 3 (Z=1).
+        # RULES OF THUMB:
+        # - Choose window_size small enough and such that it divides T_s in as many stages as possible.
+        # - Smaller windows and fewer heads save VRAM; larger windows increase cost ~ window_volume * heads.
+        # 
+        # 3. num_features & num_heads
+        # ----------------------------
+        # In each attention block must hold: feature_size % num_heads == 0
+        # for feature_size f we get stage channels : (f, 2f, 4f, 8f)
+        # 
+        # Example: For F=24 → stage channels = (24, 48, 96, 192) with num_heads = (3, 6, 12, 24):
+        # Each stage's channel count is divisible by its head count.
+        # Stage 0: 24 % 3 = 0 > per-head dim = 24/3 = 8
+        # Stage 1: 48 % 6 = 0 > per-head dim = 48/6 = 8
+        # Stage 2: 96 % 12 = 0 > per-head dim = 96/12 = 8
+        # Stage 3: 192 % 24 = 0 > per-head dim = 192/24 = 8
+
+        patch_size = 2 if developer_mode else hyperparameters.get("patch_size", 2)  # larger patches = fewer tokens
         feature_size = 12 if developer_mode else hyperparameters.get("feature_size", 24)
         depths = (1, 1, 1, 1) if developer_mode else hyperparameters.get("depths", (2, 2, 2, 2))
         num_heads = (1, 2, 3, 4) if developer_mode else hyperparameters.get("num_heads", (3, 6, 12, 24))
-        window_size = 2 if developer_mode else hyperparameters.get("window_size", 7)
+        window_size = 2 if developer_mode else hyperparameters.get("window_size", (4, 4, 1))  # Update from 7 to (4,4,1): minimizes Z padding across stages and matches (… , … , 1) at stage 3
         mlp_ratio = 2.0 if developer_mode else hyperparameters.get("mlp_ratio", 4.0)
-        drop_rate = hyperparameters.get("drop_rate", 0.0)
+        drop_rate = hyperparameters.get("dropout_prob", 0.0)
         attn_drop_rate = hyperparameters.get("attn_drop_rate", 0.0)
         dropout_path_rate = hyperparameters.get("dropout_path_rate", 0.0)
         # --------------------------------
@@ -290,7 +330,7 @@ class ParameterizedSwinUNETR(nn.Module):
             window_size=window_size,
             qkv_bias=True,                             # Default setting works well for classification
             mlp_ratio=mlp_ratio,
-            norm_name=("layer", {"eps": 1e-6}),        # LayerNorm with eps=1e-6 is batch_size agnostic
+            norm_name=("instance", {"affine": True}),  # Fixed for batch_size=1 (added affine=True to ensure weights/bias)
             drop_rate=drop_rate,
             attn_drop_rate=attn_drop_rate,
             dropout_path_rate=dropout_path_rate,
@@ -301,7 +341,6 @@ class ParameterizedSwinUNETR(nn.Module):
             downsample="merging",                      # Default; minor effect on capacity/compute
             use_v2=False                               # Default; optional residual conv at stage starts
         )
-        # NOTE: LayerNorm implemented for Transformer architecture compatibility. It is batch_size agnostic.
 
         # Classification head: global pooling + linear
         self.global_pool = nn.AdaptiveAvgPool3d(1)     # [B, C, D, H, W] -> [B, C, 1, 1, 1]
@@ -357,15 +396,46 @@ class ParameterizedViT(nn.Module):
         
         # Extract hyperparameters
         # --------------------------------
-        # NOTE: img_size[i] % patch_size[i] == 0 for all i
-        # NOTE: hidden_size % num_heads == 0
-        patch_size = hyperparameters.get("patch_size", (8, 8, 4))  
-        hidden_size = 96 if developer_mode else hyperparameters.get("hidden_size", 768)
-        mlp_dim = 192 if developer_mode else hyperparameters.get("mlp_dim", 3072)
+        #
+        # CONSTRAINTS:
+        #
+        # 1. image_size & patch_size
+        # ----------------------------
+        # img_size[i] % patch_size[i] == 0 for all i
+        #
+        # Example: image_size = (416, 512, 32) and patch_size = (8, 8, 4)
+        # > tokens = (416/8, 512/8, 32/4) = (52, 64, 8); sequence length = 52 * 64 * 8 = 26624
+        # > With smaller patch_size, we get more tokens
+        # > More tokens > Higher N > Memory scales roughly with N² per layer (self-attention), so  is the main VRAM driver
+        #
+        # 2. hidden_size & num_heads
+        # ----------------------------
+        # hidden_size % num_heads == 0
+        #
+        # Example: hidden_size = 768 and num_heads = 12
+        # > hidden_size % num_heads = 768 % 12 = 0
+        #
+        # 3. mlp_dim & hidden_size
+        # ----------------------------
+        # Usual rule: mlp_dim = 2 * hidden_size or mlp_dim = 4 * hidden_size
+        # (2x is memory friendlier, 4x is stronger)
+        #
+        # Example: mlp_dim = 3072 or 1536 and hidden_size = 768
+        # hidden_size * 2 = 768 * 2 = 1536
+        # hidden_size * 4 = 768 * 4 = 3072
+        #
+        # 4. num_layers
+        # ----------------------------
+        # More num_layers > More parameters > More VRAM
+
+        patch_size_0 = hyperparameters.get("patch_size_0", 16)
+        patch_size = (patch_size_0, patch_size_0, patch_size_0 // 2)  # Increased from (8, 8, 4) to (16, 16, 8) due to memory reasons
+        hidden_size = 96 if developer_mode else int(12 * hyperparameters.get("hidden_size_multiplier", 64))  # 12 * 64 = 768
+        mlp_dim = 1536 if developer_mode else (hidden_size * hyperparameters.get("mlp_dim_multiplier", 4))  # 768 * 4 = 3072
         num_layers = 1 if developer_mode else hyperparameters.get("num_layers", 12)
-        num_heads = 3 if developer_mode else hyperparameters.get("num_heads", 12)
-        pos_embed = hyperparameters.get("pos_embed", "learnable")
-        dropout_prob = hyperparameters.get("dropout_rate", 0.0)
+        num_heads = 3 if developer_mode else hyperparameters.get("num_heads", 6)  # Decreased from 12 to 6 due to memory reasons
+        pos_embed_type = hyperparameters.get("pos_embed_type", "learnable")
+        dropout_prob = hyperparameters.get("dropout_prob", 0.0)
         qkv_bias = hyperparameters.get("qkv_bias", False)
         # --------------------------------
     
@@ -379,7 +449,7 @@ class ParameterizedViT(nn.Module):
             num_layers=num_layers,
             num_heads=num_heads,
             proj_type="conv",               # keep default; robust in 3D
-            pos_embed_type=pos_embed,
+            pos_embed_type=pos_embed_type,
             classification=True,            # Enable classification mode
             num_classes=num_classes,
             dropout_rate=dropout_prob,
