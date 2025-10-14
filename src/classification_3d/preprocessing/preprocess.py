@@ -20,9 +20,13 @@ path_img = None
 # create new folder/temp folder
 new_path = './gist_final'
 
-def preprocessing(file_paths, new_path, voxel):
+def preprocessing(file_paths, new_path, voxel, is_mri):
     # Loop through each file path and process images and segmentations
-    print("Step 1: Resampling images to target voxel size and normalizing intensities...")
+    if is_mri:
+        print("Step 1: Resampling images to target voxel size and normalizing intensities (MRI dataset)")
+    else:
+        print("Step 1: Resampling images to target voxel size. Normalization is done in the runpipeline based on training data statistics depending on the cross-validation folds (CT dataset)")
+    
     for count, file in enumerate(tqdm(file_paths, desc="", unit="image"), start=1):
 
         img_file = os.path.join(file, image_name)
@@ -33,8 +37,13 @@ def preprocessing(file_paths, new_path, voxel):
         resampled_img = resample_image(image, voxel)
         resampled_seg = resample_image(segmentation, voxel)
         
-        norm_image = normalize_image(resampled_img)
-        norm_seg = normalize_image(resampled_seg)
+        # Only normalize if is_mri is True
+        if is_mri:
+            norm_image = normalize_image(resampled_img)
+            norm_seg = normalize_image(resampled_seg)
+        else:
+            norm_image = resampled_img
+            norm_seg = resampled_seg
         
         # Extract the original directory name from the file path
         original_dir_name = os.path.basename(file)
@@ -45,10 +54,10 @@ def preprocessing(file_paths, new_path, voxel):
         # print(f"Image No {count} done")
 
 
-def main_preprocessing(file_paths, new_path, voxel):
+def main_preprocessing(file_paths, new_path, voxel, is_mri):
     # Resample and normalization of images
     # Creates the new images after resampling and normalization and saves them
-    preprocessing(file_paths, new_path, voxel)
+    preprocessing(file_paths, new_path, voxel, is_mri)
 
     # To check the difference between only resampling and normalization 
     # jupyter notebook is better

@@ -1,0 +1,11 @@
+mean:
+  type: float
+  log: false
+  lower: 0
+  upper: 1
+
+std:
+  type: float
+  log: false
+  lower: 0
+  upper: 1

@@ -142,13 +142,15 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
         raise ValueError(f"Unknown calculation method: {calculation_method}")
 
 
-def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method):
+def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri):
     """
     Apply Natalia's smart preprocessing pipeline to the dataset.
     
     Args:
         cleaned_dataset_path (str): Path to the cleaned dataset
+        voxel_size (tuple): Voxel size in (x, y, z) format
         calculation_method (str): Method to calculate voxel size ('mean', 'median', 'isotropic', 'volumetric_isotropic')
+        is_mri (bool): Whether the dataset is MRI > MRI datasets need normalization in the preprocessing for each image individually
         
     Returns:
         str: Path to the preprocessed dataset
@@ -177,7 +179,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     os.makedirs(output_path, exist_ok=True)
     
     # Run the preprocessing pipeline from Natalia's preprocessing code base
-    main_preprocessing(file_paths, output_path, voxel_size)  # TODO @Natalia: Verify for correct integration pls :)
+    main_preprocessing(file_paths, output_path, voxel_size, is_mri)  # TODO @Natalia: Verify for correct integration pls :)
     
     # Analyze preprocessed dataset statistics
     print("\n=== Preprocessed Dataset Statistics Analysis ===")
@@ -229,6 +231,12 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         dict: Dictionary containing dataset splits and metadata
     """
     if use_smart_preprocessing:
+        if dataset_name in ["gist", "crlm", "melanoma"]:
+            is_mri = True
+        elif dataset_name in ["lipo", "desmoid", "liver"]:
+            is_mri = False  # CT dataset
+        else:
+            raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
         # Check if cleaned dataset exists
         cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
         if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):  
@@ -246,7 +254,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         else:
             print("X Preprocessed dataset not found, running preprocessing...\n")
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
-            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation)
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri)
         # Keep the CSV path from the cleaned directory
         csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
     
@@ -394,38 +402,67 @@ def BasicAugmentTransform(voxel_size, image_size, normalization_stats, developer
     Returns:
         monai.transforms.Compose: Compose object containing the transformations
     """
-    if developer_mode or image_size is not None:
-        transforms = [
-            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
-            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
-            
-            # NOTE: Use smaller image size in the developer mode for faster development!
-            # NOTE: Use special image size for some models
-            ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
+    # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
+    if normalization_stats is None:
+        # MRI Images: gist, crlm, melanoma
+        # NOTE: Normalization is done in the preprocessing per image/patient individually
+        if developer_mode or image_size is not None:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+                
+                # NOTE: Use smaller image size in the developer mode for faster development!
+                # NOTE: Use special image size for some models
+                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
 
-            # Data augmentation  # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
-            RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-            RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-            RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-        ]
+                # Data augmentation  
+                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+            ]
+        else:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+
+                # Data augmentation
+                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+            ]
     else:
-        transforms = [
-            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
-            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+        # CT Images: lipo, desmoid, liver
+        # NOTE: Normalization is done in the runpipeline based on training data statistics depending on the cross-validation folds.
+        if developer_mode or image_size is not None:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+                NormalizeIntensityd(keys=["image"], subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0]),
+                
+                # NOTE: Use smaller image size in the developer mode for faster development!
+                # NOTE: Use special image size for some models
+                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
 
-            # Data augmentation  # TODO @Diane: Improve data augmentation strategy + add hyperparameters to the search space
-            RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-            RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-            RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-        ]
+                # Data augmentation#
+                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+            ]
+        else:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+                NormalizeIntensityd(keys=["image"], subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0]),
+
+                # Data augmentation
+                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
+                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
+                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
+            ]
 
     return Compose(transforms)
 
@@ -443,32 +480,54 @@ def EvaluationTransform(voxel_size, image_size, normalization_stats, developer_m
     Returns:
         monai.transforms.Compose: Compose object containing the transformations
     """
-    if developer_mode or image_size is not None:
-        transforms = [
-            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
-            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+    if normalization_stats is None:
+        # MRI Images: gist, crlm, melanoma
+        # NOTE: Normalization is done in the preprocessing per image/patient individually
+        if developer_mode or image_size is not None:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
 
-            # NOTE: Use smaller image size in the developer mode for faster development!
-            # NOTE: Use special image size for some models
-            ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
+                # NOTE: Use smaller image size in the developer mode for faster development!
+                # NOTE: Use special image size for some models
+                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
 
-            # No data augmentation for evaluation!
-        ]
+                # No data augmentation for evaluation!
+            ]
+        else:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+
+                # No data augmentation for evaluation!
+            ]
     else:
-        transforms = [
-            LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-            EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-            Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-            # TODO @Diane: Double check if normalization stats are correctly used and calculated!
-            # NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-            # NormalizeIntensityd(keys=["image"], subtrahend=0.0, divisor=1.0),
+        # CT Images: lipo, desmoid, liver
+        # NOTE: Normalization is done in the runpipeline based on training data statistics depending on the cross-validation folds.
+        if developer_mode or image_size is not None:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+                NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
 
-            # No data augmentation for evaluation!
-        ]
+                # NOTE: Use smaller image size in the developer mode for faster development!
+                # NOTE: Use special image size for some models
+                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
+
+                # No data augmentation for evaluation!
+            ]
+        else:
+            transforms = [
+                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
+                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
+                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+                NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
+
+                # No data augmentation for evaluation!
+            ]
         
     return Compose(transforms)
 
@@ -486,6 +545,7 @@ def get_kfold_dataloaders(
     augmentation_type,
     developer_mode,
     image_size=None,
+    fold_directory=None,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -499,10 +559,12 @@ def get_kfold_dataloaders(
         batch_size (int): Batch size for data loaders
         num_workers (int): Number of workers for data loading
         fold_idx (int): Current fold index
+        voxel_size (tuple): Voxel size for the dataset
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
         image_size (tuple): Image size in (H, W, D) format for ViT; default None
+        fold_directory (str, optional): Directory path for saving normalization stats
 
     Returns:
         tuple: (train_loader, val_loader) for the current fold
@@ -524,13 +586,35 @@ def get_kfold_dataloaders(
     train_data = [train_data_images[i] for i in train_idx]
     valid_data = [train_data_images[i] for i in val_idx]
 
-    # Calculate normalization stats from preprocessed training data if not provided by NePS
-    # NOTE: normalization stats should be calculated from the preprocessed data, not the original data!
-    if normalization_stats is None:
-        # TODO @Diane: Verify this implementation!
-        stats = calculate_normalization_stats(train_data)  
-        normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
-        print(f"Normalization stats (calculated from preprocessed data):\n{normalization_stats}     !!! Currently ignored > see applied data transformations !!!\n")
+    # Calculate normalization stats from preprocessed CT training data if not provided by NePS (AutoNorm)
+    if dataset_name in ["gist", "crlm", "melanoma"]:  # MRI datasets
+        # Normalization is done in the preprocessing per image/patient individually
+        normalization_stats = None
+    elif dataset_name in ["lipo", "desmoid", "liver"]:  # CT datasets
+        if normalization_stats is None:
+            # Calculate normalization stats from preprocessed training data if not provided by NePS (AutoNorm)
+            # The training data is dependent on the cross-validation fold.
+            stats = calculate_normalization_stats(train_data)  
+            normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
+            stats_source = "Calculated from training data"
+        else:
+            # Normalization stats provided by NePS (AutoNorm)
+            print(f"Normalization stats provided by NePS (AutoNorm): {normalization_stats}")
+            stats_source = "AutoNorm (NePS)"
+        
+        # Save normalization stats to a file in the directory of the inner CV fold
+        if fold_directory is not None:
+            normalization_stats_file = os.path.join(fold_directory, "normalization_stats.txt")
+            with open(normalization_stats_file, "w", encoding="utf-8") as f:
+                f.write(f"Normalization Statistics for Inner CV Fold {fold_idx}\n")
+                f.write(f"{'='*50}\n")
+                f.write(f"Mean: {normalization_stats['mean']}\n")
+                f.write(f"Std:  {normalization_stats['std']}\n")
+                f.write(f"\nSource: {stats_source}\n")
+            print(f"Normalization stats saved to: {normalization_stats_file}")
+
+    else:
+        raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
 
     # Create train and validation datasets
     if augmentation_type == "basic":

@@ -113,6 +113,9 @@ def normalize_image_old(image):
     return normalized_image
 
 def normalize_image(image):
+    """
+    Apply Z-score normalization to individual patient/image
+    """
     # Get image array
     image_array = sitk.GetArrayFromImage(image)
 
@@ -120,6 +123,10 @@ def normalize_image(image):
     mean = np.mean(image_array)
     std = np.std(image_array)
 
+    # Avoid division by zero
+    if std == 0:
+        std = 1e-6
+    
     # Z-score normalization
     normalized_image_array = (image_array - mean) / std
 

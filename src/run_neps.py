@@ -194,21 +194,24 @@ def main(experimental_setting: DictConfig) -> None:
             with open(experimental_setting.pipeline_space, "r", encoding="utf-8") as f:
                 model_space = yaml.safe_load(f)
         except (yaml.YAMLError, IOError) as e:
-            logging.error(f"Failed to load model space configuration: {e}")
+            logging.error(f"Failed to load model space / AutoNorm space configuration: {e}")
             raise
         
         # Combine spaces (model space takes precedence for overlapping keys)
         combined_space = {**training_space, **model_space}
         
         # Save combined space to a temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_file:
+        # Extract original config name for better filename
+        original_config_name = os.path.basename(experimental_setting.pipeline_space).replace('.yaml', '')
+        with tempfile.NamedTemporaryFile(mode='w', suffix=f'_training_combined_{original_config_name}.yaml', delete=False) as tmp_file:
             yaml.dump(combined_space, tmp_file, default_flow_style=False)
             experimental_setting.pipeline_space = tmp_file.name
         
+        print(f"\nCombined space: {experimental_setting.pipeline_space}")
         print(f"Combined space contains {len(combined_space)} parameters:")
         print(f"- Training parameters: {list(training_space.keys())}")
-        print(f"- Model parameters: {list(model_space.keys())}")
-        print(f"- Combined parameters: {list(combined_space.keys())}")
+        print(f"- Model/AutoNorm parameters: {list(model_space.keys())}")
+        print(f"- Combined parameters: {list(combined_space.keys())}\n")
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions

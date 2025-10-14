@@ -1,6 +1,7 @@
 import os
 import torch
 import numpy as np
+import re
 from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -15,6 +16,53 @@ from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
 from monai.data import Dataset
+
+def load_normalization_stats_from_fold(pipeline_directory, fold_idx):
+    """
+    Load normalization statistics from the normalization_stats.txt file of a specific inner CV fold.
+    
+    Args:
+        pipeline_directory (str): Directory containing the trained model checkpoints
+        fold_idx (int): Inner CV fold index (0-based)
+    
+    Returns:
+        dict or None: Dictionary containing 'mean' and 'std' keys with list values, or None if file not found
+    """
+    # Construct path to normalization_stats.txt file
+    normalization_stats_file = Path(pipeline_directory) / f"cv_inner_fold_{fold_idx}" / "normalization_stats.txt"
+    
+    if not normalization_stats_file.exists():
+        print(f"Warning: Normalization stats file not found at {normalization_stats_file}")
+        return None
+    
+    try:
+        with open(normalization_stats_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # Parse mean and std values using regex
+        # Look for patterns like "Mean: [6.358785321936011e-05]" and "Std:  [0.000162713389727287]"
+        mean_match = re.search(r"Mean:\s*\[([^\]]+)\]", content)
+        std_match = re.search(r"Std:\s*\[([^\]]+)\]", content)
+        
+        if mean_match and std_match:
+            # Extract the numeric values and convert to float
+            mean_value = float(mean_match.group(1))
+            std_value = float(std_match.group(1))
+            
+            normalization_stats = {
+                "mean": [mean_value],
+                "std": [std_value]
+            }
+            
+            print(f"Loaded normalization stats for fold {fold_idx}: mean={mean_value:.6e}, std={std_value:.6e}")
+            return normalization_stats
+        else:
+            print(f"Warning: Could not parse normalization stats from {normalization_stats_file}")
+            return None
+            
+    except Exception as e:
+        print(f"Error reading normalization stats file {normalization_stats_file}: {e}")
+        return None
 
 def calculate_metrics_from_probabilities(probabilities, ground_truth_targets, num_classes):
     """
@@ -305,7 +353,7 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         else:
             raise ValueError(f"Unsupported framework: {framework}. Must be either 'quicktune' or 'neps'.")
 
-         # Initialize model and move it to the appropriate device
+        # Initialize model and move it to the appropriate device
         # Use the model type determined above (either from QuickTune or NePS)
         model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
         model = get_3d_model(
@@ -463,8 +511,9 @@ def evaluate_config_on_test_set(
 
         # Evaluate each fold's model on the complete test set
         for fold in range(experimental_setting.cv_inner_folds):
-            # Normalization stats are calculated from the preprocessed training data separately for each inner fold!
-            normalization_stats = None  # TODO @Diane: get normalization stats based on the inner fold!
+            # Load normalization stats from the inner fold's normalization_stats.txt file
+            normalization_stats = load_normalization_stats_from_fold(pipeline_directory, fold)
+            print(f"Normalization stats: {normalization_stats}")
 
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(

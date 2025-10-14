@@ -165,7 +165,7 @@ def run_3d_pipeline(
     # Initialize normalization parameters
     if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
-        normalization_stats = autonorm(hyperparameters)
+        normalization_stats = autonorm(hyperparameters, is_rgb=False)
     else:
         # For k-fold CV, normalization stats will be calculated per fold > Currently deactivated!
         # NOTE: For biomedical images, normalization is done in the preprocessing step
@@ -261,7 +261,8 @@ def run_3d_pipeline(
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
-            image_size=image_size
+            image_size=image_size,
+            fold_directory=fold_directory
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
