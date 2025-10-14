@@ -68,10 +68,36 @@ def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
                     image_size = (274, 275, 176)  # spatial_size in (H, W, D) format
                 else:
                     print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+            
+            elif dataset_name == "desmoid":
+                mean_voxel_size_0 = 0.673749
+                median_voxel_size_0 = 0.68359375
+                isotropic_voxel_size_0 = 1.0
+                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
+
+                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
+                    image_size = (356, 565, 69)  # (H, W, D) format
+                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
+                    image_size = (352, 556, 77)  # (H, W, D) format
+                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
+                    image_size = (351, 380, 383)  # (H, W, D) format
+                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
+                    image_size = (272, 295, 297)  # (H, W, D) format
+                else:
+                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+
+            elif dataset_name == "gist":
+                median_voxel_size_0 = 0.766
+
+                if abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
+                    image_size = (566, 556, 201)  # (H, W, D) format
+                else:
+                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+                    
             else:
                 raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
             
-            # Update image size to be divisible by 32
+            # Update image size to be divisible by 32  # TODO @Diane: round up?
             h = (image_size[0] // 32) * 32
             w = (image_size[1] // 32) * 32
             d = (image_size[2] // 32) * 32
