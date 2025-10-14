@@ -1,0 +1,27 @@
+densenet_type:  # default = "densenet121"
+  type: categorical
+  choices: ["densenet121", "densenet169", "densenet201"]
+
+init_features:  # default = 64
+  type: int
+  lower: 16
+  upper: 64
+
+growth_rate:  # default = 32
+  type: int
+  lower: 12
+  upper: 32
+
+bn_size:  # default = 4
+  type: int
+  lower: 1
+  upper: 4
+
+act:  # default = "relu"
+  type: categorical
+  choices: ["relu", "leaky_relu", "gelu"]
+
+dropout_prob:  # default = 0.0
+  type: float
+  lower: 0.0
+  upper: 0.3
