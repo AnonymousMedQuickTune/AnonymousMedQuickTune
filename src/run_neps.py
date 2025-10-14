@@ -59,8 +59,20 @@ def run_pipeline(
         4. Clean up training artifacts (model checkpoints) to save disk space
         5. Return pipeline result to NePS for optimization
     """
-    # Extract config number from pipeline directory to print in the console
+    # Extract CV fold from pipeline directory path to use fold-specific seed
     pipeline_dir_str = str(pipeline_directory)
+    cv_outer_fold = 0  # Default to 0 if not found in path
+    if "cv_outer_fold_" in pipeline_dir_str:
+        try:
+            cv_outer_fold = int(pipeline_dir_str.split("cv_outer_fold_")[-1].split("/")[0])
+        except (ValueError, IndexError):
+            cv_outer_fold = 0
+    
+    # Set fold-specific seed for pipeline reproducibility
+    fold_specific_seed = experimental_setting.seed + cv_outer_fold
+    set_seed(fold_specific_seed)
+    
+    # Extract config number from pipeline directory to print in the console
     config_number = pipeline_dir_str.split('/configs/config_')[-1] if '/configs/config_' in pipeline_dir_str else "unknown"
     print(f"\n{'-' * 100}")
     if "baseline" in str(experimental_setting.pipeline_space):
@@ -104,13 +116,6 @@ def run_pipeline(
     print(f"STARTING TEST SET EVALUATION FOR CURRENT CONFIG")
     print(f"{'='*100}\n")
     
-    # Extract CV fold from pipeline directory path
-    cv_outer_fold = 0  # Default to 0 if not found in path
-    if "cv_outer_fold_" in pipeline_dir_str:
-        try:
-            cv_outer_fold = int(pipeline_dir_str.split("cv_outer_fold_")[-1].split("/")[0])
-        except (ValueError, IndexError):
-            cv_outer_fold = 0
     
     # Evaluate configuration on test set
     test_metrics = evaluate_config_on_test_set(
@@ -169,11 +174,11 @@ def main(experimental_setting: DictConfig) -> None:
         if experimental_setting.run_mode != "Baseline":
             experimental_setting.max_evaluations = 2
             experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
-        experimental_setting.training.number_of_epochs = 3
+        experimental_setting.training.number_of_epochs = 2
         experimental_setting.cv_inner_folds = 2
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
-        experimental_setting.cv_outer_folds_repeats = 1
-        experimental_setting.cv_outer_folds_splits = 2   # splits  (minimum!) per repeat
+        experimental_setting.cv_outer_folds_repeats = 3
+        experimental_setting.cv_outer_folds_splits = 2  # splits  (minimum!) per repeat
 
     # TODO @Diane: Double check training search space!
     # Combine model and training space into a single search space
@@ -284,6 +289,12 @@ def main(experimental_setting: DictConfig) -> None:
     print(f"\n=== Starting Cross-Validation with {cv_outer_folds} outer folds ===\n")
     
     for cv_outer_fold in range(cv_outer_folds):        
+        # Set a different seed for each outer fold to ensure different NePS configurations are sampled
+        # This prevents identical hyperparameter configurations across different outer folds
+        fold_specific_seed = experimental_setting.seed + cv_outer_fold
+        set_seed(fold_specific_seed)
+        print(f"\n=== Setting fold-specific seed {fold_specific_seed} for outer fold {cv_outer_fold} ===")
+        
         # Load data for current CV fold
         if experimental_setting.data.use_smart_preprocessing:
             print(f"\n{'=' * 100}")
@@ -487,7 +498,7 @@ def main(experimental_setting: DictConfig) -> None:
     # Save cross-validation summary to text file
     save_cv_summary(experimental_setting, cv_outer_folds)
 
-
+# TODO @Diane: Move function to another file
 def save_cv_summary(experimental_setting, cv_outer_folds):
     """
     Save cross-validation summary to a text file.
