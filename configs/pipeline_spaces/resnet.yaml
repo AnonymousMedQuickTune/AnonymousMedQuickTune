@@ -1,0 +1,26 @@
+resnet_type:  # default = "resnet18"
+  type: categorical
+  choices: ["resnet18", "resnet34", "resnet50"]
+
+conv1_t_size:  # default = 7
+  type: int
+  lower: 3
+  upper: 7
+
+conv1_t_stride:  # default = 1
+  type: int
+  lower: 1
+  upper: 2
+
+no_max_pool:  # default = False
+  type: categorical
+  choices: [True, False]
+
+widen_factor:  # default = 1.0
+  type: float
+  lower: 1.0
+  upper: 2.0
+
+act:  # default = "relu"
+  type: categorical
+  choices: ["relu", "leaky_relu", "gelu"]
