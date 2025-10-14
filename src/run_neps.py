@@ -3,6 +3,7 @@ import os
 import pickle
 from pathlib import Path
 import warnings
+import tempfile
 
 import hydra
 import json
@@ -173,6 +174,41 @@ def main(experimental_setting: DictConfig) -> None:
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
         experimental_setting.cv_outer_folds_repeats = 1
         experimental_setting.cv_outer_folds_splits = 2   # splits  (minimum!) per repeat
+
+    # TODO @Diane: Double check training search space!
+    # Combine model and training space into a single search space
+    if experimental_setting.combine_model_and_training_space and not any(x in experimental_setting.pipeline_space for x in ["baseline", "training"]):
+        print(f"\n\nCombining model and training spaces!\n\n")
+        
+        # Load training space configuration
+        training_space_path = "configs/pipeline_spaces/training.yaml"
+        try:
+            with open(training_space_path, "r", encoding="utf-8") as f:
+                training_space = yaml.safe_load(f)
+        except (yaml.YAMLError, IOError) as e:
+            logging.error(f"Failed to load training space configuration: {e}")
+            raise
+        
+        # Load model space configuration
+        try:
+            with open(experimental_setting.pipeline_space, "r", encoding="utf-8") as f:
+                model_space = yaml.safe_load(f)
+        except (yaml.YAMLError, IOError) as e:
+            logging.error(f"Failed to load model space configuration: {e}")
+            raise
+        
+        # Combine spaces (model space takes precedence for overlapping keys)
+        combined_space = {**training_space, **model_space}
+        
+        # Save combined space to a temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp_file:
+            yaml.dump(combined_space, tmp_file, default_flow_style=False)
+            experimental_setting.pipeline_space = tmp_file.name
+        
+        print(f"Combined space contains {len(combined_space)} parameters:")
+        print(f"- Training parameters: {list(training_space.keys())}")
+        print(f"- Model parameters: {list(model_space.keys())}")
+        print(f"- Combined parameters: {list(combined_space.keys())}")
 
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions

@@ -41,6 +41,7 @@ qt:
 # NePS Optimization Settings
 #------------------------------------------------------------------------------
 pipeline_space: configs/pipeline_spaces/pipeline_space_without_user_priors.yaml
+combine_model_and_training_space: true  # Whether to combine the model and training space into a single search space
 max_evaluations: 10       # Maximum number of configurations to evaluate
 metric: auc                # Metric to optimize: 'auc' (default), 'f1', 'accuracy', 'precision', or 'recall'
 searcher: random_search       # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
