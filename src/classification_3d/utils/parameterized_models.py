@@ -336,7 +336,7 @@ class ParameterizedSwinUNETR(nn.Module):
             dropout_path_rate=dropout_path_rate,
             normalize=False,                           # Intermediate feature norm not needed for classification
             patch_norm=False,                          # Patch embedding normalization not required here
-            use_checkpoint=False,                      # Enable to save VRAM if needed (no quality impact)
+            use_checkpoint=True,                      # Enable to save VRAM if needed (no quality impact)
             spatial_dims=3,
             downsample="merging",                      # Default; minor effect on capacity/compute
             use_v2=False                               # Default; optional residual conv at stage starts
