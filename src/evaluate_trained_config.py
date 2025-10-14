@@ -487,21 +487,36 @@ def evaluate_config_on_test_set(
         raise NotImplementedError("2D evaluation is not supported for config evaluation yet.")
         
     elif experimental_setting.data.dimensionality.lower() == "3d":
-        # Determine voxel calculation method
-        voxel_calc = hyperparameters.get("voxel_calculation", "median")
-        # TODO @Diane: delete: dataset_dict_key = f"dataset_dict_{voxel_calc}"
-        dataset_dict = dataset_dict if experimental_setting.run_mode == "Baseline" else dataset_dict[f"dataset_dict_{voxel_calc}"]
+        # select the dataset_dict based on the selected voxel calculation
+        if "voxel_calculation" in str(experimental_setting.pipeline_space):
+            if hyperparameters["voxel_calculation"] == "mean":
+                dataset = dataset_dict["dataset_dict_mean"]
+            elif hyperparameters["voxel_calculation"] == "median":
+                dataset = dataset_dict["dataset_dict_median"]
+            elif hyperparameters["voxel_calculation"] == "isotropic":
+                dataset = dataset_dict["dataset_dict_isotropic"]
+            elif hyperparameters["voxel_calculation"] == "volumetric_isotropic":
+                dataset = dataset_dict["dataset_dict_volumetric_isotropic"]
+            else:
+                raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
+            voxel_size = dataset["voxel_size"]
+        else:
+            # Use dataset_dict with median voxel calculation
+            if experimental_setting.run_mode == "Baseline":
+                dataset = dataset_dict
+            else:
+                dataset = dataset_dict["dataset_dict_median"]
+            voxel_size = dataset["voxel_size"]
         
-        # Create test data in the format expected by 3D dataloaders
-        test_data = [{"index": idx, "image": img, "label": label} 
-                           for idx, (img, label) in enumerate(zip(dataset_dict["test_images"], dataset_dict["test_labels"]))]
-        
+        # Get image size based on developer mode, model type and voxel size
+        image_size = extract_image_size(experimental_setting.model.type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
+
         # TODO @Diane: initialize model here?
 
-        # Get voxel size and image size for the dataset
-        voxel_size = dataset_dict["voxel_size"]
-        image_size = extract_image_size(experimental_setting.model.type, dataset_dict["voxel_size"], experimental_setting.data.dataset, experimental_setting.developer_mode)
-
+        # Create test data in the format expected by 3D dataloaders
+        test_data = [{"index": idx, "image": img, "label": label} 
+                           for idx, (img, label) in enumerate(zip(dataset["test_images"], dataset["test_labels"]))]
+        
         # Storage for cross-fold evaluation
         # - We collect per-fold class probabilities for the entire test set
         # - We keep ground-truth targets only once (from the first fold iteration)
