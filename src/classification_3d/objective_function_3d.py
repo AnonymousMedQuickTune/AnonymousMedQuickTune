@@ -93,7 +93,7 @@ def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
                     image_size = (566, 556, 201)  # (H, W, D) format
                 else:
                     print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-                    
+
             else:
                 raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
             
@@ -162,23 +162,17 @@ def run_3d_pipeline(
         model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
 
-    # Initialize normalization parameters and select the dataset_dict based on the selected voxel calculation
+    # Initialize normalization parameters
     if "autonorm" in str(experimental_setting.pipeline_space):
         # Use normalization stats from NePS hyperparameters
         normalization_stats = autonorm(hyperparameters)
-        # Use dataset_dict with median voxel calculation
-        dataset = dataset_dict["dataset_dict_median"]  # TODO @Diane: Keep an eye on this!
-        voxel_size = dataset["voxel_size"]
-    elif "baseline" in str(experimental_setting.pipeline_space):
-        # For k-fold CV, normalization stats will be calculated per fold
-        normalization_stats = None
-        # Use dataset_dict with median voxel calculation
-        dataset = dataset_dict
-        voxel_size = dataset["voxel_size"]
     else:
-        # For k-fold CV, normalization stats will be calculated per fold
+        # For k-fold CV, normalization stats will be calculated per fold > Currently deactivated!
+        # NOTE: For biomedical images, normalization is done in the preprocessing step
         normalization_stats = None
-        # Select the dataset_dict based on the voxel calculation hyperparameter
+    
+    # select the dataset_dict based on the selected voxel calculation
+    if "voxel_calculation" in str(experimental_setting.pipeline_space):
         if hyperparameters["voxel_calculation"] == "mean":
             dataset = dataset_dict["dataset_dict_mean"]
         elif hyperparameters["voxel_calculation"] == "median":
@@ -189,6 +183,13 @@ def run_3d_pipeline(
             dataset = dataset_dict["dataset_dict_volumetric_isotropic"]
         else:
             raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
+        voxel_size = dataset["voxel_size"]
+    else:
+        # Use dataset_dict with median voxel calculation
+        if experimental_setting.run_mode == "Baseline":
+            dataset = dataset_dict
+        else:
+            dataset = dataset_dict["dataset_dict_median"]
         voxel_size = dataset["voxel_size"]
 
     # Get image size based on developer mode, model type and voxel size

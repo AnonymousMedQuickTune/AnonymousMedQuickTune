@@ -167,7 +167,7 @@ def main(experimental_setting: DictConfig) -> None:
         print(f"\n\nDeveloper mode is enabled!\n\n")
         if experimental_setting.run_mode != "Baseline":
             experimental_setting.max_evaluations = 2
-            experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this + check #epochs in QT
+            experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
         experimental_setting.training.number_of_epochs = 3
         experimental_setting.cv_inner_folds = 2
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
