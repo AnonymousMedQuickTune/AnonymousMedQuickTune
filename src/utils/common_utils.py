@@ -55,11 +55,18 @@ def yaml_to_neps_pipeline_space(yaml_path):
     pipeline_space = {}
 
     for key, param_config in config.items():
-        param_kwargs = {
-            k: float(v) if isinstance(v, str) and ("e" in v.lower()) else v
-            for k, v in param_config.items()
-            if k not in ["type", "is_fidelity"]
-        }
+        param_kwargs = {}
+        for k, v in param_config.items():
+            if k not in ["type", "is_fidelity"]:
+                # Handle scientific notation strings (e.g., "1e-6")
+                if isinstance(v, str) and ("e" in v.lower()):
+                    try:
+                        param_kwargs[k] = float(v)
+                    except ValueError:
+                        # Keep as string if conversion fails (e.g., "efficientnet-b0")
+                        param_kwargs[k] = v
+                else:
+                    param_kwargs[k] = v
 
         # Create parameter
         if param_config["type"] == "float":

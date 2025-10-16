@@ -1,27 +1,39 @@
 densenet_type:  # default = "densenet121"
   type: categorical
   choices: ["densenet121", "densenet169", "densenet201"]
+  prior: "densenet121"
+  prior_confidence: "low"
 
 init_features:  # default = 64
   type: int
   lower: 16
   upper: 64
+  prior: 64
+  prior_confidence: "low"
 
 growth_rate:  # default = 32
   type: int
   lower: 12
   upper: 32
+  prior: 32
+  prior_confidence: "low"
 
 bn_size:  # default = 4
   type: int
   lower: 1
   upper: 4
+  prior: 4
+  prior_confidence: "low"
 
 act:  # default = "relu"
   type: categorical
   choices: ["relu", "leakyrelu", "gelu"]
+  prior: "relu"
+  prior_confidence: "low"
 
 dropout_prob:  # default = 0.0
   type: float
   lower: 0.0
   upper: 0.3
+  prior: 0.0
+  prior_confidence: "low"

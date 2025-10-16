@@ -457,6 +457,14 @@ def main(experimental_setting: DictConfig) -> None:
         
         # Run NePS optimization for current CV fold
         logging.basicConfig(level=logging.INFO)
+
+        # Create optimizer with priors if using random_search
+        if experimental_setting.searcher == "random_search":
+            # https://github.com/automl/neps/blob/master/docs/reference/optimizers.md
+            optimizer = ("random_search", {"use_priors": True, "ignore_fidelity": True})
+        else:
+            optimizer = experimental_setting.searcher
+            
         run(
             pipeline_space=pipeline_space,  # Hyperparameter search space
             evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
@@ -467,7 +475,7 @@ def main(experimental_setting: DictConfig) -> None:
                 num_classes=num_classes,
                 **kwargs,
             ),
-            optimizer=experimental_setting.searcher,  # HPO algorithm
+            optimizer=optimizer,  # HPO algorithm
             root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
             max_evaluations_total=experimental_setting.max_evaluations,
             ignore_errors=True,

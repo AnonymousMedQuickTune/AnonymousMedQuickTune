@@ -1,3 +1,5 @@
 efficientnet_type:  # default = "efficientnet-b0"
   type: categorical
   choices: ["efficientnet-b0", "efficientnet-b1", "efficientnet-b2"]
+  prior: "efficientnet-b0"
+  prior_confidence: "low"
