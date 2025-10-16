@@ -231,9 +231,9 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         dict: Dictionary containing dataset splits and metadata
     """
     if use_smart_preprocessing:
-        if dataset_name in ["gist", "crlm", "melanoma"]:
+        if dataset_name in ["lipo", "desmoid", "liver"]:
             is_mri = True
-        elif dataset_name in ["lipo", "desmoid", "liver"]:
+        elif dataset_name in ["gist", "crlm", "melanoma"]:
             is_mri = False  # CT dataset
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
@@ -587,10 +587,10 @@ def get_kfold_dataloaders(
     valid_data = [train_data_images[i] for i in val_idx]
 
     # Calculate normalization stats from preprocessed CT training data if not provided by NePS (AutoNorm)
-    if dataset_name in ["gist", "crlm", "melanoma"]:  # MRI datasets
+    if dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets
         # Normalization is done in the preprocessing per image/patient individually
         normalization_stats = None
-    elif dataset_name in ["lipo", "desmoid", "liver"]:  # CT datasets
+    elif dataset_name in ["gist", "crlm", "melanoma"]:  # CT datasets
         if normalization_stats is None:
             # Calculate normalization stats from preprocessed training data if not provided by NePS (AutoNorm)
             # The training data is dependent on the cross-validation fold.
