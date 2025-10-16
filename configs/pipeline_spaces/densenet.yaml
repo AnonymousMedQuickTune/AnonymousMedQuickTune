@@ -19,7 +19,7 @@ bn_size:  # default = 4
 
 act:  # default = "relu"
   type: categorical
-  choices: ["relu", "leaky_relu", "gelu"]
+  choices: ["relu", "leakyrelu", "gelu"]
 
 dropout_prob:  # default = 0.0
   type: float

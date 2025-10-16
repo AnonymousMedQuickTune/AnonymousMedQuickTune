@@ -23,4 +23,4 @@ widen_factor:  # default = 1.0
 
 act:  # default = "relu"
   type: categorical
-  choices: ["relu", "leaky_relu", "gelu"]
+  choices: ["relu", "leakyrelu", "gelu"]
