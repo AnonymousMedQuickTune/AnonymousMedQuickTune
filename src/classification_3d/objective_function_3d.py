@@ -21,6 +21,8 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
                                             get_optimizer,
                                             get_warmup_scheduler,
                                             train_epoch)
+from src.utils.ema_utils import ModelEMA
+
 from src.classification_3d.preprocess_data_3d import (
     get_kfold_dataloaders)
 from src.classification_3d.utils.normalization_stats import autonorm
@@ -286,6 +288,11 @@ def run_3d_pipeline(
             weight_decay=hyperparameters.get("weight_decay", 0.0),
         )
 
+        # Initialize Exponential Moving Average (EMA)
+        ema_decay = hyperparameters.get("ema_decay", 0.999)
+        ema = ModelEMA(model, decay=ema_decay)
+
+
         # Setup warmup scheduler if warmup epochs > 0
         warmup_epochs = hyperparameters.get("warmup_epochs", 0)
         scheduler = (
@@ -403,12 +410,19 @@ def run_3d_pipeline(
                 hyperparameters.get("mixup_alpha", 0.0),
                 accumulation_steps=hyperparameters.get("gradient_accumulation_steps", 1),
             )
+            # Update EMA weights after each training epoch
+            ema.update(model)
+
             train_time = time.time() - train_start_time
             
             # Validation phase
             eval_start_time = time.time()
             val_metrics = None  # Initialize val_metrics as None
             if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1):
+                # Evaluate with EMA weights (smoother version of the model)
+                original_state = model.state_dict()
+                model.load_state_dict(ema.ema_model.state_dict(), strict=False)
+
                 val_metrics = evaluate_and_log_metrics(
                     model,
                     val_loader,
@@ -418,6 +432,18 @@ def run_3d_pipeline(
                     phase="val",
                     epoch=training_epochs,
                 )
+
+                # Restore original weights
+                model.load_state_dict(original_state, strict=False)
+
+                # Log EMA validation metric separately to compare
+                if val_metrics is not None:
+                    writer.add_scalar(
+                        f"{experimental_setting.metric.upper()}/val_ema/cv_inner_fold_{fold}",
+                        np.mean(val_metrics[experimental_setting.metric]) * 100,
+                        training_epochs,
+                    )
+
             eval_time = time.time() - eval_start_time
 
             # Calculate total epoch time
@@ -438,7 +464,7 @@ def run_3d_pipeline(
 
             # Save progress (not the best model, just regular checkpoint)
             checkpoint_manager.save(
-                model,
+                ema.ema_model, # Save EMA model instead of raw model
                 optimizer,
                 scheduler,
                 (
