@@ -1,4 +1,7 @@
-from __future__ import annotations
+# NePS FTPFN: https://github.com/automl/neps/blob/master/neps/optimizers/models/ftpfn.pyf
+# NePS GP: https://github.com/automl/neps/blob/master/neps/optimizers/models/gp.py
+
+rom __future__ import annotations
 
 import torch
 from dataclasses import dataclass
