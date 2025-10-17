@@ -22,6 +22,7 @@ from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set
                                     yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.evaluate_trained_config import evaluate_config_on_test_set
+from src.analysis.summarize_evaluation_results import summarize_experiment
 import datetime
 
 
@@ -177,7 +178,7 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.training.number_of_epochs = 2
         experimental_setting.cv_inner_folds = 2
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
-        experimental_setting.cv_outer_folds_repeats = 3
+        experimental_setting.cv_outer_folds_repeats = 1
         experimental_setting.cv_outer_folds_splits = 2  # splits  (minimum!) per repeat
 
     # TODO @Diane: Double check training search space!
@@ -505,6 +506,30 @@ def main(experimental_setting: DictConfig) -> None:
     
     # Save cross-validation summary to text file
     save_cv_summary(experimental_setting, cv_outer_folds)
+
+    # Automatically summarize evaluation results including outer fold ensemble
+    print(f"\n{'='*100}")
+    print(f"AUTOMATICALLY SUMMARIZING EVALUATION RESULTS")
+    print(f"{'='*100}\n")
+    
+    try:
+        
+        # Generate summary with outer fold ensemble
+        # Remove seed_XX from experiment_base_dir to get the correct path
+        experiment_path = experimental_setting.experiment_base_dir.replace(f"/seed_{experimental_setting.seed}", "")
+        summary = summarize_experiment(experiment_path, str(experimental_setting.seed))
+        
+        # Save summary to file
+        summary_file = os.path.join(experimental_setting.experiment_base_dir, "evaluation_summary_across_outer_folds.txt")
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(summary)
+        
+        print(f"\nEvaluation summary saved to: {summary_file}")
+        print("\n" + summary)
+        
+    except Exception as e:
+        print(f"Warning: Could not generate evaluation summary: {e}")
+        print("You can manually run: python src/analysis/summarize_evaluation_results.py <experiment_path>")
 
 # TODO @Diane: Move function to another file
 def save_cv_summary(experimental_setting, cv_outer_folds):
