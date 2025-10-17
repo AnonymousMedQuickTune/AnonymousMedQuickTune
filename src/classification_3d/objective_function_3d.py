@@ -46,63 +46,61 @@ def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
     """
     if developer_mode:
         image_size = (64, 64, 32)  # image in (H, W, D) format
-    
     else:
-        if dataset_name == "gist":
-            # To reduce cuda errors, we use a fixed smaller image size for the gist dataset
-            image_size = (96, 96, 96)  # image in (H, W, D) format
-        else:
-            # Only ViT and SwinUNETR need specific image sizes
-            if model_type in ["vit", "swin_unetr"]:
-                print(f"Extracting image size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
-                print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
-                
-                if dataset_name == "lipo":
-                    # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
-                    # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
-                    # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
-                    # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
-                    # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-                    # Use approximate comparison with tolerance for floating point precision issues
-                    if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
-                        image_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-                    elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
-                        image_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-                    elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
-                        image_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-                    elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
-                        image_size = (274, 275, 176)  # spatial_size in (H, W, D) format
-                    else:
-                        print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-                
-                elif dataset_name == "desmoid":
-                    mean_voxel_size_0 = 0.673749
-                    median_voxel_size_0 = 0.68359375
-                    isotropic_voxel_size_0 = 1.0
-                    volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                    if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                        image_size = (356, 565, 69)  # (H, W, D) format
-                    elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                        image_size = (352, 556, 77)  # (H, W, D) format
-                    elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                        image_size = (351, 380, 383)  # (H, W, D) format
-                    elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                        image_size = (272, 295, 297)  # (H, W, D) format
-                    else:
-                        print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-
+        # Only ViT and SwinUNETR need specific image sizes
+        if model_type in ["vit", "swin_unetr"]:
+            print(f"Extracting image size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
+            print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
+            
+            if dataset_name == "lipo":
+                # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
+                # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
+                # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
+                # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
+                # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
+                # Use approximate comparison with tolerance for floating point precision issues
+                if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
+                    image_size = (466, 558, 50)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
+                    image_size = (446, 534, 50)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
+                    image_size = (381, 382, 176)  # spatial_size in (H, W, D) format
+                elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
+                    image_size = (274, 275, 176)  # spatial_size in (H, W, D) format
                 else:
-                    raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
-                
-                # Update image size to be divisible by 32  # TODO @Diane: round up?
-                h = (image_size[0] // 32) * 32
-                w = (image_size[1] // 32) * 32
-                d = (image_size[2] // 32) * 32
-                image_size = (h, w, d)
+                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+            
+            elif dataset_name == "desmoid":
+                mean_voxel_size_0 = 0.673749
+                median_voxel_size_0 = 0.68359375
+                isotropic_voxel_size_0 = 1.0
+                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
+
+                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
+                    image_size = (356, 565, 69)  # (H, W, D) format
+                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
+                    image_size = (352, 556, 77)  # (H, W, D) format
+                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
+                    image_size = (351, 380, 383)  # (H, W, D) format
+                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
+                    image_size = (272, 295, 297)  # (H, W, D) format
+                else:
+                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+            
+            elif dataset_name == "gist":
+                image_size = (96, 96, 96)  # (H, W, D) format (should already be the case due to preprocessing)
 
             else:
-                image_size = None
+                raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
+            
+            # Update image size to be divisible by 32  # TODO @Diane: round up?
+            h = (image_size[0] // 32) * 32
+            w = (image_size[1] // 32) * 32
+            d = (image_size[2] // 32) * 32
+            image_size = (h, w, d)
+
+        else:
+            image_size = None
     
     print(f"Image size: {image_size}")
     return image_size

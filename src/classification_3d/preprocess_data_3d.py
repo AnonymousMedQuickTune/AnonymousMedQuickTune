@@ -178,8 +178,12 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     output_path = os.path.join(cleaned_dataset_path, f"preprocessed_{calculation_method}")
     os.makedirs(output_path, exist_ok=True)
     
+    # Determine if this is GIST dataset for memory optimization
+    dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
+    is_gist = (dataset_name == "gist")
+    
     # Run the preprocessing pipeline from Natalia's preprocessing code base
-    main_preprocessing(file_paths, output_path, voxel_size, is_mri)  # TODO @Natalia: Verify for correct integration pls :)
+    main_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist=is_gist)  # TODO @Natalia: Verify for correct integration pls :)
     
     # Analyze preprocessed dataset statistics
     print("\n=== Preprocessed Dataset Statistics Analysis ===")

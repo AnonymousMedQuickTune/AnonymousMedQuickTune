@@ -54,7 +54,7 @@ def preprocessing(file_paths, new_path, voxel, is_mri):
         # print(f"Image No {count} done")
 
 
-def main_preprocessing(file_paths, new_path, voxel, is_mri):
+def main_preprocessing(file_paths, new_path, voxel, is_mri, is_gist=False):
     # Resample and normalization of images
     # Creates the new images after resampling and normalization and saves them
     preprocessing(file_paths, new_path, voxel, is_mri)
@@ -163,6 +163,29 @@ def main_preprocessing(file_paths, new_path, voxel, is_mri):
     
             temp_img_path = new_path + '/' + mask_file + "/" + image_name
             temp_seg_path = new_path + '/' + mask_file +  "/" + segmentation_name
+            
+            # GIST-specific resizing to reduce memory usage
+            if is_gist:
+                from scipy.ndimage import zoom
+                target_size = (96, 96, 96)  # Fixed size for GIST to prevent OOM
+                
+                # Get current data
+                img_data = final_img.get_fdata()
+                seg_data = final_seg.get_fdata()
+                
+                # Calculate zoom factors
+                current_shape = img_data.shape
+                zoom_factors = [target_size[i] / current_shape[i] for i in range(3)]
+                
+                # Resize image and segmentation
+                resized_img_data = zoom(img_data, zoom_factors, order=1)  # Linear interpolation
+                resized_seg_data = zoom(seg_data, zoom_factors, order=0)  # Nearest neighbor for segmentation
+                
+                # Create new NIfTI images with resized data
+                final_img = nib.Nifti1Image(resized_img_data, img_affine, img_header)
+                final_seg = nib.Nifti1Image(resized_seg_data, seg_affine, seg_header)
+                
+                print(f"GIST: Resized {mask_file} from {current_shape} to {resized_img_data.shape}")
             
             # Save the new NIfTI file
             
