@@ -1,11 +1,12 @@
+# For GIST dataset
 mean:
   type: float
   log: false
-  lower: 0
-  upper: 1
+  lower: -150
+  upper: 150
 
 std:
   type: float
   log: false
-  lower: 0
-  upper: 1
+  lower: 50
+  upper: 250
