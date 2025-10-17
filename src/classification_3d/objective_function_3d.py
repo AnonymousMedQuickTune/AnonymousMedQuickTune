@@ -260,7 +260,8 @@ def run_3d_pipeline(
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
             image_size=image_size,
-            fold_directory=fold_directory
+            fold_directory=fold_directory,
+            no_validation=experimental_setting.training.no_validation
         )
 
         # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)

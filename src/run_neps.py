@@ -180,6 +180,11 @@ def main(experimental_setting: DictConfig) -> None:
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
         experimental_setting.cv_outer_folds_repeats = 1
         experimental_setting.cv_outer_folds_splits = 2  # splits  (minimum!) per repeat
+    
+    if experimental_setting.training.no_validation:
+        experimental_setting.cv_inner_folds = 1
+        if experimental_setting.run_mode != "Baseline":
+            raise ValueError("No validation set mode is not supported for non-baseline runs.")
 
     # TODO @Diane: Double check training search space!
     # Combine model and training space into a single search space

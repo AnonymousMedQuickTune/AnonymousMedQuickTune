@@ -546,6 +546,7 @@ def get_kfold_dataloaders(
     developer_mode,
     image_size=None,
     fold_directory=None,
+    no_validation=False,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -565,26 +566,36 @@ def get_kfold_dataloaders(
         developer_mode (bool): If True, uses smaller model target shape for faster development
         image_size (tuple): Image size in (H, W, D) format for ViT; default None
         fold_directory (str, optional): Directory path for saving normalization stats
-
+        no_validation (bool): If True, does not split train data in to train/val splits for validation
+        
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
-    # Create k-fold splitter
-    kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=seed)
+    # Handle no_validation case
+    if no_validation:
+        print("No validation set mode: Using all data for training")
+        # Use all data for training, no validation split
+        train_data_images = [{"index": idx, "image": img, "label": label} 
+                        for idx, (img, label) in enumerate(zip(data, labels))]
+        train_data = train_data_images
+        valid_data = []  # Empty validation set
+    else:
+        # Create k-fold splitter
+        kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=seed)
 
-    # Get indices for current fold
-    indices = np.arange(len(data))
-    for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
-        if i == fold_idx:
-            break
-    
-    # Combine images and labels into a list of dictionaries
-    train_data_images = [{"index": idx, "image": img, "label": label} 
-                    for idx, (img, label) in enumerate(zip(data, labels))]
-    
-    # Split data for current fold
-    train_data = [train_data_images[i] for i in train_idx]
-    valid_data = [train_data_images[i] for i in val_idx]
+        # Get indices for current fold
+        indices = np.arange(len(data))
+        for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
+            if i == fold_idx:
+                break
+        
+        # Combine images and labels into a list of dictionaries
+        train_data_images = [{"index": idx, "image": img, "label": label} 
+                        for idx, (img, label) in enumerate(zip(data, labels))]
+        
+        # Split data for current fold
+        train_data = [train_data_images[i] for i in train_idx]
+        valid_data = [train_data_images[i] for i in val_idx]
 
     # Calculate normalization stats from preprocessed CT training data if not provided by NePS (AutoNorm)
     if dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets
