@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Script to summarize test results across all cross-validation folds for NePS experiments.
-Specifically designed for Baseline mode experiments with single config_1.
+Uses the best config per fold as determined by NePS from best_config.txt files.
+Works for both Baseline mode (single config_1) and NePS mode (multiple config_*).
 """
 
 import os
@@ -14,9 +15,44 @@ from typing import Dict, List, Any
 
 from src.evaluate_trained_config import calculate_metrics_from_probabilities
 
+def get_best_config_id(fold_dir: Path) -> int:
+    """
+    Get the best config ID from best_config.txt file.
+    
+    Args:
+        fold_dir: Path to the cv_outer_fold directory
+    
+    Returns:
+        Best config ID (e.g., 2 for config_2)
+    """
+    best_config_file = fold_dir / "summary" / "best_config.txt"
+    
+    if not best_config_file.exists():
+        print(f"Warning: best_config.txt not found: {best_config_file}")
+        return 1  # Fallback to config_1
+    
+    try:
+        with open(best_config_file, 'r') as f:
+            content = f.read()
+        
+        # Parse "Config ID: X" from the file
+        for line in content.split('\n'):
+            if 'Config ID:' in line:
+                config_id = int(line.split('Config ID:')[1].strip())
+                return config_id
+        
+        print(f"Warning: Could not parse Config ID from {best_config_file}")
+        return 1  # Fallback to config_1
+        
+    except Exception as e:
+        print(f"Warning: Error reading {best_config_file}: {e}")
+        return 1  # Fallback to config_1
+
+
 def load_test_results(experiment_path: str, seed: str = "42") -> Dict[str, List[float]]:
     """
     Load test evaluation results from all cv_outer_fold directories.
+    Uses the best config per fold as determined by NePS.
     
     Args:
         experiment_path: Path to the experiment directory
@@ -43,18 +79,22 @@ def load_test_results(experiment_path: str, seed: str = "42") -> Dict[str, List[
     all_metrics = {}
     
     for fold_dir in cv_fold_dirs:
-        results_file = fold_dir / "configs" / "config_1" / "test_evaluation_results.json"
+        # Get the best config ID for this fold
+        best_config_id = get_best_config_id(fold_dir)
+        config_name = f"config_{best_config_id}"
+        
+        results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
         
         if not results_file.exists():
             print(f"Warning: Results file not found: {results_file}")
             continue
         
-        print(f"Loading results from: {results_file}")
+        print(f"Loading results from: {results_file} (best config: {config_name})")
         
         with open(results_file, 'r') as f:
             fold_results = json.load(f)
         
-        # Extract ensemble metrics (for Baseline mode)
+        # Extract ensemble metrics
         ensemble_metrics = fold_results.get("ensemble", {})
         
         # Flatten nested metrics
@@ -81,6 +121,7 @@ def load_test_results(experiment_path: str, seed: str = "42") -> Dict[str, List[
 def load_predictions_for_outer_ensemble(experiment_path: str, seed: str = "42") -> Dict[str, Any]:
     """
     Load raw predictions from all cv_outer_fold directories for outer fold ensemble.
+    Uses the best config per fold as determined by NePS.
     
     Args:
         experiment_path: Path to the experiment directory
@@ -110,13 +151,17 @@ def load_predictions_for_outer_ensemble(experiment_path: str, seed: str = "42") 
     framework = None
     
     for fold_dir in cv_fold_dirs:
-        predictions_file = fold_dir / "configs" / "config_1" / "test_predictions_for_outer_ensemble.json"
+        # Get the best config ID for this fold
+        best_config_id = get_best_config_id(fold_dir)
+        config_name = f"config_{best_config_id}"
+        
+        predictions_file = fold_dir / "configs" / config_name / "test_predictions_for_outer_ensemble.json"
         
         if not predictions_file.exists():
             print(f"Warning: Predictions file not found: {predictions_file}")
             continue
         
-        print(f"Loading predictions from: {predictions_file}")
+        print(f"Loading predictions from: {predictions_file} (best config: {config_name})")
         
         with open(predictions_file, 'r') as f:
             fold_predictions = json.load(f)

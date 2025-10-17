@@ -62,8 +62,12 @@ As our main evaluation protocol is cross-validation ensemble learning where each
 Additionally, we log comprehensive metrics for each individual inner fold to provide detailed performance analysis and identify fold-specific patterns.
 
 ## Outer Fold Evaluation
+> **Note:** This is not relevant for portfolio creation
 
 To estimate generalization performance, we use a nested cross-validation protocol with aggregation across all outer folds. In addition, we perform a post-hoc outer-fold ensemble analysis to explore the potential benefits of model ensembling after evaluation.
+
+### Baseline VS HPO runs
+For baseline runs, there is just one single configuration for which we perform the evaluation. For HPO runs (NePS/MedQuickTune), we perform the evaluation on the best configuration for each outer fold based on validation performance on the selected main metric.
 
 ### Individual Fold Aggregation
 As our main evaluation protocol we aggregate results across all outer folds using robust statistical measures. For each metric, we collect values from all outer folds and calculate:
