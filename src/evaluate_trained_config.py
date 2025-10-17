@@ -2,6 +2,7 @@ import os
 import torch
 import numpy as np
 import re
+import json
 from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -576,6 +577,26 @@ def evaluate_config_on_test_set(
     
     # 2. Calculate Per-Fold Metrics
     per_fold_metrics = calculate_per_fold_metrics(folds_probabilities, ground_truth_targets, num_classes)
+
+    # 3. Post-hoc: Calculate ensemble probabilities for outer fold ensemble
+    stacked_probabilities = np.stack(folds_probabilities, axis=0)  # (folds, samples, classes)
+    avg_probabilities = np.mean(stacked_probabilities, axis=0)     # (samples, classes)
+
+    # Save raw predictions for outer fold ensemble
+    prediction_data = {
+        "probabilities": avg_probabilities.tolist(),
+        "ground_truth": ground_truth_targets.tolist(),
+        "sample_ids": list(range(len(ground_truth_targets))),
+        "cv_outer_fold": cv_outer_fold,
+        "num_classes": num_classes,
+        "framework": framework
+    }
+    
+    predictions_file = os.path.join(pipeline_directory, "test_predictions_for_outer_ensemble.json")
+    with open(predictions_file, "w", encoding="utf-8") as f:
+        json.dump(prediction_data, f, indent=4)
+    print(f"Raw predictions saved for outer fold ensemble: {predictions_file}")
+    
 
     # Return both ensemble metrics and per-fold metrics
     return {

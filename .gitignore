@@ -9,6 +9,10 @@ datasets/*
 !datasets/mini/
 !datasets/mini/.gitkeep
 
+# Thesis
+reports/thesis_update/*
+reports/thesis/*
+
 # LaTeX
 *.aux
 *.bbl
@@ -133,6 +137,7 @@ ipython_config.py
 #   commonly ignored for libraries.
 #   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
 #poetry.lock
+.trace.lock
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.

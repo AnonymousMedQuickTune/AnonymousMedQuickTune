@@ -26,6 +26,7 @@ training:
   early_stopping: True   # Whether to use early stopping
   patience: 20            # Number of epochs with no improvement after which training will be stopped
   use_loss_threshold: True  # Whether to use loss threshold to stop training
+  no_validation: False     # Whether to split train data in to train/val splits for validation
 
 #------------------------------------------------------------------------------
 # QuickTune Optimization Settings
