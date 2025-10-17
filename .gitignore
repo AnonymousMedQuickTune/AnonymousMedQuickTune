@@ -9,6 +9,9 @@ datasets/*
 !datasets/mini/
 !datasets/mini/.gitkeep
 
+# Thesis
+reports/thesis_update/*
+
 # LaTeX
 *.aux
 *.bbl
