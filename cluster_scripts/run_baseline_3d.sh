@@ -1,7 +1,7 @@
 #!/bin/bash
-##SBATCH -p alldlc_gpu-rtx2080
+#SBATCH -p alldlc_gpu-rtx2080
 ##SBATCH -p mlhiwidlc_gpu-rtx2080
-#SBATCH -p testdlc_gpu-rtx2080
+##SBATCH -p testdlc_gpu-rtx2080
 ##SBATCH -q dlc-wagnerd
 #SBATCH --gres=gpu:1
 #SBATCH -J medquicktune
@@ -26,4 +26,6 @@ python -m src.run_neps \
     data.dimensionality=3d \
     run_mode="Baseline" \
     training.number_of_epochs=50 \
+    cv_outer_folds_repeats=1 \
+    cv_outer_folds_splits=5 \
     developer_mode=false
