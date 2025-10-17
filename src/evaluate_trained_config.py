@@ -372,10 +372,15 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     # MODEL CHECKPOINT LOADING
     # ------------------------------------------------------------------------------------------------
     # Load the trained model checkpoint for this fold
+    if experimental_setting.training.no_validation:
+        model_checkpoint = "model_latest_checkpoint.pth"
+    else:
+        model_checkpoint = "best_model_checkpoint.pth"
+
     checkpoint_path = (
         Path(pipeline_directory)
         / f"cv_inner_fold_{fold}"
-        / "best_model_checkpoint.pth"
+        / model_checkpoint
     )
     
     if not checkpoint_path.exists():
