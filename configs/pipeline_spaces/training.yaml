@@ -23,12 +23,6 @@ weight_decay:
   lower: 1e-6
   upper: 1e-2
 
-dropout_rate:
-  type: float
-  log: false
-  lower: 0.0
-  upper: 0.5
-
 warmup_epochs:
   type: int
   lower: 0
