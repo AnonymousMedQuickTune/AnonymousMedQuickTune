@@ -276,7 +276,7 @@ analyze-fidelity-correlation-cluster DATASET EXPERIMENT_NAME SEED:
 
 # Summarize test results across all cross-validation folds for NePS experiments
 summarize-test-results EXPERIMENT_PATH SEED="42":
-  python src/analysis/summarize_evaluation_results.py {{EXPERIMENT_PATH}} --seed {{SEED}}
+  python -m src.analysis.summarize_evaluation_results {{EXPERIMENT_PATH}} --seed {{SEED}}
 
 # Summarize test results across all cross-validation folds for NePS experiments (cluster)
 summarize-test-results-cluster EXPERIMENT_PATH SEED="42":
