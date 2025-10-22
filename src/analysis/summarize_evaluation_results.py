@@ -182,7 +182,9 @@ def load_predictions_for_outer_ensemble(experiment_path: str, seed: str = "42") 
         "ground_truth": ground_truth,
         "num_classes": num_classes,
         "framework": framework,
-        "num_outer_folds": len(all_predictions)
+        "num_outer_folds": len(all_predictions),
+        "experiment_path": experiment_path,
+        "seed": seed
     }
 
 
@@ -199,7 +201,8 @@ def create_outer_fold_ensemble(predictions_data: Dict[str, Any]) -> Dict[str, fl
     all_predictions = predictions_data["predictions"]
     ground_truth = predictions_data["ground_truth"]
     num_classes = predictions_data["num_classes"]
-    
+   
+    """
     # Stack all fold predictions into a 3D array
     # shape: (num_outer_folds, num_samples, num_classes)
     stacked_predictions = np.stack(all_predictions, axis=0)
@@ -207,7 +210,38 @@ def create_outer_fold_ensemble(predictions_data: Dict[str, Any]) -> Dict[str, fl
     # Average across outer folds to get ensemble predictions
     # shape: (num_samples, num_classes)
     ensemble_predictions = np.mean(stacked_predictions, axis=0)
+    """
     
+    # Check if all predictions have the same shape
+    shapes = [pred.shape for pred in all_predictions]
+    if len(set(shapes)) > 1:
+        print(f"Warning: Different prediction shapes detected: {shapes}")
+        print("This can happen with cross-validation when the number of test samples varies across folds.")
+        print("Creating ensemble by averaging predictions on common samples...")
+
+        # Find the minimum number of samples across all folds
+        min_samples = min(pred.shape[0] for pred in all_predictions)
+        print(f"Using minimum common shape: ({min_samples}, {all_predictions[0].shape[1]})")
+
+        # Truncate all predictions to the minimum common shape
+        truncated_predictions = [pred[:min_samples] for pred in all_predictions]
+        truncated_ground_truth = ground_truth[:min_samples]
+
+        # Stack truncated predictions and create ensemble
+        stacked_predictions = np.stack(truncated_predictions, axis=0)
+        ensemble_predictions = np.mean(stacked_predictions, axis=0)
+
+        # Update ground truth for metrics calculation
+        ground_truth = truncated_ground_truth
+
+        print(f"Ensemble created with {min_samples} samples (truncated from varying sizes)")
+        print(f"Note: This ensemble uses only the first {min_samples} samples from each fold")
+        print(f"Individual fold results use all available samples and may differ from ensemble")
+    else:
+        # All predictions have the same shape - proceed normally
+        stacked_predictions = np.stack(all_predictions, axis=0)
+        ensemble_predictions = np.mean(stacked_predictions, axis=0)
+
     print(f"\n=== Creating Outer Fold Ensemble ===")
     print(f"Total outer folds: {len(all_predictions)}")
     print(f"Test samples: {len(ground_truth)}")
