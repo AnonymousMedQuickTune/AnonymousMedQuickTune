@@ -12,4 +12,4 @@ BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
 EXPERIMENT_PATH="$BASE_DIR/experiments/$EXPERIMENT_PATH"
 
 cd "$BASE_DIR/code/MedQuickTune"
-python src/analysis/summarize_evaluation_results.py "$EXPERIMENT_PATH" --seed "$SEED" --output "$EXPERIMENT_PATH/evaluation_summary_across_outer_fols.txt"
+python -m src.analysis.summarize_evaluation_results "$EXPERIMENT_PATH" --seed "$SEED" --output "$EXPERIMENT_PATH/evaluation_summary_across_outer_fols.txt"
