@@ -131,5 +131,5 @@ For each of the five folds:
 All metrics are stored per epoch and per fold for later analysis.  
 After all five folds are completed:
 
-- The **best validation AUC** from each fold is collected.  
-- The **mean and standard deviation** of these best AUC values are reported as the baseline’s final performance.
+- The best validation AUC from each fold is collected.  
+- The mean and standard deviation for the 5-folds are reported as the baseline’s final performance.
