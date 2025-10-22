@@ -29,6 +29,7 @@ def natural_key(string_):
 def find_valid_image_and_segmentation_files(base_path, data_point):
     """
     Find image and segmentation files with flexible naming.
+    Supports both flat structure (e.g., lipo dataset) and nested structure (e.g., liver dataset).
     
     Args:
         base_path (str): Base path to the dataset
@@ -67,21 +68,61 @@ def find_valid_image_and_segmentation_files(base_path, data_point):
         "label.nrrd"
     ]
     
-    # Try to find image file
+    def search_files_recursively(directory, patterns):
+        """Search for files recursively in directory and subdirectories"""
+        found_files = []
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                for pattern in patterns:
+                    if file == pattern:
+                        found_files.append(os.path.join(root, file))
+        return found_files
+    
+    # Try to find image file (first check direct, then recursive)
     img_path = None
+    
+    # First try direct search (for flat structure like lipo)
     for pattern in image_patterns:
         test_path = os.path.join(data_point_path, pattern)
         if os.path.exists(test_path):
             img_path = test_path
             break
     
-    # Try to find segmentation file
+    # If not found, try recursive search (for nested structure like liver)
+    if img_path is None:
+        found_images = search_files_recursively(data_point_path, image_patterns)
+        if found_images:
+            img_path = found_images[0]  # Take first match
+    
+    # Try to find segmentation file (first check direct, then recursive)
     seg_path = None
+    
+    # First try direct search (for flat structure like lipo)
     for pattern in segmentation_patterns:
         test_path = os.path.join(data_point_path, pattern)
         if os.path.exists(test_path):
             seg_path = test_path
             break
+    
+    # If not found, try recursive search (for nested structure like liver)
+    if seg_path is None:
+        found_segmentations = search_files_recursively(data_point_path, segmentation_patterns)
+        if found_segmentations:
+            seg_path = found_segmentations[0]  # Take first match
+    
+    # Debug: Print what files are actually in the directory
+    if not img_path or not seg_path:
+        try:
+            print(f"Debug: Searching in {data_point_path}")
+            for root, dirs, files in os.walk(data_point_path):
+                level = root.replace(data_point_path, '').count(os.sep)
+                indent = ' ' * 2 * level
+                print(f"{indent}{os.path.basename(root)}/")
+                subindent = ' ' * 2 * (level + 1)
+                for file in files:
+                    print(f"{subindent}{file}")
+        except Exception as e:
+            print(f"Debug: Could not list files in {data_point_path}: {e}")
     
     return img_path, seg_path
 
@@ -175,7 +216,7 @@ def copy_and_convert_files(original_path, cleaned_path, valid_directories, datas
             shutil.copy2(old_seg_path, new_seg_path)
 
 
-def update_csv_file(original_path, cleaned_path, valid_directories):
+def update_csv_file(original_path, cleaned_path, valid_directories, dataset_name):
     """
     Update CSV file to match valid directories.
     
@@ -183,9 +224,10 @@ def update_csv_file(original_path, cleaned_path, valid_directories):
         original_path (str): Path to the original dataset directory
         cleaned_path (str): Path to the cleaned dataset directory
         valid_directories (list): List of valid directories
+        dataset_name (str): Name of the dataset ('lipo', 'desmoid', 'gist', 'liver')
     """
     # Check if CSV file exists
-    original_csv_path = os.path.join(original_path, "dataset.csv")
+    original_csv_path = os.path.join(original_path, f"{dataset_name}_labels.csv")
     if not os.path.exists(original_csv_path):
         raise FileNotFoundError(f"CSV file not found in {original_path}")
     
@@ -196,19 +238,31 @@ def update_csv_file(original_path, cleaned_path, valid_directories):
     valid_labels = []
     for old_dir in valid_directories:
         try:
-            # Extract directory number from name (e.g. "Lipo-001" -> 1)
-            dir_num = int(old_dir.split('-')[-1])  # 1, 2, 3, ...
+            # Extract directory number from name
+            # Handle different naming conventions:
+            # - "Lipo-001" -> 1
+            # - "Liver-001_MR" -> 1
+            # - "Gist-073" -> 73
+            # Extract number after the first dash
+            dir_num_str = old_dir.split('-')[1]
+            # Remove any suffix after underscore (e.g., "_MR")
+            if '_' in dir_num_str:
+                dir_num_str = dir_num_str.split('_')[0]
+            dir_num = int(dir_num_str)
+            
             # Convert to 0-based index because we use 0-based indexing for the labels
             if dir_num - 1 < len(df):  # 1-1=0, 2-1=1, 3-1=2, ...
                 # Append valid label to list
                 valid_labels.append(df.iloc[dir_num - 1])
-        except (ValueError, IndexError):
-            print(f"Warning: Could not match directory {old_dir} to label")
+            else:
+                print(f"Warning: Directory {old_dir} (number {dir_num}) exceeds CSV length ({len(df)})")
+        except (ValueError, IndexError) as e:
+            print(f"Warning: Could not match directory {old_dir} to label: {e}")
             continue
     
     # Create new DataFrame with valid labels
     new_df = pd.DataFrame(valid_labels)
-    new_csv_path = os.path.join(cleaned_path, "dataset.csv")
+    new_csv_path = os.path.join(cleaned_path, f"{dataset_name}_labels.csv")
 
     # Save new CSV file
     new_df.to_csv(new_csv_path, index=False)
@@ -249,7 +303,7 @@ def clean_dataset(data_path, dataset_name):
     
     # Update CSV file
     print(f"\nStep 3: Updating CSV file...")
-    new_df = update_csv_file(original_path, cleaned_path, valid_directories)
+    new_df = update_csv_file(original_path, cleaned_path, valid_directories, dataset_name)
     
     # Analyze dataset statistics
     print(f"\nStep 4: Analyzing dataset statistics...")

@@ -31,12 +31,13 @@ from src.classification_3d.utils.dataset_cleaning import find_valid_image_and_se
 import datetime
 
 
-def get_paths(dataset_path):
+def get_paths(dataset_path, dataset_name):
     """
     Get paths to images, segmentations, and CSV file for a given dataset path.
     
     Args:
         dataset_path (str): Path to the dataset directory
+        dataset_name (str, optional): Name of the dataset for flexible CSV file detection
         
     Returns:
         tuple: Tuple containing lists of image paths, segmentation paths, and CSV file path
@@ -58,7 +59,7 @@ def get_paths(dataset_path):
         else:
             print(f"\nWarning: Could not find image or segmentation files in {data_point}")
     
-    csv_path = os.path.join(dataset_path, "dataset.csv")
+    csv_path = os.path.join(dataset_path, f"{dataset_name}_labels.csv")
 
     return images_path, segmentations_path, csv_path
 
@@ -66,12 +67,13 @@ def get_paths(dataset_path):
 # TODO @Natalia: Pls double check this implementation + compare calculated voxel size with values you worked with so far
 # NOTE: Pls see experimental_setting.yaml > data.voxel_calculation
 # NOTE: Pls see cleaned_dataset_path/preprocessed_*/statistics.txt
-def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="median"):
+def calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method="median"):
     """
     Calculate voxel for a dataset using the specified calculation method.
     
     Args:
         cleaned_dataset_path (str): Path to the cleaned dataset
+        dataset_name (str, optional): Name of the dataset for flexible CSV file detection
         calculation_method (str): Method to calculate voxel size:
             - 'mean': Calculate mean voxel size across all training images
             - 'median': Calculate median voxel size across all training images
@@ -82,7 +84,7 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
         tuple: Voxel size as (x, y, z) tuple
     """
     # Get image paths for the dataset
-    images_path, _, _ = get_paths(cleaned_dataset_path)
+    images_path, _, _ = get_paths(cleaned_dataset_path, dataset_name)
 
     # Extract dataset name from path
     dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
@@ -142,7 +144,7 @@ def calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method="m
         raise ValueError(f"Unknown calculation method: {calculation_method}")
 
 
-def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri):
+def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name):
     """
     Apply Natalia's smart preprocessing pipeline to the dataset.
     
@@ -151,6 +153,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
         voxel_size (tuple): Voxel size in (x, y, z) format
         calculation_method (str): Method to calculate voxel size ('mean', 'median', 'isotropic', 'volumetric_isotropic')
         is_mri (bool): Whether the dataset is MRI > MRI datasets need normalization in the preprocessing for each image individually
+        dataset_name (str): Name of the dataset for flexible CSV file detection
         
     Returns:
         str: Path to the preprocessed dataset
@@ -158,7 +161,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     print(f"\nApplying smart preprocessing to '{cleaned_dataset_path}'...\n")
 
     # Get image paths for the cleaned dataset
-    images_path, segmentations_path, csv_path = get_paths(cleaned_dataset_path)
+    images_path, segmentations_path, csv_path = get_paths(cleaned_dataset_path, dataset_name)
     
     # Extract directory names from image paths
     # Example: img_path = "datasets/lipo_cleaned/Lipo-001/image.nii.gz"
@@ -189,7 +192,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     print("\n=== Preprocessed Dataset Statistics Analysis ===")
     
     # Load the CSV file to get labels
-    csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
+    csv_path = os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")
     if os.path.exists(csv_path):
         labels_df = pd.read_csv(csv_path)
         statistics = analyze_dataset_statistics(output_path, labels_df)
@@ -243,7 +246,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
         # Check if cleaned dataset exists
         cleaned_dataset_path = os.path.join(data_path, f"{dataset_name}_cleaned")
-        if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, "dataset.csv")):  
+        if os.path.exists(cleaned_dataset_path) and os.path.exists(os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")):  
             print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
             print("\nX Cleaned dataset not found, running dataset cleaning...\n")
@@ -254,19 +257,19 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         if os.path.exists(preprocessed_dataset_path):
             print(f"> Found existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
-            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
+            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
         else:
             print("X Preprocessed dataset not found, running preprocessing...\n")
-            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, calculation_method=voxel_calculation)
-            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri)
+            voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name)
         # Keep the CSV path from the cleaned directory
-        csv_path = os.path.join(cleaned_dataset_path, "dataset.csv")
+        csv_path = os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")
     
     else:
         raise NotImplementedError("Smart preprocessing must be applied to use this function.")
 
     # Get image and segmentation paths from preprocessed data
-    images, segmentations, _ = get_paths(preprocessed_dataset_path)
+    images, segmentations, _ = get_paths(preprocessed_dataset_path, dataset_name)
 
     # Load labels
     labels_csv = pd.read_csv(csv_path)

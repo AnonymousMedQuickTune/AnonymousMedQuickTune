@@ -83,10 +83,10 @@ In addition to standard aggregation, we perform a post-hoc outer-fold ensemble a
 ## Data Normalization
 Data normalization follows the nnU-Net approach to ensure consistent intensity ranges across different imaging modalities. The distinction between CT and MRI datasets is crucial because these modalities have fundamentally different intensity characteristics and acquisition protocols that require tailored normalization strategies:
 
-### MRI datasets:
+### MRI Datasets:
 For MRI datasets, normalization is performed during preprocessing and includes per-image z-score normalization. MRI images exhibit high inter-patient intensity variability due to different scanner settings, coil configurations, and acquisition parameters, making per-image normalization essential for consistent intensity ranges across patients.
 
-### CT datasets:
+### CT Datasets:
 Each inner fold calculates its own normalization statistics (mean and standard deviation) from its training data only. The normalization includes intensity clipping to [0.5, 99.5] percentiles to remove extreme outliers, followed by z-score normalization. These inner fold specific statistics are then applied to training, validation, and test sets, preventing data leakage. CT images have more consistent intensity ranges across patients (measured in Hounsfield units), allowing for fold-specific normalization that leverages the statistical properties of the training cohort.
 
 
