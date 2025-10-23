@@ -165,7 +165,6 @@ def main(experimental_setting: DictConfig) -> None:
 
     if experimental_setting.run_mode == "Baseline":
         print(f"\n\nBaseline run!\n\n")
-        experimental_setting.training.number_of_epochs = 50
         experimental_setting.max_evaluations = 1
         experimental_setting.pipeline_space = "configs/pipeline_spaces/baseline.yaml"
         experimental_setting.data.voxel_calculation = "median"
