@@ -219,13 +219,40 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
         for i in range(min(2, len(images))):
             img = images[i].cpu().numpy()
             
-            if len(img.shape) == 4:  # 3D image: [C, D, H, W]
-                depth = img.shape[1]
-                slice_indices = [depth // 4, depth // 2, 3 * depth // 4]
-                slice_indices = [idx for idx in slice_indices if idx < depth]
+            if len(img.shape) == 4:  # 3D image: [C, H, W, D] or [C, D, H, W]
+                # Determine the correct slicing axis based on tensor dimensions
+                # For liver dataset: H~400, W~400, D~50
+                # The smallest dimension should be the depth (D)
+                
+                # Find which dimension is the smallest (likely depth)
+                dims = img.shape[1:]  # Exclude channel dimension
+                depth_dim = np.argmin(dims) + 1  # +1 because we excluded channel
+                depth_size = img.shape[depth_dim]
+                
+                # print(f"DEBUG: Image tensor shape: {img.shape}")
+                # print(f"DEBUG: Depth dimension: {depth_dim}, Depth size: {depth_size}")
+                
+                # Log every 'frequency'th slice for scrollable video in last epoch
+                # Starting at slice 'start_slice' and ending at slice 'end_slice'
+                # NOTE: If there are too many slices, tensorboard won't be able to display them all.
+                # ---------------------------------------------------------------------------------------
+                frequency = 1
+                start_slice = 0
+                end_slice = depth_size
+                slice_indices = list(range(start_slice, end_slice, frequency))
+                # ---------------------------------------------------------------------------------------
                 
                 for slice_idx in slice_indices:
-                    img_slice = img[:, slice_idx, :, :]  # [C, H, W]
+                    if depth_dim == 1:  # [C, D, H, W]
+                        img_slice = img[:, slice_idx, :, :]  # [C, H, W]
+                    elif depth_dim == 2:  # [C, H, D, W]
+                        img_slice = img[:, :, slice_idx, :]  # [C, H, W]
+                    elif depth_dim == 3:  # [C, H, W, D]
+                        img_slice = img[:, :, :, slice_idx]  # [C, H, W]
+                    else:
+                        raise ValueError(f"Unexpected depth dimension: {depth_dim}")
+                    
+                    # print(f"DEBUG: Slice {slice_idx} shape: {img_slice.shape}")
                     img_slice = img_slice.transpose(1, 2, 0)  # [H, W, C]
                     
                     # Normalize
@@ -243,13 +270,23 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
                     elif img_slice.shape[-1] != 3:
                         raise ValueError(f"Unexpected number of channels: {img_slice.shape[-1]}")
 
-                    # Convert to PIL and resize
+                    # Convert to PIL and resize with aspect ratio preservation
                     img_slice = (img_slice * 255).astype(np.uint8)
                     img_pil = Image.fromarray(img_slice)
                     
                     width, height = img_pil.size
-                    if width < 256 or height < 256:
-                        img_pil = img_pil.resize((max(256, width), max(256, height)), Image.LANCZOS)
+                    # Preserve aspect ratio while ensuring minimum size
+                    min_size = 256
+                    if width < min_size or height < min_size:
+                        # Calculate new dimensions maintaining aspect ratio
+                        aspect_ratio = width / height
+                        if width < height:
+                            new_width = min_size
+                            new_height = int(min_size / aspect_ratio)
+                        else:
+                            new_height = min_size
+                            new_width = int(min_size * aspect_ratio)
+                        img_pil = img_pil.resize((new_width, new_height), Image.LANCZOS)
                     
                     final_img = img_pil.copy()
                     draw = ImageDraw.Draw(final_img)
@@ -270,7 +307,7 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
                     
                     text_lines = [
                         f"T:{true_label} P:{pred_label}",
-                        f"S:{slice_idx}/{depth} E:{epoch}"
+                        f"Slice:{slice_idx}/{depth_size-1} Epoch:{epoch}"
                     ]
                     
                     text_height = len(text_lines) * (font_size + 6) + 16
@@ -299,13 +336,23 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
                 if img_slice.shape[-1] == 1:
                     img_slice = np.repeat(img_slice, 3, axis=-1)
 
-                # Convert to PIL and resize
+                # Convert to PIL and resize with aspect ratio preservation
                 img_slice = (img_slice * 255).astype(np.uint8)
                 img_pil = Image.fromarray(img_slice)
                 
                 width, height = img_pil.size
-                if width < 256 or height < 256:
-                    img_pil = img_pil.resize((max(256, width), max(256, height)), Image.LANCZOS)
+                # Preserve aspect ratio while ensuring minimum size
+                min_size = 256
+                if width < min_size or height < min_size:
+                    # Calculate new dimensions maintaining aspect ratio
+                    aspect_ratio = width / height
+                    if width < height:
+                        new_width = min_size
+                        new_height = int(min_size / aspect_ratio)
+                    else:
+                        new_height = min_size
+                        new_width = int(min_size * aspect_ratio)
+                    img_pil = img_pil.resize((new_width, new_height), Image.LANCZOS)
                 
                 final_img = img_pil.copy()
                 draw = ImageDraw.Draw(final_img)
@@ -342,10 +389,8 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
             else:
                 raise ValueError(f"Unexpected image shape: {img.shape}")
 
-        # Create grid
+        # Log each slice as separate epoch for scrollable video
         if images_with_text:
-            images_with_text = torch.stack(images_with_text)
-            img_grid = torchvision.utils.make_grid(
-                images_with_text, nrow=3, normalize=False, padding=3, pad_value=0.0
-            )
-            writer.add_image(f"Images/fold_{fold}", img_grid, epoch)
+            # Log each slice as a separate "epoch" for video-like scrolling
+            for slice_idx, img_tensor in enumerate(images_with_text):
+                writer.add_image(f"Images/fold_{fold}", img_tensor, slice_idx)
