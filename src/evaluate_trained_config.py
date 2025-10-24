@@ -11,7 +11,7 @@ from src.classification_2d.models_2d import get_2d_model
 from src.classification_2d.preprocess_data_2d import BrainTumorDataset, get_max_batch_size, load_brain_tumor_dataset
 from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
-from src.classification_3d.preprocess_data_3d import EvaluationTransform
+from src.classification_3d.preprocess_data_3d import DataTransform
 from src.classification_3d.objective_function_3d import extract_image_size  # TODO @Diane: clean this up
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
@@ -539,7 +539,7 @@ def evaluate_config_on_test_set(
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(
                 test_data, 
-                transform=EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode=experimental_setting.developer_mode)
+                transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=image_size, is_training=False)
             )
             
             # Create test loader

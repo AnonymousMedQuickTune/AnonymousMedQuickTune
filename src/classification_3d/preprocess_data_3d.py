@@ -19,7 +19,9 @@ from monai.transforms import (
     RandZoomd,
     RandFlipd,
     ResizeWithPadOrCropd,
+    EnsureTyped,
 )
+from monai.utils import InterpolateMode
 from monai.data import Dataset
 from torch.utils.data import DataLoader
 
@@ -396,147 +398,101 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
     }
     
 
-def BasicAugmentTransform(voxel_size, image_size, normalization_stats, developer_mode):
+def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_training=True):
     """
-    Transform for training on the training set with basic data augmentation.
+    Transform the training, validation, and test data. For training set, it applies data augmentation.
     
     Args:
-        voxel_size (tuple): Voxel size in (x, y, z) format
-        image_size (tuple): Image size in (H, W, D) format for ViT; default None
-        normalization_stats (dict): Normalization statistics
-        developer_mode (bool): If True, uses smaller model target shape for faster development
-
-    Returns:
-        monai.transforms.Compose: Compose object containing the transformations
+        normalization_stats (dict): Normalization statistics for CT images only; default None for MRI images
+        developer_mode (bool): If True, uses smaller model target shape for faster development; default False
+        spatial_size (tuple): Image size in (H, W, D) format for e.g., ViT; default None
+        is_training (bool): If True, applies data augmentation; if False, no data augmentation; default True
     """
-    # TODO @Diane: improve data augmentation strategy + add hyperparameters to the search space
-    if normalization_stats is None:
-        # MRI Images: gist, crlm, melanoma
-        # NOTE: Normalization is done in the preprocessing per image/patient individually
-        if developer_mode or image_size is not None:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-                
-                # NOTE: Use smaller image size in the developer mode for faster development!
-                # NOTE: Use special image size for some models
-                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
+    # Base transform that is always applied
+    transforms = [
+        # Load NIfTI images; usually in (H, W, D) format
+        LoadImaged(keys="image"),  
+        # Debug: Print shape after LoadImaged
+        # lambda data: print(f"DEBUG LoadImaged: {data['image'].shape}") or data,
+        #
+        # Ensure channels are first (for MONAI compatibility):
+        # (H, W, D) -> (C, H, W, D) or (H, W, D, C) -> (C, H, W, D) depending on the dataset.
+        EnsureChannelFirstd(keys="image"),
+        # Debug: Print shape after EnsureChannelFirstd
+        # lambda data: print(f"DEBUG EnsureChannelFirstd: {data['image'].shape}") or data,
+        #
+        # NOTE @Natalia:
+        # Removed Spacingd because resampling to a target voxel size is already performed during preprocessing to ensure consistent spacing.
+    ]
 
-                # Data augmentation  
-                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-            ]
-        else:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
+    # Add data normalization for CT images only.
+    # > For CT: Data normalization statistics are either
+    #   - calculated from the training data following nnU-Net's approach.
+    #   - provided by NePS (AutoNorm).
+    # > For MRI: Data normalization is done in the preprocessing per image/patient individually.
+    is_mri = normalization_stats is None
+    if not is_mri:
+        transforms.append(
+            NormalizeIntensityd(keys="image", subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0])
+        )
 
-                # Data augmentation
-                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-            ]
-    else:
-        # CT Images: lipo, desmoid, liver
-        # NOTE: Normalization is done in the runpipeline based on training data statistics depending on the cross-validation folds.
-        if developer_mode or image_size is not None:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-                NormalizeIntensityd(keys=["image"], subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0]),
-                
-                # NOTE: Use smaller image size in the developer mode for faster development!
-                # NOTE: Use special image size for some models
-                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
+    # Add resizing if needed:
+    # > For developer mode, we need to resize the image to a smaller size for faster development. Spatial size in the format (H, W, D).
+    # > For some models e.g., ViT, we need to resize the image to a specific size. Spatial size in the format (H, W, D).
+    needs_resizing = developer_mode or spatial_size is not None
+    if needs_resizing:
+        transforms.append(
+            ResizeWithPadOrCropd(keys="image", spatial_size=spatial_size, mode="constant", constant_values=0)
+        )
+    
+    # Add data augmentation for training set only; no data augmentation for validation and test set!
+    if is_training:
+        transforms.extend([
+            # Flip the image along a random spatial axis (H, W, or D).
+            # Note: spatial_axis refers to spatial dims only — not the channel dim (C in (C, H, W, D)).
+            # NOTE @Natalia:
+            # Updated this from spatial_axis=0 to spatial_axis=[0, 1, 2] to flip the image along a random spatial axis.
+            RandFlipd(keys="image", prob=0.2, spatial_axis=[0, 1, 2]),
+            #
+            # Randomly rotate the image around the depth (z) axis by ±25°.
+            # IMPORTANT: ranges are in radians, not degrees1
+            # NOTE @Natalia:
+            # Changed from (-25, 25) to np.deg2rad(25) for correct units.
+            # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
+            # fill empty regions created by rotation using border values (to avoid black edges),
+            # and keep the original spatial size after transformation for consistent batching.
+            RandRotated(
+                keys="image",
+                range_x=0.0,
+                range_y=0.0,
+                range_z=np.deg2rad(25),  # 25 degrees about z
+                prob=0.2,
+                mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                padding_mode="border",
+                keep_size=True,
+            ),
+            # Randomly zoom the image by a factor between 0.8 and 1.2.
+            # NOTE @Natalia:
+            # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
+            # fill empty regions created by zooming using border values (to avoid black edges),
+            # and keep the original spatial size after transformation for consistent batching.
+            RandZoomd(
+                keys="image",
+                prob=0.2,
+                min_zoom=0.8,
+                max_zoom=1.2,
+                mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                padding_mode="border",
+                keep_size=True,
+            ),
+        ])
 
-                # Data augmentation#
-                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-            ]
-        else:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-                NormalizeIntensityd(keys=["image"], subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0]),
-
-                # Data augmentation
-                RandFlipd( keys=["image"], prob=0.2, spatial_axis=0),
-                RandRotated( keys=["image"], range_z=(-25, 25), prob=0.2),
-                RandZoomd(keys=["image"], prob=0.2, min_zoom=0.8, max_zoom=1.2),
-            ]
-
+    # Ensures the image is a torch.Tensor instead of a NumPy array.
+    # Keeps MONAI's meta_dict synchronized, so spatial information (affine, spacing, etc.) remains attached and consistent throughout the pipeline.
+    transforms.append(EnsureTyped(keys="image"))
+    
     return Compose(transforms)
 
-
-def EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode):
-    """
-    Transform for evaluation on validation and test set without data augmentation.
-
-    Args:
-        voxel_size (tuple): Voxel size in (x, y, z) format
-        image_size (tuple): Image size in (H, W, D) format for ViT; default None
-        normalization_stats (dict): Normalization statistics
-        developer_mode (bool): If True, uses smaller model target shape for faster development
-
-    Returns:
-        monai.transforms.Compose: Compose object containing the transformations
-    """
-    if normalization_stats is None:
-        # MRI Images: gist, crlm, melanoma
-        # NOTE: Normalization is done in the preprocessing per image/patient individually
-        if developer_mode or image_size is not None:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-
-                # NOTE: Use smaller image size in the developer mode for faster development!
-                # NOTE: Use special image size for some models
-                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
-
-                # No data augmentation for evaluation!
-            ]
-        else:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-
-                # No data augmentation for evaluation!
-            ]
-    else:
-        # CT Images: lipo, desmoid, liver
-        # NOTE: Normalization is done in the runpipeline based on training data statistics depending on the cross-validation folds.
-        if developer_mode or image_size is not None:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-                NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-
-                # NOTE: Use smaller image size in the developer mode for faster development!
-                # NOTE: Use special image size for some models
-                ResizeWithPadOrCropd(keys="image", spatial_size=image_size, mode="constant", constant_values=0),
-
-                # No data augmentation for evaluation!
-            ]
-        else:
-            transforms = [
-                LoadImaged(keys="image", image_only=True),  # Load NIfTI images
-                EnsureChannelFirstd(keys="image"),  # Ensure channels are first (for compatibility)
-                Spacingd(keys="image", pixdim=voxel_size, mode="bilinear"),  # Resample to target spacing
-                NormalizeIntensityd(keys=["image"], subtrahend=float(normalization_stats["mean"][0]), divisor=float(normalization_stats["std"][0])),
-
-                # No data augmentation for evaluation!
-            ]
-        
-    return Compose(transforms)
 
 def get_kfold_dataloaders(
     seed,
@@ -636,7 +592,7 @@ def get_kfold_dataloaders(
 
     # Create train and validation datasets
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=BasicAugmentTransform(voxel_size, image_size, normalization_stats, developer_mode))
+        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=True))
     elif augmentation_type == "trivial":
         raise NotImplementedError("Trivial augmentation is not implemented yet.")  # TODO @Diane: Integrate TrivialAugment
     elif augmentation_type == "groupaugment":
@@ -646,7 +602,7 @@ def get_kfold_dataloaders(
 
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=EvaluationTransform(voxel_size, image_size, normalization_stats, developer_mode))
+        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=False))
     else:
         val_dataset = None
 

@@ -31,6 +31,8 @@ from src.utils.experiment_status_logger import InnerFoldProgressLogger
 
 # TODO @Diane: Improve this function in a more general way to be used for all datasets
 # TODO @Diane: Put this function to a different place and import it
+# TODO @Diane: Update values before running experiments on ViT and SwinUNETR as preprocessing updated!
+# TODO @Diane: Use spacial_size instead of image_size
 def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
     """
     Extract image size based on model type and voxel size.
