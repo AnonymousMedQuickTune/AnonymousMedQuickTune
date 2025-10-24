@@ -1,18 +1,12 @@
 import os
-import sys
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
-import nibabel as nib
-import shutil
-import re
 import pickle
 
 from monai.transforms import (
     Compose,
     LoadImaged,
-    Spacingd,
     NormalizeIntensityd,
     EnsureChannelFirstd,
     RandRotated,
@@ -474,7 +468,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
             # Randomly zoom the image by a factor between 0.8 and 1.2.
             # NOTE @Natalia:
             # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
-            # fill empty regions created by zooming using border values (to avoid black edges),
+            # fill empty regions created by zooming using edge values (to avoid black edges),
             # and keep the original spatial size after transformation for consistent batching.
             RandZoomd(
                 keys="image",
@@ -482,7 +476,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
                 min_zoom=0.8,
                 max_zoom=1.2,
                 mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
-                padding_mode="border",
+                padding_mode="edge",
                 keep_size=True,
             ),
         ])
