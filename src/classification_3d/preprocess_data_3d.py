@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 import pickle
+from tqdm import tqdm
+import SimpleITK as sitk
 
 from monai.transforms import (
     Compose,
@@ -20,124 +22,124 @@ from monai.data import Dataset
 from torch.utils.data import DataLoader
 
 from src.classification_3d.utils.normalization_stats import calculate_normalization_stats
-from src.classification_3d.preprocessing.preprocess import main_preprocessing
-from src.classification_3d.preprocessing.utils import spacing_info
+from src.classification_3d.utils.dataset_cleaning import clean_dataset
 from src.classification_3d.utils.dataset_info import analyze_dataset_statistics, save_statistics_to_file, save_cv_split_info
-from src.classification_3d.utils.dataset_cleaning import find_valid_image_and_segmentation_files, natural_key, clean_dataset
+from src.classification_3d.utils.preprocessing_utils import (
+    get_paths,
+    calculate_voxel_size_from_images,
+    crop_and_pad_tumor_region,
+    should_use_masked_normalization,
+    normalize_mri_image_nnunet,
+    save_preprocessed_images_and_segmentations_to_nifti,
+    get_image_dimensions_from_input,
+    resample_image,
+    resize_gist_images
+)
 import datetime
 
-
-def get_paths(dataset_path, dataset_name):
+def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
     """
-    Get paths to images, segmentations, and CSV file for a given dataset path.
+    Comprehensive preprocessing pipeline that includes resampling, normalization, 
+    empty slice removal, and tumor region cropping.
     
     Args:
-        dataset_path (str): Path to the dataset directory
-        dataset_name (str, optional): Name of the dataset for flexible CSV file detection
+        file_paths (list): List of file paths to the images and segmentations
+        output_path (str): Path to the output directory where processed images will be saved
+        voxel_size (tuple): Target voxel size in (x, y, z) format
+        is_mri (bool): Whether the dataset is MRI or CT
+        is_gist (bool): Whether to apply GIST-specific resizing to reduce memory usage
         
     Returns:
-        tuple: Tuple containing lists of image paths, segmentation paths, and CSV file path
+        dict: Dictionary containing preprocessing statistics and metadata
     """
-    # Only directories, not files and ignore preprocessed directory which is within the cleaned dataset directory
-    directory_names = [d for d in sorted(os.listdir(dataset_path), key=natural_key) 
-                      if os.path.isdir(os.path.join(dataset_path, d)) and not d.startswith("preprocessed")]
-    
-    # Use flexible file naming to find image and segmentation files
-    images_path = []
-    segmentations_path = []
-    
-    for data_point in directory_names:
-        # Supports: image.nii.gz, img.nii, image.nrrd, segmentation.nii.gz, mask.nii, etc.
-        img_path, seg_path = find_valid_image_and_segmentation_files(dataset_path, data_point)
-        if img_path and seg_path:
-            images_path.append(img_path)
-            segmentations_path.append(seg_path)
-        else:
-            print(f"\nWarning: Could not find image or segmentation files in {data_point}")
-    
-    csv_path = os.path.join(dataset_path, f"{dataset_name}_labels.csv")
+    # Set variables
+    # NOTE: Update for datasets besides the WORCDatabase
+    image_file_name = "image.nii.gz"
+    segmentation_file_name = "segmentation.nii.gz"
+    minimum_size = 36  # Minimum size for the image and segmentation to be considered valid
 
-    return images_path, segmentations_path, csv_path
+    # Calculate dimension statistics from input files (median and 75th percentile)
+    print("Calculating dimension statistics from input files...")
+    (x_75, y_75, z_75), (x_median, y_median, z_median) = get_image_dimensions_from_input(file_paths, image_file_name)
+    print(f"dimension statistics: {x_75}, {y_75}, {z_75}, {x_median}, {y_median}, {z_median}")
 
-
-# TODO @Natalia: Pls double check this implementation + compare calculated voxel size with values you worked with so far
-# NOTE: Pls see experimental_setting.yaml > data.voxel_calculation
-# NOTE: Pls see cleaned_dataset_path/preprocessed_*/statistics.txt
-def calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method="median"):
-    """
-    Calculate voxel for a dataset using the specified calculation method.
-    
-    Args:
-        cleaned_dataset_path (str): Path to the cleaned dataset
-        dataset_name (str, optional): Name of the dataset for flexible CSV file detection
-        calculation_method (str): Method to calculate voxel size:
-            - 'mean': Calculate mean voxel size across all training images
-            - 'median': Calculate median voxel size across all training images
-            - 'isotropic': Return (1.0, 1.0, 1.0)
-            - 'volumetric_isotropic': Calculate isotropic voxel based on median volume
-    
-    Returns:
-        tuple: Voxel size as (x, y, z) tuple
-    """
-    # Get image paths for the dataset
-    images_path, _, _ = get_paths(cleaned_dataset_path, dataset_name)
-
-    # Extract dataset name from path
-    dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
-
-    # If isotropic, no calculation is needed, return (1.0, 1.0, 1.0)
-    if calculation_method == "isotropic":
-        voxel_result = (1.0, 1.0, 1.0)
-        print(f"> Voxel size (isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    
-    # Load voxel information from all images
-    voxel_sizes = []
-    volumes = []
-    
-    for i, img_path in enumerate(images_path):
-        try:
-            # Load image header to get voxel information
-            import nibabel as nib
-            img = nib.load(img_path)
-            voxel_size = img.header.get_zooms()[:3]  # Get first 3 dimensions
-            voxel_sizes.append(voxel_size)
+    # Process each image/segmentation pair with progress tracking.
+    for file in tqdm(file_paths, desc="", unit="image"):
+        # Load image and segmentation from file path
+        img_file = os.path.join(file, image_file_name)
+        seg_file = os.path.join(file, segmentation_file_name)
             
-            # Calculate volume for volumetric_isotropic
-            if calculation_method == "volumetric_isotropic":
-                volume = np.prod(voxel_size)
-                volumes.append(volume)
-                
-        except Exception as e:
-            print(f"Warning: Could not load voxel information from {img_path}: {e}")
+        # Check if files exist
+        if not os.path.exists(img_file) or not os.path.exists(seg_file):
+            print(f"Warning: Image or segmentation not found at {file} under image name {image_file_name} or segmentation name {segmentation_file_name}")
             continue
+        
+        # Load NIfTI image and segmentation as SimpleITK Image objects
+        # (SimpleITK uses spatial axes (x, y, z) which correspond to (W, H, D) in the MONAI pipeline)
+        image = sitk.ReadImage(img_file)
+        segmentation = sitk.ReadImage(seg_file)
+
+        # Standardize orientation to RAS (Right-Anterior-Superior) for consistency
+        # This ensures all volumes have the same orientation regardless of their original orientation
+        # RAS is the standard orientation for medical imaging and deep learning pipelines
+        image = sitk.DICOMOrient(image, "RAS")
+        segmentation = sitk.DICOMOrient(segmentation, "RAS")
+
+        # Resample image to target voxel size
+        # NOTE @Natalia: Updated this from resample_image_old to resample_image with correct interpolation mode.
+        print("Resampling image to target voxel size...")
+        image = resample_image(image, voxel_size, interpolator=sitk.sitkLinear)
+        segmentation = resample_image(segmentation, voxel_size, interpolator=sitk.sitkNearestNeighbor)
+
+        # Print image format and metadata (for debugging)
+        # print(f"\nAfter resample_image():")
+        # print(f"  Image: {file}")
+        # print(f"  Format: SimpleITK Image")
+        # print(f"  Size (WxHxD): {image.GetSize()}")
+        # print(f"  Spacing (voxel size in mm): {image.GetSpacing()}")
+        # print(f"  Origin: {image.GetOrigin()}")
+        # print(f"  Pixel Type: {image.GetPixelIDTypeAsString()}")
+
+        # Crop/pad tumor region of the image and segmentation if needed
+        # NOTE @Natalia:
+        # - Updated this whole part from Step 2 and Step 3 and integrated it here before normalization is applied!
+        print("Crop/pad image if needed...")
+        size_before_cropping = image.GetSize()
+        size_x, size_y, size_z = image.GetSize()
+        if (size_x > x_75 or size_y > y_75 or size_z > z_75 or size_x < minimum_size or size_y < minimum_size or size_z < minimum_size):
+            print(f"Image size ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
+            image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median)
+        size_after_cropping = image.GetSize()
+        print(f"Image size after cropping/padding: {size_after_cropping}")
+
+        # Only normalize if is_mri is True
+        # NOTE @Natalia:
+        # - No normalization for segmentation masks!
+        # - Cast to back to float32 to save ~50% of disk space by normalization
+        # - For CT datasets, normalization is done in the run pipeline based on training data statistics
+        #   depending on the cross-validation folds following the nnU-Net approach.
+        # - Calculate mean and standard deviation from non-zero voxels only
+        # - Avoid division by zero: If standard deviation is 0, set it to 1e-6.
+        if is_mri:
+            print("Normalizing MRI images according to nnU-Net's approach...")
+            use_masked = should_use_masked_normalization(size_before_cropping, size_after_cropping)
+            image = normalize_mri_image_nnunet(image, use_masked)
+        else:
+            print("CT image normalization is done in the run pipeline based on training data statistics depending on the cross-validation folds according to nnU-Net's approach...")
+
+        # Apply GIST-specific resizing to reduce memory usage
+        if is_gist:
+            print("Applying GIST-specific resizing to reduce memory usage...")
+            image, segmentation = resize_gist_images(image, segmentation)
+
+        # Extract the original directory name from the file path
+        # and save the processed images and segmentations
+        # NOTE @Natalia:
+        # - Preprocessed data got saved to some hardcoded directory (new_path = './gist_final') and not used as assumed
+        original_dir_name = os.path.basename(file)
+        save_preprocessed_images_and_segmentations_to_nifti(image, image_file_name, segmentation, segmentation_file_name, output_path, original_dir_name)
     
-    if not voxel_sizes:
-        raise ValueError(f"No valid voxel information found in images")
-    
-    voxel_sizes = np.array(voxel_sizes)
-    
-    if calculation_method == "mean":
-        # Calculate mean across all images for each axis (x, y, z)
-        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 averages over N_images for each axis
-        voxel_result = tuple(np.mean(voxel_sizes, axis=0))
-        print(f"> Voxel size (mean) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    elif calculation_method == "median":
-        # Calculate median across all images for each axis (x, y, z)
-        # voxel_sizes shape: (N_images, 3_axes) -> axis=0 takes median over N_images for each axis
-        voxel_result = tuple(np.median(voxel_sizes, axis=0))
-        print(f"> Voxel size (median) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    elif calculation_method == "volumetric_isotropic":
-        median_volume = np.median(volumes)
-        # Calculate isotropic voxel size that gives the same volume
-        isotropic_voxel = median_volume ** (1/3)
-        voxel_result = (isotropic_voxel, isotropic_voxel, isotropic_voxel)
-        print(f"> Voxel size (volumetric_isotropic) for {dataset_name} dataset: x={voxel_result[0]:.3f}, y={voxel_result[1]:.3f}, z={voxel_result[2]:.3f}")
-        return voxel_result
-    else:
-        raise ValueError(f"Unknown calculation method: {calculation_method}")
+    print("Preprocessing completed successfully!")
 
 
 def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name):
@@ -182,8 +184,8 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     is_gist = (dataset_name == "gist")
     
     # Run the preprocessing pipeline from Natalia's preprocessing code base
-    main_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist=is_gist)  # TODO @Natalia: Verify for correct integration pls :)
-    
+    smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist=is_gist)
+
     # Analyze preprocessed dataset statistics
     print("\n=== Preprocessed Dataset Statistics Analysis ===")
     
@@ -253,9 +255,11 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         if os.path.exists(preprocessed_dataset_path):
             print(f"> Found existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
+            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
         else:
             print("X Preprocessed dataset not found, running preprocessing...\n")
+            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
             preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name)
         # Keep the CSV path from the cleaned directory
