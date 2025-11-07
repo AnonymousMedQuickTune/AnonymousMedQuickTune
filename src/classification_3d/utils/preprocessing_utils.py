@@ -1,11 +1,12 @@
 import os
+import math
 import numpy as np
 import nibabel as nib
 from scipy.ndimage import zoom
+import skimage
 
 from src.classification_3d.utils.dataset_cleaning import find_valid_image_and_segmentation_files, natural_key
 
-from src.classification_3d.preprocessing.crop_pad import extract_liver, tumor_bbox, crop_scan, pad_3d_image
 
 import SimpleITK as sitk
 
@@ -292,7 +293,226 @@ def normalize_mri_image_nnunet(image: sitk.Image, use_masked: bool) -> sitk.Imag
     # Cast to float32 to save ~50% of disk space by normalization
     return sitk.Cast(normalized_image, sitk.sitkFloat32)
 
-def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median):
+def extract_largest_component(mask):
+    """
+    Extract the largest connected component from a binary mask.
+    
+    Args:
+        mask: Binary mask (can contain multiple disconnected regions)
+        
+    Returns:
+        Binary mask containing only the largest connected component, or None if no component found
+    """
+    mask = mask.astype(int)
+    
+    # Check if mask contains multi-class labels (e.g., 0=background, 1=liver, 2=tumor)
+    unique_values = np.unique(mask)
+    has_label_2 = 2 in unique_values
+    
+    if has_label_2:
+        raise NotImplementedError("Multi-class mask detected. This is not supported yet.")
+        
+    # Find connected components in the mask (separate regions get different labels: 1, 2, 3, ...)
+    # connectivity=2 means 2D connectivity (only within slices, not between slices)
+    # Note: Labels are assigned in order of discovery (typically top-left to bottom-right),
+    # so label 1 is the FIRST found component, not necessarily the largest
+    labeled = skimage.measure.label(mask, connectivity=2)
+
+    # Find the largest connected component by comparing sizes
+    # Get properties of all regions to find which one is largest
+    props = skimage.measure.regionprops(labeled)
+    if len(props) == 0:
+        mask_largest_component = labeled
+    else:
+        # Find the label of the largest component (by area/number of pixels)
+        largest_label = max(props, key=lambda x: x.area).label
+        
+        # Keep only the largest connected component, remove all others
+        labeled[labeled != largest_label] = 0
+        mask_largest_component = labeled
+    
+    # Check if any component was found (if mask is all zeros, no component exists)
+    if np.count_nonzero(mask_largest_component) == 0:
+        print('[WARNING]: no connected component found in mask')
+        return None
+    return mask_largest_component
+
+def get_center_of_mass_3D(binary_image):
+    """
+    Calculate the center of mass (centroid) of a binary 3D image.
+    
+    This function finds all connected components in the binary image and calculates
+    the center of mass. If multiple components exist, it returns the mean of all
+    centroids. For a single component (as expected when used with extract_largest_component),
+    this gives the centroid of that component.
+    
+    Args:
+        binary_image: Binary 3D numpy array (0 = background, 1 = foreground)
+        
+    Returns:
+        tuple: Center of mass coordinates as (row, col, slice) = (z, y, x) format
+        
+    Note:
+        The function uses the mean of all component centroids if multiple components exist.
+        For best results, use with a mask containing only a single connected component.
+    """
+    # Label the connected components in the binary image
+    # Each separate region gets a different label (1, 2, 3, ...)
+    labeled_image = skimage.measure.label(binary_image)
+    
+    # Compute region properties including center of mass (centroid) for all components
+    props = skimage.measure.regionprops_table(labeled_image, properties=['centroid'])
+    
+    # Get the center of mass coordinates
+    # If multiple components exist, this calculates the mean of all centroids
+    # For a single component, this is simply the centroid of that component
+    center_row = np.mean(props['centroid-0'])
+    center_col = np.mean(props['centroid-1'])
+    center_slice = np.mean(props['centroid-2'])
+    
+    # Return the center of mass coordinates as a tuple (z, y, x)
+    center_of_mass = (center_row, center_col, center_slice)
+    return center_of_mass
+    
+def tumor_bbox(mask_region_of_interest, max_bbox_size, bbox_size=None):
+    """
+    Calculate bounding box around the region of interest based on center of mass.
+    If multiple components are present, the center is set to the mean value of all centroids of all components
+    
+    This function:
+    1. Finds the center of mass of the region of interest mask
+    2. Gets the initial bounding box from the mask
+    3. Adjusts the bbox size based on the actual region of interest size and max constraints
+    4. Returns a bounding box centered around the center of mass
+    
+    Args:
+        mask_region_of_interest: Binary mask of the region of interest (numpy array)
+        max_bbox_size: Maximum allowed bbox size for each dimension [z, y, x]
+        bbox_size: Desired bbox size for each dimension [z, y, x] (default: [36, 36, 36])
+        
+    Returns:
+        tuple: Bounding box coordinates (min_row, min_col, min_slice, max_row, max_col, max_slice)
+               Coordinates are in (z, y, x) format
+    """
+    # Fix mutable default argument: create a copy if None is provided
+    if bbox_size is None:
+        bbox_size = [36, 36, 36]
+    else:
+        # Create a copy to avoid modifying the original list
+        bbox_size = list(bbox_size)
+    
+    # Step 1: Calculate the center of mass of the largest connected component mask
+    # This gives us the center point around which we'll build the bounding box
+    com = get_center_of_mass_3D(mask_region_of_interest)
+    com = np.array(com).astype(int)
+
+    # Step 2: Get the initial bounding box from the mask properties
+    # This gives us the actual extent of the region of interest (min/max coordinates)
+    # If multiple components exist, we need to find the bounding box that encompasses ALL components
+    image_probs = skimage.measure.regionprops(mask_region_of_interest)
+    
+    # Check if any region was found
+    if len(image_probs) == 0:
+        raise ValueError("No connected component found in mask_region_of_interest")
+    
+    # Calculate bounding box that encompasses ALL components
+    # For multiple components, we take the min/max across all components
+    all_bboxes = [props.bbox for props in image_probs]
+    # bbox format: (min_row, min_col, min_slice, max_row, max_col, max_slice)
+    orig_min_row = min(bbox[0] for bbox in all_bboxes)
+    orig_min_col = min(bbox[1] for bbox in all_bboxes)
+    orig_min_slice = min(bbox[2] for bbox in all_bboxes)
+    orig_max_row = max(bbox[3] for bbox in all_bboxes)
+    orig_max_col = max(bbox[4] for bbox in all_bboxes)
+    orig_max_slice = max(bbox[5] for bbox in all_bboxes)
+
+    # Step 3: Adjust bbox_size based on actual region of interest size
+    # If the region of interest (all components combined) is larger than desired bbox_size, use max_bbox_size instead
+    # This ensures we capture the entire region of interest while respecting size limits
+    actual_size_z = orig_max_row - orig_min_row
+    actual_size_y = orig_max_col - orig_min_col
+    actual_size_x = orig_max_slice - orig_min_slice
+    
+    bbox_size[0] = bbox_size[0] if actual_size_z < bbox_size[0] else max_bbox_size[0]
+    bbox_size[1] = bbox_size[1] if actual_size_y < bbox_size[1] else max_bbox_size[1]
+    bbox_size[2] = bbox_size[2] if actual_size_x < bbox_size[2] else max_bbox_size[2]
+
+    # Step 4: Calculate final bounding box centered around the center of mass
+    # The bbox is centered at the center of mass of the region of interest with the adjusted size
+    # Note: We need to get the image shape to ensure bbox doesn't exceed image boundaries
+    # This will be handled by the caller, but we calculate it here for safety
+    min_row = int(max(0, com[0] - bbox_size[0] // 2))
+    max_row = int(com[0] + bbox_size[0] // 2)
+    min_col = int(max(0, com[1] - bbox_size[1] // 2))
+    max_col = int(com[1] + bbox_size[1] // 2)
+    min_slice = int(max(0, com[2] - bbox_size[2] // 2))
+    max_slice = int(com[2] + bbox_size[2] // 2)
+    
+    return min_row, min_col, min_slice, max_row, max_col, max_slice
+
+def crop_scan(scan, bbox):
+    """
+    Crop a 3D scan (image or segmentation) to the specified bounding box.
+    
+    Args:
+        scan: Original 3D scan as numpy array (shape: z, y, x)
+        bbox: Bounding box coordinates as tuple (min_row, min_col, min_slice, max_row, max_col, max_slice)
+              Coordinates are in (z, y, x) format
+        
+    Returns:
+        numpy array: Cropped scan with shape determined by the bounding box
+    """
+    min_row, min_col, min_slice, max_row, max_col, max_slice = bbox
+
+    # Crop the scan using the bounding box coordinates
+    # Array slicing: scan[z_min:z_max, y_min:y_max, x_min:x_max]
+    scan_crop = scan[min_row:max_row, min_col:max_col, min_slice:max_slice]
+    return scan_crop
+
+def pad_3d_image(image):
+    """
+    Pad a 3D image to ensure minimum dimensions of 36 voxels per axis.
+    
+    This function pads each dimension that is smaller than 36 voxels to reach
+    the minimum size, while preserving the original content. Padding is applied
+    symmetrically (equal amounts on both sides).
+    
+    Args:
+        image: Nibabel image object (3D) to pad
+        
+    Returns:
+        numpy array: Padded image data with minimum dimensions of 36x36x36
+    """
+    # Get the current shape of the image
+    current_shape = image.shape
+    # Calculate target shape: ensure each dimension is at least 36 voxels
+    target_shape = tuple(max(dim, 36) for dim in current_shape)
+    
+    # Extract image data as float32 array
+    img_data = image.get_fdata().astype(np.float32)
+    # Calculate the padding amounts for each dimension (symmetric padding)
+    # Each dimension gets padded equally on both sides to reach target_shape
+    pad_depth = math.ceil((target_shape[0] - current_shape[0]) / 2)
+    pad_height = math.ceil((target_shape[1] - current_shape[1]) / 2)
+    pad_width = math.ceil((target_shape[2] - current_shape[2]) / 2)    
+    
+    # Calculate final shape after padding
+    final_shape = [current_shape[0] + pad_depth * 2, current_shape[1] + pad_height * 2, current_shape[2] + pad_width * 2]
+    
+    # Adjust padding if final shape exceeds target (due to rounding)
+    # Reduce padding by 1 on one side to match target_shape exactly
+    pad_depth_conditioned = pad_depth - 1 if final_shape[0] > target_shape[0] else pad_depth
+    pad_height_conditioned = pad_height - 1 if final_shape[1] > target_shape[1] else pad_height
+    pad_width_conditioned = pad_width - 1 if final_shape[2] > target_shape[2] else pad_width
+
+    # Apply symmetric padding using np.pad
+    # Padding format: ((before_z, after_z), (before_y, after_y), (before_x, after_x))
+    # mode='constant' pads with zeros
+    padded_image = np.pad(img_data, ((pad_depth, pad_depth_conditioned), (pad_height, pad_height_conditioned), (pad_width, pad_width_conditioned)), mode='constant')
+    
+    return padded_image
+
+def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median, model_task):
     """
     Crop and pad the tumor region of the image and segmentation.
     
@@ -301,7 +521,8 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
         segmentation (sitk.Image): The segmentation to crop and pad.
         x_75, y_75, z_75: 75th percentile dimensions
         x_median, y_median, z_median: Median dimensions
-        
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
+
     Returns:
         tuple: (cropped_image, cropped_segmentation) as SimpleITK images
     """
@@ -315,12 +536,21 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
     spacing = image.GetSpacing()  # This is (x, y, z) spacing
     direction = image.GetDirection()
     
-    # Extract tumor region (ROI)
-    mask_data = extract_liver(seg_array, liver=False)
-    if mask_data is None:
-        print('[WARNING]: No ROI found in segmentation')
-        return image, segmentation
-    
+    # Extract the largest connected component from the segmentation mask
+    # NOTE @Natalia:
+    # - Updated this from extract_liver 
+    # - The largest component is now extracted instead of the first one (bug solved)
+    # - Liver dataset has no extra class for the liver itself, so we don't need to handle it here.
+    if model_task == "classification":
+        mask_region_of_interest = extract_largest_component(seg_array)
+        if mask_region_of_interest is None:
+            print('[WARNING]: No ROI found in segmentation')
+            return image, segmentation
+    else:
+        raise NotImplementedError("Semantic and instance segmentation is not supported yet. Think about if it makes sense to extract the largest component for your segmentation study. For instance segmentation it might be an issue or if the total volume of all tumors is of interest.")
+        # NOTE: in tumor_bbox the center of mass is used to calculate the bounding box.
+        # if you want to keep multiple components that center is set to the mean value of all centroids of all components.
+
     # Calculate bounding box using the statistics passed in
     # The bbox will be returned in (min_row, min_col, min_slice, max_row, max_col, max_slice) = (z, y, x) format
     # but we need to pass dimensions in the order that the bbox represents
@@ -329,15 +559,16 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
     bbox_size = [z_median, y_median, x_median]  # Reorder from (x, y, z) to (z, y, x)
     
     try:
-        bbox = tumor_bbox(mask_data, max_bbox_size, bbox_size=bbox_size)
+        # NOTE: If multiple components are present, the center of the tumor bbox is set to the mean value of all centroids of all components
+        bbox = tumor_bbox(mask_region_of_interest, max_bbox_size, bbox_size=bbox_size)
         
         # Crop the scan and segmentation using the bounding box
         # crop_scan expects (min_row, min_col, min_slice, ...) which corresponds to (z, y, x) for the array
         cropped_img_data = crop_scan(img_array, bbox)
         cropped_seg_data = crop_scan(seg_array, bbox)
         
-        # Check if dimensions are acceptable (minimum 50 voxels per dimension)
-        dims_ok = all(dim >= 50 for dim in cropped_img_data.shape)
+        # Check if dimensions are acceptable (minimum 36 voxels per dimension)
+        dims_ok = all(dim >= 36 for dim in cropped_img_data.shape)
         
         if not dims_ok:
             # Need to create temporary nibabel images for pad_3d_image
@@ -346,6 +577,8 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
             temp_seg = nib.Nifti1Image(cropped_seg_data, np.eye(4))
             
             # Apply padding
+            # NOTE @Natalia:
+            # - Fixed bug in padding the width
             final_img_data = pad_3d_image(temp_img)
             final_seg_data = pad_3d_image(temp_seg)
         else:

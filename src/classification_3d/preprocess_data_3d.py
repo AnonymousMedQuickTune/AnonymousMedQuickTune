@@ -37,7 +37,7 @@ from src.classification_3d.utils.preprocessing_utils import (
 )
 import datetime
 
-def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
+def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task):
     """
     Comprehensive preprocessing pipeline that includes resampling, normalization, 
     empty slice removal, and tumor region cropping.
@@ -47,8 +47,9 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
         output_path (str): Path to the output directory where processed images will be saved
         voxel_size (tuple): Target voxel size in (x, y, z) format
         is_mri (bool): Whether the dataset is MRI or CT
-        is_gist (bool): Whether to apply GIST-specific resizing to reduce memory usage
-        
+        dataset_name (str): Name of the dataset for dataset-specific preprocessing
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
+
     Returns:
         dict: Dictionary containing preprocessing statistics and metadata
     """
@@ -108,7 +109,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
         size_x, size_y, size_z = image.GetSize()
         if (size_x > x_75 or size_y > y_75 or size_z > z_75 or size_x < minimum_size or size_y < minimum_size or size_z < minimum_size):
             print(f"Image size ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
-            image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median)
+            image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median, model_task)
         size_after_cropping = image.GetSize()
         print(f"Image size after cropping/padding: {size_after_cropping}")
 
@@ -128,7 +129,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
             print("CT image normalization is done in the run pipeline based on training data statistics depending on the cross-validation folds according to nnU-Net's approach...")
 
         # Apply GIST-specific resizing to reduce memory usage
-        if is_gist:
+        if dataset_name == "gist":
             print("Applying GIST-specific resizing to reduce memory usage...")
             image, segmentation = resize_gist_images(image, segmentation)
 
@@ -142,7 +143,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
     print("Preprocessing completed successfully!")
 
 
-def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name):
+def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name, model_task):
     """
     Apply Natalia's smart preprocessing pipeline to the dataset.
     
@@ -152,6 +153,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
         calculation_method (str): Method to calculate voxel size ('mean', 'median', 'isotropic', 'volumetric_isotropic')
         is_mri (bool): Whether the dataset is MRI > MRI datasets need normalization in the preprocessing for each image individually
         dataset_name (str): Name of the dataset for flexible CSV file detection
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
         
     Returns:
         str: Path to the preprocessed dataset
@@ -179,12 +181,11 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     output_path = os.path.join(cleaned_dataset_path, f"preprocessed_{calculation_method}")
     os.makedirs(output_path, exist_ok=True)
     
-    # Determine if this is GIST dataset for memory optimization
+    # Determine dataset name for dataset-specific preprocessing
     dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
-    is_gist = (dataset_name == "gist")
     
     # Run the preprocessing pipeline from Natalia's preprocessing code base
-    smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist=is_gist)
+    smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task)
 
     # Analyze preprocessed dataset statistics
     print("\n=== Preprocessed Dataset Statistics Analysis ===")
@@ -236,17 +237,6 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-    if model_task == "classification":
-        segmentation_type = "semantic"  # Not relevant for classification task
-    else:
-        if model_task == "semantic_segmentation":
-            segmentation_type = "semantic"
-        elif model_task == "instance_segmentation":
-            segmentation_type = "instance"
-        else:
-            raise ValueError(f"Unknown model task: {model_task}. Please choose from 'classification', 'semantic_segmentation', or 'instance_segmentation'.")
-        raise NotImplementedError("Semantic and instance segmentation is not supported yet in the run pipeline.")
-
     if use_smart_preprocessing:
         if dataset_name in ["lipo", "desmoid", "liver"]:
             is_mri = True
@@ -260,7 +250,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
             print("\nX Cleaned dataset not found, running dataset cleaning...\n")
-            cleaned_dataset_path = clean_dataset(data_path, dataset_name, segmentation_type)
+            cleaned_dataset_path = clean_dataset(data_path, dataset_name, model_task)
 
         # Check if preprocessed dataset with the given voxel calculation method exists
         preprocessed_dataset_path = os.path.join(cleaned_dataset_path, f"preprocessed_{voxel_calculation}")
@@ -273,7 +263,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             print("X Preprocessed dataset not found, running preprocessing...\n")
             # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
-            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name)
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name, model_task=model_task)
         # Keep the CSV path from the cleaned directory
         csv_path = os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")
     

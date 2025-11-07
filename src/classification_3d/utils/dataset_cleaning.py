@@ -399,14 +399,14 @@ def update_csv_file(original_path, cleaned_path, valid_directories, dataset_name
     return new_df
 
 
-def clean_dataset(data_path, dataset_name, segmentation_type):
+def clean_dataset(data_path, dataset_name, model_task):
     """
     Clean the dataset by removing samples with missing files and renumbering them.
     
     Args:
         data_path (str): Path to the original dataset
         dataset_name (str): Name of the dataset ('lipo', 'desmoid', 'gist')
-        segmentation_type (str): Type of segmentation to create ("semantic" or "instance")
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
 
     Returns:
         str: Path to the cleaned dataset
@@ -414,6 +414,18 @@ def clean_dataset(data_path, dataset_name, segmentation_type):
     print(f"\n{'='*60}")
     print(f"Cleaning {dataset_name} dataset")
     print(f"{'='*60}")
+
+    # Set segmentation type based on model task
+    if model_task == "classification":
+        segmentation_type = "semantic"  # Not relevant for classification task
+    else:
+        if model_task == "semantic_segmentation":
+            segmentation_type = "semantic"
+        elif model_task == "instance_segmentation":
+            segmentation_type = "instance"
+        else:
+            raise ValueError(f"Unknown model task: {model_task}. Please choose from 'classification', 'semantic_segmentation', or 'instance_segmentation'.")
+        raise NotImplementedError("Semantic and instance segmentation is not supported yet in the run pipeline.")
     
     # Define paths
     original_path = os.path.join(data_path, dataset_name)
