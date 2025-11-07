@@ -143,7 +143,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train",
                     cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                    model_task=experimental_setting.model.task
                 )
                 print(f"\n----------")
                 print(f"- MEDIAN -")
@@ -158,7 +159,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train",
                     cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                    model_task=experimental_setting.model.task
                 )
                 print(f"\n-------------")
                 print(f"- ISOTROPIC -")
@@ -173,7 +175,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train",
                     cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                    model_task=experimental_setting.model.task
                 )
                 print(f"\n------------------------")
                 print(f"- VOLUMETRIC ISOTROPIC -")
@@ -188,7 +191,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train",
                     cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                    model_task=experimental_setting.model.task
                 )
                 num_classes = dataset_dict_mean["num_classes"]
                 dataset_dict = {
@@ -209,7 +213,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     cv_outer_fold=cv_outer_fold,  # Use current CV fold
                     mode="train",
                     cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                    cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                    model_task=experimental_setting.model.task
                 )
                 num_classes = dataset_dict["num_classes"]
         else:

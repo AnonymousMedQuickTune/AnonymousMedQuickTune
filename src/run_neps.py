@@ -361,7 +361,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 cv_outer_fold=cv_outer_fold,
                                 mode="train",
                                 cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                                model_task=experimental_setting.model.task
                             )
                             print(f"\n----------")
                             print(f"- MEDIAN -")
@@ -376,7 +377,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 cv_outer_fold=cv_outer_fold,
                                 mode="train",
                                 cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                                model_task=experimental_setting.model.task
                             )
                             print(f"\n-------------")
                             print(f"- ISOTROPIC -")
@@ -391,7 +393,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 cv_outer_fold=cv_outer_fold,
                                 mode="train",
                                 cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                                model_task=experimental_setting.model.task
                             )
                             print(f"\n------------------------")
                             print(f"- VOLUMETRIC ISOTROPIC -")
@@ -406,7 +409,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 cv_outer_fold=cv_outer_fold,
                                 mode="train",
                                 cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                                model_task=experimental_setting.model.task
                             )
                             num_classes = dataset_dict_mean["num_classes"]
                             dataset_dict = {
@@ -426,7 +430,8 @@ def main(experimental_setting: DictConfig) -> None:
                                 cv_outer_fold=cv_outer_fold,
                                 mode="train",
                                 cv_outer_folds_repeats=experimental_setting.cv_outer_folds_repeats,
-                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits
+                                cv_outer_folds_splits=experimental_setting.cv_outer_folds_splits,
+                                model_task=experimental_setting.model.task
                             )
                             num_classes = dataset_dict["num_classes"]
                         

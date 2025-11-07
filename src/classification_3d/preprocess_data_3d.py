@@ -215,7 +215,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3):
+def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3, model_task="classification"):
     """
     Load and preprocess a medical image dataset with N-repeated K-fold stratified cross-validation.
     Automatically checks for existing CV splits and creates them if they don't exist.
@@ -231,10 +231,22 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         mode (str): Mode of the experiment ('train' or 'test')
         cv_outer_folds_repeats (int): Number of repeats for repeated stratified K-fold
         cv_outer_folds_splits (int): Number of splits per repeat
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
+    if model_task == "classification":
+        segmentation_type = "semantic"  # Not relevant for classification task
+    else:
+        if model_task == "semantic_segmentation":
+            segmentation_type = "semantic"
+        elif model_task == "instance_segmentation":
+            segmentation_type = "instance"
+        else:
+            raise ValueError(f"Unknown model task: {model_task}. Please choose from 'classification', 'semantic_segmentation', or 'instance_segmentation'.")
+        raise NotImplementedError("Semantic and instance segmentation is not supported yet in the run pipeline.")
+
     if use_smart_preprocessing:
         if dataset_name in ["lipo", "desmoid", "liver"]:
             is_mri = True
@@ -248,7 +260,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
             print("\nX Cleaned dataset not found, running dataset cleaning...\n")
-            cleaned_dataset_path = clean_dataset(data_path, dataset_name)
+            cleaned_dataset_path = clean_dataset(data_path, dataset_name, segmentation_type)
 
         # Check if preprocessed dataset with the given voxel calculation method exists
         preprocessed_dataset_path = os.path.join(cleaned_dataset_path, f"preprocessed_{voxel_calculation}")
