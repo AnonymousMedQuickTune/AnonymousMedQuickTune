@@ -608,10 +608,10 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
 
 def resize_gist_images(image, segmentation):
     """
-    Resize GIST images to a fixed size to reduce memory usage.
+    Resize GIST images to reduce memory usage.
     
-    This function resizes both image and segmentation to (96, 96, 96) voxels
-    to prevent out-of-memory errors with larger GIST volumes.
+    This function resizes dimensions that exceed 96 voxels to 96, while preserving
+    smaller dimensions. This prevents out-of-memory errors while minimizing information loss.
     
     Args:
         image (sitk.Image): The image to resize
@@ -630,11 +630,16 @@ def resize_gist_images(image, segmentation):
     spacing = image.GetSpacing()  # This is (x, y, z) spacing
     direction = image.GetDirection()
     
-    # Fixed size for GIST to prevent OOM
-    target_size = (96, 96, 96)
-    
-    # Calculate zoom factors
+    # Calculate target size: only resize dimensions that exceed 96 voxels
     current_shape = img_array.shape
+    target_size = tuple(min(dim, 96) for dim in current_shape)
+    
+    # Check if resizing is needed
+    if current_shape == target_size:
+        # No resizing needed, return original images
+        return image, segmentation
+    
+    # Calculate zoom factors (1.0 means no change for that dimension)
     zoom_factors = [target_size[i] / current_shape[i] for i in range(3)]
     
     # Resize image and segmentation
