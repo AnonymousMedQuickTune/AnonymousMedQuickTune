@@ -264,28 +264,28 @@ class ParameterizedSwinUNETR(nn.Module):
         # 
         # CONSTRAINTS:
         #
-        # 1. image_size & patch_size
+        # 1. spatial_size & patch_size
         # ----------------------------
         # SwinUNETR requires spatial dimensions to be divisible by patch_size * 2^(num_stages-1)
         # With depths=(1,1,1,1) or (2,2,2,2), we have 4 stages, so need divisibility by patch_size * 2^3 = patch_size * 8
-        # For image_size (64, 64, 32), we need patch_size such that 64 % (patch_size * 8) == 0 and 32 % (patch_size * 8) == 0
+        # For spatial_size (64, 64, 32), we need patch_size such that 64 % (patch_size * 8) == 0 and 32 % (patch_size * 8) == 0
         # patch_size=2: 64 % 16 = 0, 32 % 16 = 0
         # patch_size=4: 64 % 32 = 0, 32 % 32 = 0
-        # Stage 0: image_size / patchsize > e.g., patch_site=4: (64, 64, 32) / 4 = (16, 16, 8)
+        # Stage 0: spatial_size / patchsize > e.g., patch_site=4: (64, 64, 32) / 4 = (16, 16, 8)
         # Stage 1: Stage 0 / 2 > e.g., (16, 16, 8) / 2 = (8, 8, 4)
         # Stage 2: Stage 1 / 2 > e.g., (8, 8, 4) / 2 = (4, 4, 2)
         # Stage 3: Stage 2 / 2 > e.g., (4, 4, 2) / 2 = (2, 2, 1)
-        # > If each of our image dimensions are divisible by 32, we can use a patch_size of 2 and 4
+        # > If each of our spatial dimensions are divisible by 32, we can use a patch_size of 2 and 4
         #
         # 2. window_size
         # ----------------------------
         # Swin window attention operates on the token grid of each stage.
-        # Let T_s = image_size / (patch_size * 2^s) be the token resolution at stage s (s in {0,1,2,3}).
+        # Let T_s = spatial_size / (patch_size * 2^s) be the token resolution at stage s (s in {0,1,2,3}).
         # CONSTRAINTS:
         # - window_size must be <= T_s in each dimension (otherwise heavy padding/masking is required).
         # - Ideally, window_size divides T_s with minimal remainder to reduce masks and VRAM.
         # - Anisotropic windows are often best for anisotropic volumes (e.g., Z << X,Y).
-        # PRACTICAL EXAMPLE (image_size=(416,512,32), patch_size=4):
+        # PRACTICAL EXAMPLE (spatial_size=(416,512,32), patch_size=4):
         # - Tokens per stage: (104,128,8) -> (52,64,4) -> (26,32,2) -> (13,16,1)
         # - Isotropic window_size=7 fits poorly (rarely divides, Z=1 in the last stage).
         # - Good choices: window_size=(4,4,1) or (4,4,2);
@@ -389,21 +389,21 @@ class ParameterizedViT(nn.Module):
         The architecture is NOT compatible with the Med3D pretrained weights: https://github.com/Tencent/MedicalNet
     """
     
-    def __init__(self, hyperparameters: dict, num_classes: int, developer_mode: bool, image_size: tuple):
+    def __init__(self, hyperparameters: dict, num_classes: int, developer_mode: bool, spatial_size: tuple):
         super().__init__()
         
-        print(f"\nImage size at ViT: {image_size}\n")
+        print(f"\nSpatial size at ViT: {spatial_size}\n")
         
         # Extract hyperparameters
         # --------------------------------
         #
         # CONSTRAINTS:
         #
-        # 1. image_size & patch_size
+        # 1. spatial_size & patch_size
         # ----------------------------
         # img_size[i] % patch_size[i] == 0 for all i
         #
-        # Example: image_size = (416, 512, 32) and patch_size = (8, 8, 4)
+        # Example: spatial_size = (416, 512, 32) and patch_size = (8, 8, 4)
         # > tokens = (416/8, 512/8, 32/4) = (52, 64, 8); sequence length = 52 * 64 * 8 = 26624
         # > With smaller patch_size, we get more tokens
         # > More tokens > Higher N > Memory scales roughly with N² per layer (self-attention), so  is the main VRAM driver
@@ -442,7 +442,7 @@ class ParameterizedViT(nn.Module):
         # Build model
         self.model = monai.networks.nets.ViT(
             in_channels=1,
-            img_size=image_size,
+            img_size=spatial_size,
             patch_size=patch_size,
             hidden_size=hidden_size,
             mlp_dim=mlp_dim,

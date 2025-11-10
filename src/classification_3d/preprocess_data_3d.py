@@ -257,11 +257,9 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         if os.path.exists(preprocessed_dataset_path):
             print(f"> Found existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
-            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
         else:
             print("X Preprocessed dataset not found, running preprocessing...\n")
-            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
             preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name, model_task=model_task)
         # Keep the CSV path from the cleaned directory
@@ -507,7 +505,7 @@ def get_kfold_dataloaders(
     normalization_stats,
     augmentation_type,
     developer_mode,
-    image_size=None,
+    spatial_size=None,
     fold_directory=None,
     no_validation=False,
 ):
@@ -527,7 +525,7 @@ def get_kfold_dataloaders(
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
-        image_size (tuple): Image size in (H, W, D) format for ViT; default None
+        spatial_size (tuple): Spatial size in (H, W, D) format for ViT; default None
         fold_directory (str, optional): Directory path for saving normalization stats
         no_validation (bool): If True, does not split train data in to train/val splits for validation
         
@@ -592,17 +590,13 @@ def get_kfold_dataloaders(
 
     # Create train and validation datasets
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=True))
-    elif augmentation_type == "trivial":
-        raise NotImplementedError("Trivial augmentation is not implemented yet.")  # TODO @Diane: Integrate TrivialAugment
-    elif augmentation_type == "groupaugment":
-        raise NotImplementedError("Group augmentation is not implemented yet.")  # TODO @Diane: Implement + integrate GroupAugment
+        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True))
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=False))
+        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False))
     else:
         val_dataset = None
 

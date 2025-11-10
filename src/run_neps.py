@@ -229,6 +229,20 @@ def main(experimental_setting: DictConfig) -> None:
 
     # Print experimental setting and pipeline space
     print("\nexperimental setting: ", experimental_setting, "\n\npipeline space: ", pipeline_space, "\n")
+    
+    # Validate that multifidelity searchers have a fidelity parameter in the pipeline space
+    if experimental_setting.searcher in ["priorband", "hyperband", "asha", "async_hb", "successive_halving", "ifbo"]:
+        # Check if any parameter in the pipeline space has is_fidelity=True
+        has_fidelity = any(
+            hasattr(param, 'is_fidelity') and param.is_fidelity 
+            for param in pipeline_space.values()
+        )
+        if not has_fidelity:
+            raise ValueError(
+                f"Multifidelity searcher '{experimental_setting.searcher}' requires a fidelity parameter in the pipeline space. "
+                f"Please ensure your pipeline space YAML file contains a parameter with 'is_fidelity: true'. "
+                f"Current pipeline space: {experimental_setting.pipeline_space}"
+            )
 
     # Create directory for configuration files and logs
     output_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
@@ -468,12 +482,40 @@ def main(experimental_setting: DictConfig) -> None:
         # Run NePS optimization for current CV fold
         logging.basicConfig(level=logging.INFO)
 
-        # Create optimizer with priors if using random_search
+        # Create optimizer
         if experimental_setting.searcher == "random_search":
             # https://github.com/automl/neps/blob/master/docs/reference/optimizers.md
+            # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.random_search
             optimizer = ("random_search", {"use_priors": True, "ignore_fidelity": True})
+            # use_multifidelity is False when ignore_fidelity=True, True when ignore_fidelity=False
+            use_multifidelity = not optimizer[1]["ignore_fidelity"]
+            
+        elif experimental_setting.searcher == "priorband":
+            # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.priorband
+            # Priorband is a multifidelity algorithm, so use_multifidelity = True
+            optimizer = ("priorband", {
+                "eta": 3,                       # Reduction factor for building brackets (default: 3)
+                "sample_prior_first": False,    # Whether to sample the prior configuration first
+                "base": "hyperband",            # Base algorithm: "successive_halving", "hyperband", "asha", or "async_hb" (default: "hyperband")
+                "bayesian_optimization_kick_in_point": None,  # When to switch to BO (None = disabled) -> int / float / (None = disabled)
+            })
+            use_multifidelity = True
+            
+        elif experimental_setting.searcher == "ifbo":
+            # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.ifbo
+            # IFBO (Iterative Fidelity Bayesian Optimization) is a multifidelity algorithm
+            optimizer = ("ifbo", {
+                "step_size": 1,                 # Size of the step to take in the fidelity domain (default: 1)
+                "use_priors": False,            # Whether to use priors (default: False)
+                "sample_prior_first": False,    # Whether to sample the default configuration first (default: False)
+                "initial_design_size": "ndim",  # Number of configs to sample before starting optimization (default: "ndim")
+                "device": None,                 # Device to use for the model (default: None)
+                "surrogate_path": None,         # Path to the surrogate model to use (default: None)
+                "surrogate_version": "0.0.1",   # Version of the surrogate model to use (default: "0.0.1")
+            })
+            use_multifidelity = True
         else:
-            optimizer = experimental_setting.searcher
+            raise ValueError(f"Unsupported searcher: {experimental_setting.searcher}. Must be one of: 'random_search', 'priorband', or 'ifbo'. Please integrate your searcher in the code.")
             
         run(
             pipeline_space=pipeline_space,  # Hyperparameter search space
@@ -483,6 +525,7 @@ def main(experimental_setting: DictConfig) -> None:
                 experimental_setting=experimental_setting,
                 dataset_dict=dataset_dict,
                 num_classes=num_classes,
+                use_multifidelity=use_multifidelity,
                 **kwargs,
             ),
             optimizer=optimizer,  # HPO algorithm
