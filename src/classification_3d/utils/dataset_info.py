@@ -234,6 +234,8 @@ def extract_spatial_size(model_type, voxel_size, dataset_name, developer_mode):
     else:
         # Only ViT and SwinUNETR need specific spatial sizes
         if model_type in ["vit", "swin_unetr"]:
+            # TODO @Diane: Fix the spacial size for each dataset since the preprocessing got updated!
+            raise NotImplementedError(f"Fix the spacial size for each dataset since the preprocessing got updated!")
             print(f"Extracting spatial size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
             print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
             
@@ -335,10 +337,10 @@ def extract_spatial_size(model_type, voxel_size, dataset_name, developer_mode):
             else:
                 raise NotImplementedError(f"Spatial size extraction is not implemented for {dataset_name} dataset")
             
-            # Update spatial size to be divisible by 32  # TODO @Diane: round up?
-            h = (spatial_size[0] // 32) * 32
-            w = (spatial_size[1] // 32) * 32
-            d = (spatial_size[2] // 32) * 32
+            # Update spatial size to be divisible by 32 (round up)
+            h = ((spatial_size[0] + 31) // 32) * 32
+            w = ((spatial_size[1] + 31) // 32) * 32
+            d = ((spatial_size[2] + 31) // 32) * 32
             spatial_size = (h, w, d)
 
         else:
