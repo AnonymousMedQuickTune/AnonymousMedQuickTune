@@ -21,9 +21,9 @@ from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
+from src.utils.logging_utils import save_cv_summary
 from src.evaluate_trained_config import evaluate_config_on_test_set
 from src.analysis.summarize_evaluation_results import summarize_experiment
-import datetime
 
 
 def run_pipeline(
@@ -186,6 +186,9 @@ def main(experimental_setting: DictConfig) -> None:
             raise ValueError("No validation set mode is not supported for non-baseline runs.")
 
     # TODO @Diane: Double check training search space!
+    # TODO @Diane: Implement SwinUNETR search space!
+    # TODO @Diane: Test all search spaces for the different datasets!
+    # TODO @Diane: Implement Baseline integration to Portfolio!
     # Combine model and training space into a single search space
     if experimental_setting.combine_model_and_training_space and not any(x in experimental_setting.pipeline_space for x in ["baseline", "training"]):
         print(f"\n\nCombining model and training spaces!\n\n")
@@ -323,10 +326,8 @@ def main(experimental_setting: DictConfig) -> None:
             dimensionality = experimental_setting.data.dimensionality.lower()
             if dimensionality == "2d":
                 if experimental_setting.data.cache_data:
-                    # TODO @Diane: Implement cross-validation for 2D datasets for cache_data=True
                     raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet for cache_data=True.")
                 else:
-                    # TODO @Diane: Implement cross-validation for 2D datasets
                     if cv_outer_folds > 1:
                         raise NotImplementedError("Cross-validation for 2D datasets is not implemented yet.")
                     else:
@@ -483,7 +484,7 @@ def main(experimental_setting: DictConfig) -> None:
         logging.basicConfig(level=logging.INFO)
 
         # Create optimizer
-        if experimental_setting.searcher == "random_search":
+        if experimental_setting.searcher == "random_search":  # TODO @Diane: Use user priors or not?
             # https://github.com/automl/neps/blob/master/docs/reference/optimizers.md
             # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.random_search
             optimizer = ("random_search", {"use_priors": True, "ignore_fidelity": True})
@@ -535,7 +536,7 @@ def main(experimental_setting: DictConfig) -> None:
             # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
             # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
             # We can think about some estimation like: max_cost_total = max_evaluations_total * max_epochs * max_cost_per_epoch
-            # TODO @Diane: Define max_cost_total
+            # TODO @Diane: Define and test max_cost_total
         )
         
         # Update outer fold status to completed and mark all inner folds as done
@@ -582,93 +583,6 @@ def main(experimental_setting: DictConfig) -> None:
     except Exception as e:
         print(f"Warning: Could not generate evaluation summary: {e}")
         print("You can manually run: python src/analysis/summarize_evaluation_results.py <experiment_path>")
-
-# TODO @Diane: Move function to another file
-def save_cv_summary(experimental_setting, cv_outer_folds):
-    """
-    Save cross-validation summary to a text file.
-    
-    Args:
-        experimental_setting (DictConfig): Hydra configuration object
-        cv_outer_folds (int): Number of cross-validation folds
-    """
-    # Create summary directory
-    summary_dir = os.path.join(experimental_setting.experiment_base_dir, "cv_summary")
-    os.makedirs(summary_dir, exist_ok=True)
-    
-    # Create summary file with timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    summary_file = os.path.join(summary_dir, f"cv_summary_{timestamp}.txt")
-    
-    with open(summary_file, "w", encoding="utf-8") as f:
-        f.write("=" * 80 + "\n")
-        f.write("CROSS-VALIDATION SUMMARY\n")
-        f.write("=" * 80 + "\n\n")
-        
-        # Experiment information
-        f.write("EXPERIMENT INFORMATION:\n")
-        f.write("-" * 40 + "\n")
-        f.write(f"Dataset: {experimental_setting.data.dataset}\n")
-        f.write(f"Dimensionality: {experimental_setting.data.dimensionality}\n")
-        f.write(f"Voxel Calculation: {experimental_setting.data.voxel_calculation}\n")
-        f.write(f"Number of Outer Cross-Validation Folds: {cv_outer_folds}\n")
-        f.write(f"N Repeats: {experimental_setting.cv_outer_folds_repeats}\n")
-        f.write(f"N Splits per Repeat: {experimental_setting.cv_outer_folds_splits}\n")
-        f.write(f"Seed: {experimental_setting.seed}\n")
-        f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
-        f.write(f"Optimizer: {experimental_setting.searcher}\n")
-        f.write(f"Developer Mode: {experimental_setting.developer_mode}\n")
-        f.write(f"Number of Epochs: {experimental_setting.training.number_of_epochs}\n")
-        f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        
-        # CV Fold directories
-        f.write("CROSS-VALIDATION FOLD DIRECTORIES:\n")
-        f.write("-" * 40 + "\n")
-        for cv_outer_fold in range(cv_outer_folds):
-            cv_dir = f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}"
-            f.write(f"CV Fold {cv_outer_fold}: {cv_dir}\n")
-        f.write("\n")
-        
-        # Configuration files
-        f.write("CONFIGURATION FILES:\n")
-        f.write("-" * 40 + "\n")
-        config_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
-        f.write(f"Configuration Directory: {config_dir}\n")
-        f.write("Files:\n")
-        f.write("  - experimental_setting.yaml\n")
-        f.write("  - pipeline_space.yaml\n")
-        f.write("  - pipeline_space_compact.yaml\n\n")
-        
-        # Data information
-        f.write("DATA INFORMATION:\n")
-        f.write("-" * 40 + "\n")
-        f.write(f"Data Path: {experimental_setting.data.path}\n")
-        f.write(f"Cache Data: {experimental_setting.data.cache_data}\n")
-        f.write(f"Use Smart Preprocessing: {experimental_setting.data.use_smart_preprocessing}\n")
-        f.write(f"K-Folds: {experimental_setting.cv_inner_folds}\n")
-        f.write(f"Num Workers: {experimental_setting.data.num_workers}\n\n")
-        
-        # Pipeline space information
-        f.write("PIPELINE SPACE:\n")
-        f.write("-" * 40 + "\n")
-        f.write(f"Pipeline Space File: {experimental_setting.pipeline_space}\n")
-        f.write(f"Developer Mode Pipeline: {experimental_setting.developer_mode}\n\n")
-        
-        # Summary
-        f.write("SUMMARY:\n")
-        f.write("-" * 40 + "\n")
-        f.write(f"Total NePS Runs: {cv_outer_folds}\n")
-        f.write(f"Each run uses different train+val/test split\n")
-        f.write(f"Results saved in separate directories per fold\n")
-        f.write(f"Cross-validation ensures robust evaluation\n\n")
-        
-        f.write("=" * 80 + "\n")
-        f.write("END OF CROSS-VALIDATION SUMMARY\n")
-        f.write("=" * 80 + "\n")
-    
-    print(f"\nCross-validation summary saved to: {summary_file}")
-    return summary_file
-
 
 if __name__ == "__main__":
     main()  # pylint: disable=no-value-for-parameter
