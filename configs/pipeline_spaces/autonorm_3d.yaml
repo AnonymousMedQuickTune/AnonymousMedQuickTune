@@ -2,11 +2,15 @@
 mean:
   type: float
   log: false
-  lower: -150
-  upper: 150
+  lower: -800
+  upper: -300
+  prior: -450
+  prior_confidence: "low"
 
 std:
   type: float
-  log: false
-  lower: 50
-  upper: 250
+  log: true
+  lower: 250
+  upper: 800
+  prior: 550
+  prior_confidence: "low"
