@@ -325,46 +325,34 @@ plot-performance-over-time-multi-extend PLOT_NAME *EXPERIMENT_DIRS:
 # Example with custom output: just plot-performance-over-time-cluster NePS/lipo/test_plotting_script experiments/Plots/output.png
 plot-performance-over-time-cluster EXPERIMENT_DIR OUTPUT_PATH="":
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
-  if [ -z "{{OUTPUT_PATH}}" ]; then
-    sbatch --exclude=dlcgpu05 \
-      --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-      --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-      --export=EXPERIMENT_DIR="{{EXPERIMENT_DIR}}" \
-      cluster_scripts/plot_performance_over_time.sh
-  else
-    sbatch --exclude=dlcgpu05 \
-      --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-      --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-      --export=EXPERIMENT_DIR="{{EXPERIMENT_DIR}}",OUTPUT_PATH="{{OUTPUT_PATH}}" \
-      cluster_scripts/plot_performance_over_time.sh
-  fi
+  SEED=42
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Baseline/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/
+  sbatch --exclude=dlcgpu19 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/Baseline/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/Baseline/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=EXPERIMENT_DIR="{{EXPERIMENT_DIR}}",OUTPUT_PATH="{{OUTPUT_PATH}}" \
+    cluster_scripts/plot_performance_over_time.sh
 
-# Plot test and validation performance over time for multiple experiments together on cluster
-# Example: just plot-performance-over-time-multi-cluster test_plot NePS/lipo/test_plotting_script NePS/lipo/test_plotting_script_2
-# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+# Plot test and validation performance over time for multiple experiments together on cluster with extend flag
+# Example: just plot-performance-over-time-multi-extend-cluster gist_baseline_vs_autonorm experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model
 plot-performance-over-time-multi-cluster PLOT_NAME *EXPERIMENT_DIRS:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
-  OUTPUT_DIR="experiments/Plots"
-  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
-  sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}",OUTPUT_PATH="${OUTPUT_PATH}" \
+  SEED=42
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/
+  sbatch --exclude=dlcgpu19 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}" \
     cluster_scripts/plot_performance_over_time_multi.sh
 
 # Plot test and validation performance over time for multiple experiments together on cluster with extend flag
-# Extends shorter experiments to match the longest one by repeating the last performance value
-# Example: just plot-performance-over-time-multi-extend-cluster test_plot NePS/lipo/test_plotting_script Baseline/liver/test_liver_33
-# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+# Example: just plot-performance-over-time-multi-extend-cluster gist_baseline_vs_autonorm experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model
 plot-performance-over-time-multi-extend-cluster PLOT_NAME *EXPERIMENT_DIRS:
   #!/usr/bin/env bash
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
-  OUTPUT_DIR="experiments/Plots"
-  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
-  sbatch --exclude=dlcgpu05 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
-    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}",OUTPUT_PATH="${OUTPUT_PATH}" \
+  SEED=42
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/
+  sbatch --exclude=dlcgpu19 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}" \
     cluster_scripts/plot_performance_over_time_multi_extend.sh
