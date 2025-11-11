@@ -287,3 +287,14 @@ summarize-test-results-cluster EXPERIMENT_PATH SEED="42":
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --export=EXPERIMENT_PATH={{EXPERIMENT_PATH}},SEED={{SEED}} \
     cluster_scripts/summarize_test_results.sh
+
+# Plot test and validation performance over time (number of configs) for NePS experiments
+# Example: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script
+# Example with custom output: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script output.png
+plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}}
+  else
+    python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
+  fi

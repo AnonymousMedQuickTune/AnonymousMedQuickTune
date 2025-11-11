@@ -145,6 +145,38 @@ def run_pipeline(
     print(f"\n\nPipeline result: {pipeline_result}")
     print(f"\nTest metrics: {test_metrics}\n\n")
     
+    # Automatically generate performance plots
+    try:
+        # Extract experiment directory from pipeline_directory
+        # Both NePS and Baseline experiments have the same structure with /NePS_output/
+        # Examples:
+        # - NePS: experiments/NePS/lipo/test_plotting_script/seed_42/NePS_output/cv_outer_fold_0/configs/config_3/...
+        # - Baseline: experiments/Baseline/liver/test_liver_31/seed_42/NePS_output/cv_outer_fold_0/configs/config_1/...
+        # Experiment directory: experiments/NePS/lipo/test_plotting_script or experiments/Baseline/liver/test_liver_31
+        pipeline_dir_str = str(pipeline_directory)
+        if "/NePS_output/" in pipeline_dir_str:
+            # Extract path up to NePS_output, then go up one level to get experiment directory
+            experiment_dir_str = pipeline_dir_str.split("/NePS_output/")[0]
+            experiment_dir = Path(experiment_dir_str).parent  # Go up from seed_42 to experiment directory
+            
+            # Check if experiment directory exists and has the expected structure
+            if experiment_dir.exists() and any(experiment_dir.iterdir()):
+                from src.analysis.plot_results_over_time import collect_performances, create_plots
+                
+                print(f"\n{'='*100}")
+                print(f"GENERATING PERFORMANCE PLOTS")
+                print(f"{'='*100}\n")
+                
+                # Collect performances and create plots
+                validation_performances, test_performances = collect_performances(experiment_dir)
+                create_plots(experiment_dir, validation_performances, test_performances)
+                
+                print(f"Performance plots generated successfully!\n")
+    except Exception as e:
+        # Don't fail the pipeline if plotting fails
+        print(f"Warning: Could not generate performance plots: {e}")
+        print("Continuing with pipeline execution...\n")
+    
     # Return the pipeline result to NePS
     return pipeline_result
 
