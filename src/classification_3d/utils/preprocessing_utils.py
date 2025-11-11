@@ -627,23 +627,32 @@ def resize_gist_images(image, segmentation):
     spacing = image.GetSpacing()  # This is (x, y, z) spacing
     direction = image.GetDirection()
     
+    # Get SimpleITK size for consistent printing (x, y, z format)
+    sitk_size_before = image.GetSize()  # (x, y, z)
+    
     # Calculate target size: only resize dimensions that exceed 96 voxels
-    current_shape = img_array.shape
-    target_size = tuple(min(dim, 96) for dim in current_shape)
+    # Note: img_array.shape is (z, y, x), so we need to map it correctly
+    current_shape_np = img_array.shape  # (z, y, x)
+    target_size_np = tuple(min(dim, 96) for dim in current_shape_np)  # (z, y, x)
     
     # Check if resizing is needed
-    if current_shape == target_size:
+    if current_shape_np == target_size_np:
         # No resizing needed, return original images
         return image, segmentation
     
     # Calculate zoom factors (1.0 means no change for that dimension)
-    zoom_factors = [target_size[i] / current_shape[i] for i in range(3)]
+    zoom_factors = [target_size_np[i] / current_shape_np[i] for i in range(3)]
     
     # Resize image and segmentation
     resized_img_data = zoom(img_array, zoom_factors, order=1)  # Linear interpolation
     resized_seg_data = zoom(seg_array, zoom_factors, order=0)  # Nearest neighbor
     
-    print(f"GIST: Resized from {current_shape} to {resized_img_data.shape}")
+    # Convert back to SimpleITK to get final size in (x, y, z) format for consistent printing
+    temp_img = sitk.GetImageFromArray(resized_img_data)
+    sitk_size_after = temp_img.GetSize()  # (x, y, z)
+    
+    # Print in consistent (x, y, z) format to match other print statements
+    print(f"GIST: Resized from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
     
     # Convert back to SimpleITK images
     # sitk.GetImageFromArray expects (z, y, x) numpy array and converts to (x, y, z) SimpleITK

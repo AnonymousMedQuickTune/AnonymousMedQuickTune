@@ -105,13 +105,13 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         # NOTE @Natalia:
         # - Updated this whole part from Step 2 and Step 3 and integrated it here before normalization is applied!
         print("Crop/pad image if needed...")
-        size_before_cropping = image.GetSize()
+        size_before_cropping = image.GetSize()  # (x, y, z) format
         size_x, size_y, size_z = image.GetSize()
         if (size_x > x_75 or size_y > y_75 or size_z > z_75 or size_x < minimum_size or size_y < minimum_size or size_z < minimum_size):
-            print(f"Image size ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
+            print(f"Image size (x, y, z) = ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
             image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median, model_task)
-        size_after_cropping = image.GetSize()
-        print(f"Image size after cropping/padding: {size_after_cropping}")
+        size_after_cropping = image.GetSize()  # (x, y, z) format
+        print(f"Image size after cropping/padding (x, y, z) = {size_after_cropping}")
 
         # Only normalize if is_mri is True
         # NOTE @Natalia:
