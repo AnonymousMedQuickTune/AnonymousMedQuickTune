@@ -288,7 +288,7 @@ summarize-test-results-cluster EXPERIMENT_PATH SEED="42":
     --export=EXPERIMENT_PATH={{EXPERIMENT_PATH}},SEED={{SEED}} \
     cluster_scripts/summarize_test_results.sh
 
-# Plot test and validation performance over time (number of configs) for NePS experiments
+# Plot test and validation performance over time (number of configs) for NePS experiments (single experiment)
 # Example: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script
 # Example with custom output: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script output.png
 plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
@@ -298,3 +298,13 @@ plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
   else
     python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
   fi
+
+# Plot test and validation performance over time for multiple experiments together
+# Example: just plot-performance-over-time-multi test_plot experiments/NePS/lipo/test_plotting_script experiments/NePS/lipo/test_plotting_script_2
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}"

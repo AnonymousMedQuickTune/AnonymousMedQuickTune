@@ -167,9 +167,11 @@ def run_pipeline(
                 print(f"GENERATING PERFORMANCE PLOTS")
                 print(f"{'='*100}\n")
                 
-                # Collect performances and create plots
+                # Collect performances and create plots (single experiment)
                 validation_performances, test_performances = collect_performances(experiment_dir)
-                create_plots(experiment_dir, validation_performances, test_performances)
+                all_validation_performances = [(experiment_dir.name, validation_performances)]
+                all_test_performances = [(experiment_dir.name, test_performances)]
+                create_plots([experiment_dir], all_validation_performances, all_test_performances)
                 
                 print(f"Performance plots generated successfully!\n")
     except Exception as e:
