@@ -259,11 +259,47 @@ def calculate_mean_std(performances: Dict[int, List[float]]) -> Tuple[List[int],
     return config_numbers, means, stds
 
 
+def extend_performances_to_max_configs(
+    performances: Dict[int, List[float]],
+    max_config: int
+) -> Dict[int, List[float]]:
+    """
+    Extend performances dictionary to max_config by repeating the last performance value.
+    
+    Args:
+        performances: Dictionary mapping config_num to list of performance values
+        max_config: Maximum config number to extend to
+        
+    Returns:
+        Extended performances dictionary
+    """
+    if not performances:
+        return performances
+    
+    # Find the maximum config number in the current performances
+    current_max_config = max(performances.keys())
+    
+    # If already at or above max_config, return as is
+    if current_max_config >= max_config:
+        return performances
+    
+    # Get the last performance value (for each fold)
+    last_performance = performances[current_max_config]
+    
+    # Extend by repeating the last performance for all missing configs
+    extended = performances.copy()
+    for config_num in range(current_max_config + 1, max_config + 1):
+        extended[config_num] = last_performance
+    
+    return extended
+
+
 def create_plots(
     experiment_dirs: List[Path],
     all_validation_performances: List[Tuple[str, Dict[int, List[float]]]],
     all_test_performances: List[Tuple[str, Dict[int, List[float]]]],
-    output_path: Path = None
+    output_path: Path = None,
+    extend_to_max_configs: bool = False
 ):
     """
     Create plots for validation and test performance over time.
@@ -291,6 +327,36 @@ def create_plots(
         all_test_configs.update(test_perfs.keys())
     
     all_configs = sorted(set(all_val_configs | all_test_configs))
+    
+    # If extend_to_max_configs is True, extend shorter experiments to match the longest one
+    if extend_to_max_configs and len(experiment_dirs) > 1 and all_configs:
+        max_config = max(all_configs)
+        print(f"\nExtending experiments to max_config={max_config}...")
+        
+        # Extend validation and test performances
+        extended_validation_performances = []
+        extended_test_performances = []
+        
+        for exp_name, validation_perfs in all_validation_performances:
+            extended_val = extend_performances_to_max_configs(validation_perfs, max_config)
+            extended_validation_performances.append((exp_name, extended_val))
+        
+        for exp_name, test_perfs in all_test_performances:
+            extended_test = extend_performances_to_max_configs(test_perfs, max_config)
+            extended_test_performances.append((exp_name, extended_test))
+        
+        # Update the lists
+        all_validation_performances = extended_validation_performances
+        all_test_performances = extended_test_performances
+        
+        # Recalculate all_configs to include the extended range
+        all_val_configs = set()
+        all_test_configs = set()
+        for _, val_perfs in all_validation_performances:
+            all_val_configs.update(val_perfs.keys())
+        for _, test_perfs in all_test_performances:
+            all_test_configs.update(test_perfs.keys())
+        all_configs = sorted(set(all_val_configs | all_test_configs))
     
     # Calculate global y-axis range across all plots for better comparison
     all_y_values = []
@@ -554,6 +620,12 @@ def main():
         default=None,
         help="Optional path to save the plot. If not specified, saves to first experiment's seed directory."
     )
+    parser.add_argument(
+        "--extend-to-max-configs",
+        action="store_true",
+        help="If set, extend experiments with fewer configs to match the longest experiment by repeating the last performance value. "
+             "Useful when comparing Baseline (1 config) with NePS runs (multiple configs)."
+    )
     
     args = parser.parse_args()
     
@@ -595,7 +667,13 @@ def main():
     
     # Create plots
     output_path = Path(args.output) if args.output else None
-    create_plots(experiment_dirs, all_validation_performances, all_test_performances, output_path)
+    create_plots(
+        experiment_dirs, 
+        all_validation_performances, 
+        all_test_performances, 
+        output_path,
+        extend_to_max_configs=args.extend_to_max_configs
+    )
     
     print("\nDone!")
 

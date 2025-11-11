@@ -308,3 +308,14 @@ plot-performance-over-time-multi PLOT_NAME *EXPERIMENT_DIRS:
   mkdir -p "${OUTPUT_DIR}"
   OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
   python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}"
+
+# Plot test and validation performance over time for multiple experiments together with extend flag
+# Extends shorter experiments to match the longest one by repeating the last performance value
+# Example: just plot-performance-over-time-multi-extend test_plot experiments/NePS/lipo/test_plotting_script experiments/Baseline/liver/test_liver_33
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi-extend PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}" --extend-to-max-configs
