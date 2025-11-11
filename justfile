@@ -323,7 +323,7 @@ plot-performance-over-time-multi-extend PLOT_NAME *EXPERIMENT_DIRS:
 # Plot test and validation performance over time (number of configs) for NePS experiments on cluster (single experiment)
 # Example: just plot-performance-over-time-cluster NePS/lipo/test_plotting_script
 # Example with custom output: just plot-performance-over-time-cluster NePS/lipo/test_plotting_script experiments/Plots/output.png
-plot-performance-over-time-cluster EXPERIMENT_DIR OUTPUT_PATH="":
+plot-performance-over-time-cluster DATASET EXPERIMENT_NAME EXPERIMENT_DIR OUTPUT_PATH="":
   #!/usr/bin/env bash
   SEED=42
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Baseline/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/
