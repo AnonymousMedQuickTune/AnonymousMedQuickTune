@@ -12,7 +12,7 @@ from src.classification_2d.preprocess_data_2d import BrainTumorDataset, get_max_
 from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 from src.classification_3d.preprocess_data_3d import DataTransform
-from src.classification_3d.objective_function_3d import extract_image_size  # TODO @Diane: clean this up
+from src.classification_3d.utils.dataset_info import extract_spatial_size
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
@@ -306,7 +306,7 @@ def calculate_per_fold_metrics(folds_probabilities, ground_truth_targets, num_cl
     return per_fold_summaries
 
 
-def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework="neps", image_size=None):
+def evaluate_fold(fold, test_loader, model, experimental_setting, hyperparameters, pipeline_directory):
     """
     Evaluate a single fold's trained model on the test set and return prediction probabilities.
     
@@ -316,12 +316,10 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
     Args:
         fold (int): Fold index (0-based) for which to evaluate the model
         test_loader (DataLoader): PyTorch DataLoader containing test data
+        model (nn.Module): Pre-initialized model (architecture is the same for all folds)
         experimental_setting (DictConfig): Hydra configuration object with experiment settings
         hyperparameters (dict): Hyperparameters used for training the model
-        num_classes (int): Number of classes in the classification task
         pipeline_directory (str): Directory containing the trained model checkpoints
-        framework (str): Framework being used ("neps" or "quicktune"), affects model loading
-        image_size (tuple): Image size in (H, W, D) format for ViT; default None
     
     Returns:
         tuple: (fold_probabilities, fold_targets) containing:
@@ -334,40 +332,11 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         - Uses the best model checkpoint saved during training
         - Returns probabilities (not predictions) for ensemble averaging
         - Ground truth targets are the same for all folds (same test set)
-        - Model is loaded with fold-specific hyperparameters
+        - Model weights are loaded from fold-specific checkpoints
         - Works for both NePS and QuickTune frameworks
     """
     # Set device for evaluation
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # MODEL INITIALIZATION
-    # ------------------------------------------------------------------------------------------------
-    # Initialize the model based on framework
-    if experimental_setting.data.dimensionality.lower() == "3d":
-        # Get model type from hyperparameters or experimental_setting
-        if framework == "quicktune":
-            model_type = hyperparameters["model"]  # For QuickTune
-            print(f"\nQuickTune selected model: {model_type}\n")
-        elif framework == "neps":
-            model_type = experimental_setting.model.type  # For NePS
-            print(f"\nNePS selected model: {model_type}\n")
-        else:
-            raise ValueError(f"Unsupported framework: {framework}. Must be either 'quicktune' or 'neps'.")
-
-        # Initialize model and move it to the appropriate device
-        # Use the model type determined above (either from QuickTune or NePS)
-        model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
-        model = get_3d_model(
-            model_config=model_config,
-            hyperparameters=hyperparameters,
-            developer_mode=experimental_setting.developer_mode,
-            image_size=image_size
-        ).to(device)
-
-        print(f"\nModel initialized: {model_type}\n")
-
-    else:
-        raise NotImplementedError("2D evaluation is not supported for config evaluation yet.")
     
     # MODEL CHECKPOINT LOADING
     # ------------------------------------------------------------------------------------------------
@@ -388,7 +357,6 @@ def evaluate_fold(fold, test_loader, experimental_setting, hyperparameters, num_
         return None, None
     
     # Add safe globals for NumPy objects that might be in the checkpoint
-    # TODO @Diane: check this out!
     torch.serialization.add_safe_globals([
         np.core.multiarray.scalar, 
         np.dtype, 
@@ -515,9 +483,33 @@ def evaluate_config_on_test_set(
             voxel_size = dataset["voxel_size"]
         
         # Get image size based on developer mode, model type and voxel size
-        image_size = extract_image_size(experimental_setting.model.type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
+        spatial_size = extract_spatial_size(experimental_setting.model.type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
 
-        # TODO @Diane: initialize model here?
+        # MODEL INITIALIZATION
+        # ------------------------------------------------------------------------------------------------
+        # Initialize the model once (all folds use the same architecture, only weights differ)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Get model type from hyperparameters or experimental_setting
+        if framework == "quicktune":
+            model_type = hyperparameters["model"]  # For QuickTune
+            print(f"\nQuickTune selected model: {model_type}\n")
+        elif framework == "neps":
+            model_type = experimental_setting.model.type  # For NePS
+            print(f"\nNePS selected model: {model_type}\n")
+        else:
+            raise ValueError(f"Unsupported framework: {framework}. Must be either 'quicktune' or 'neps'.")
+
+        # Initialize model and move it to the appropriate device
+        model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
+        model = get_3d_model(
+            model_config=model_config,
+            hyperparameters=hyperparameters,
+            developer_mode=experimental_setting.developer_mode,
+            spatial_size=spatial_size
+        ).to(device)
+
+        print(f"\nModel initialized: {model_type}\n")
 
         # Create test data in the format expected by 3D dataloaders
         test_data = [{"index": idx, "image": img, "label": label} 
@@ -539,7 +531,7 @@ def evaluate_config_on_test_set(
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(
                 test_data, 
-                transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=image_size, is_training=False)
+                transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=spatial_size, is_training=False)
             )
             
             # Create test loader
@@ -555,7 +547,7 @@ def evaluate_config_on_test_set(
             # Evaluate the fold on the test set
             print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.cv_inner_folds} on Test Set ===")
             fold_probabilities, fold_targets = evaluate_fold(
-                fold, test_loader, experimental_setting, hyperparameters, num_classes, pipeline_directory, framework, image_size
+                fold, test_loader, model, experimental_setting, hyperparameters, pipeline_directory
             )
             
             # Skip if checkpoint not found
@@ -569,7 +561,7 @@ def evaluate_config_on_test_set(
                 ground_truth_targets = np.asarray(fold_targets)
 
     else:
-        raise ValueError(f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'")
+        raise ValueError(f"Unsupported dimensionality: {experimental_setting.data.dimensionality.lower()}. Must be either '2d' or '3d'")
     
     # CALCULATE METRICS
     # ------------------------------------------------------------------------------------------------

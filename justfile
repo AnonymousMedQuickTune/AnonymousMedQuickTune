@@ -287,3 +287,84 @@ summarize-test-results-cluster EXPERIMENT_PATH SEED="42":
     --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
     --export=EXPERIMENT_PATH={{EXPERIMENT_PATH}},SEED={{SEED}} \
     cluster_scripts/summarize_test_results.sh
+
+# Plot test and validation performance over time (number of configs) for NePS experiments (single experiment)
+# Example: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script
+# Example with custom output: just plot-performance-over-time experiments/NePS/lipo/test_plotting_script output.png
+plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}}
+  else
+    python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
+  fi
+
+# Plot test and validation performance over time for multiple experiments together
+# Example: just plot-performance-over-time-multi test_plot experiments/NePS/lipo/test_plotting_script experiments/NePS/lipo/test_plotting_script_2
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}"
+
+# Plot test and validation performance over time for multiple experiments together with extend flag
+# Extends shorter experiments to match the longest one by repeating the last performance value
+# Example: just plot-performance-over-time-multi-extend test_plot experiments/NePS/lipo/test_plotting_script experiments/Baseline/liver/test_liver_33
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi-extend PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}" --extend-to-max-configs
+
+# Plot test and validation performance over time (number of configs) for NePS experiments on cluster (single experiment)
+# Example: just plot-performance-over-time-cluster NePS/lipo/test_plotting_script
+# Example with custom output: just plot-performance-over-time-cluster NePS/lipo/test_plotting_script experiments/Plots/output.png
+plot-performance-over-time-cluster EXPERIMENT_DIR OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    sbatch --exclude=dlcgpu05 \
+      --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+      --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+      --export=EXPERIMENT_DIR="{{EXPERIMENT_DIR}}" \
+      cluster_scripts/plot_performance_over_time.sh
+  else
+    sbatch --exclude=dlcgpu05 \
+      --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+      --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+      --export=EXPERIMENT_DIR="{{EXPERIMENT_DIR}}",OUTPUT_PATH="{{OUTPUT_PATH}}" \
+      cluster_scripts/plot_performance_over_time.sh
+  fi
+
+# Plot test and validation performance over time for multiple experiments together on cluster
+# Example: just plot-performance-over-time-multi-cluster test_plot NePS/lipo/test_plotting_script NePS/lipo/test_plotting_script_2
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi-cluster PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
+  OUTPUT_DIR="experiments/Plots"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}",OUTPUT_PATH="${OUTPUT_PATH}" \
+    cluster_scripts/plot_performance_over_time_multi.sh
+
+# Plot test and validation performance over time for multiple experiments together on cluster with extend flag
+# Extends shorter experiments to match the longest one by repeating the last performance value
+# Example: just plot-performance-over-time-multi-extend-cluster test_plot NePS/lipo/test_plotting_script Baseline/liver/test_liver_33
+# This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
+plot-performance-over-time-multi-extend-cluster PLOT_NAME *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/cluster_oe/
+  OUTPUT_DIR="experiments/Plots"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  sbatch --exclude=dlcgpu05 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}",OUTPUT_PATH="${OUTPUT_PATH}" \
+    cluster_scripts/plot_performance_over_time_multi_extend.sh

@@ -15,8 +15,7 @@ except ImportError:
     )
     from src.classification_3d.utils.densenet import DenseModel
 
-# NOTE: Currently not embedded in the code
-# TODO @Diane: Test this function and finish implementation
+# NOTE: Currently not embedded in the code and is not tested yet!
 def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=False):
     """
     Create and initialize a pretrainedfixed (non-parametrized) 3D model for medical image classification.
@@ -56,7 +55,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             out_channels=num_classes,
             layers=(3, 4, 6, 3),  # ResNet50
             norm="instance",
-            pretrained=True  # TODO @Diane:See https://github.com/Tencent/MedicalNet
+            pretrained=True  # NOTE @Diane:See https://github.com/Tencent/MedicalNet
         )
     
     elif model_type == "resnet101":
@@ -66,7 +65,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             out_channels=num_classes,
             layers=(3, 4, 23, 3),  # ResNet101
             norm="instance",
-            pretrained=True  # TODO @Diane: See https://github.com/Tencent/MedicalNet
+            pretrained=True  # NOTE @Diane: See https://github.com/Tencent/MedicalNet
         )
 
     elif model_type == "swin_unetr":
@@ -84,7 +83,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             in_channels=1,
             out_channels=num_classes,
             norm_name="instance",
-            pretrained=True  # MedicalNet pretrained weights available  TODO @Diane: check this out
+            pretrained=True  # MedicalNet pretrained weights available  NOTE @Diane: check this out
         )
 
     else:
@@ -92,8 +91,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
 
     return model
 
-# TODO @Diane: Update search spaces!
-def get_3d_model(model_config, hyperparameters, developer_mode, image_size=None):
+def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=None):
     """
     Create and initialize a parametrized 3D model for medical 3D image classification.
     
@@ -161,7 +159,7 @@ def get_3d_model(model_config, hyperparameters, developer_mode, image_size=None)
             - dropout_rate (float): Dropout probability (default: 0.0)
             - qkv_bias (bool): Whether to use bias in QKV projection (default: False)
         developer_mode (bool): Whether to use reduced model sizes for faster development/testing
-        image_size (tuple, optional): Image size for ViT model (required for ViT)
+        spatial_size (tuple, optional): Spatial size for ViT model in (H, W, D) format (required for ViT)
 
     Returns:
         nn.Module: Initialized PyTorch model with customizable architecture
@@ -189,7 +187,7 @@ def get_3d_model(model_config, hyperparameters, developer_mode, image_size=None)
         model = ParameterizedSwinUNETR(hyperparameters, num_classes, developer_mode)
 
     elif model_type == "vit":
-        model = ParameterizedViT(hyperparameters, num_classes, developer_mode, image_size)
+        model = ParameterizedViT(hyperparameters, num_classes, developer_mode, spatial_size)
     
     elif model_type == "densenet_natalia":
         model = DenseModel(hyperparameters, num_classes)

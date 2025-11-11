@@ -52,7 +52,7 @@ searcher: random_search       # Options: 'default', 'bayesian_optimization', 'ra
 #------------------------------------------------------------------------------
 model:
   type: resnet            # Model architecture type
-  task: classification    # Type of machine learning task
+  task: classification    # Type of machine learning task: classification, semantic_segmentation, instance_segmentation
 
 #------------------------------------------------------------------------------
 # Dataset Configuration

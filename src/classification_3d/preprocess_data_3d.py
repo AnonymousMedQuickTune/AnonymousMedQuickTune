@@ -37,7 +37,7 @@ from src.classification_3d.utils.preprocessing_utils import (
 )
 import datetime
 
-def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
+def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task):
     """
     Comprehensive preprocessing pipeline that includes resampling, normalization, 
     empty slice removal, and tumor region cropping.
@@ -47,8 +47,9 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
         output_path (str): Path to the output directory where processed images will be saved
         voxel_size (tuple): Target voxel size in (x, y, z) format
         is_mri (bool): Whether the dataset is MRI or CT
-        is_gist (bool): Whether to apply GIST-specific resizing to reduce memory usage
-        
+        dataset_name (str): Name of the dataset for dataset-specific preprocessing
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
+
     Returns:
         dict: Dictionary containing preprocessing statistics and metadata
     """
@@ -104,13 +105,13 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
         # NOTE @Natalia:
         # - Updated this whole part from Step 2 and Step 3 and integrated it here before normalization is applied!
         print("Crop/pad image if needed...")
-        size_before_cropping = image.GetSize()
+        size_before_cropping = image.GetSize()  # (x, y, z) format
         size_x, size_y, size_z = image.GetSize()
         if (size_x > x_75 or size_y > y_75 or size_z > z_75 or size_x < minimum_size or size_y < minimum_size or size_z < minimum_size):
-            print(f"Image size ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
-            image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median)
-        size_after_cropping = image.GetSize()
-        print(f"Image size after cropping/padding: {size_after_cropping}")
+            print(f"Image size (x, y, z) = ({size_x}, {size_y}, {size_z}) outside acceptable range, cropping/padding...")
+            image, segmentation = crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y_median, z_median, model_task)
+        size_after_cropping = image.GetSize()  # (x, y, z) format
+        print(f"Image size after cropping/padding (x, y, z) = {size_after_cropping}")
 
         # Only normalize if is_mri is True
         # NOTE @Natalia:
@@ -128,7 +129,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
             print("CT image normalization is done in the run pipeline based on training data statistics depending on the cross-validation folds according to nnU-Net's approach...")
 
         # Apply GIST-specific resizing to reduce memory usage
-        if is_gist:
+        if dataset_name == "gist":
             print("Applying GIST-specific resizing to reduce memory usage...")
             image, segmentation = resize_gist_images(image, segmentation)
 
@@ -142,7 +143,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist):
     print("Preprocessing completed successfully!")
 
 
-def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name):
+def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name, model_task):
     """
     Apply Natalia's smart preprocessing pipeline to the dataset.
     
@@ -152,6 +153,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
         calculation_method (str): Method to calculate voxel size ('mean', 'median', 'isotropic', 'volumetric_isotropic')
         is_mri (bool): Whether the dataset is MRI > MRI datasets need normalization in the preprocessing for each image individually
         dataset_name (str): Name of the dataset for flexible CSV file detection
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
         
     Returns:
         str: Path to the preprocessed dataset
@@ -179,12 +181,11 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     output_path = os.path.join(cleaned_dataset_path, f"preprocessed_{calculation_method}")
     os.makedirs(output_path, exist_ok=True)
     
-    # Determine if this is GIST dataset for memory optimization
+    # Determine dataset name for dataset-specific preprocessing
     dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
-    is_gist = (dataset_name == "gist")
     
     # Run the preprocessing pipeline from Natalia's preprocessing code base
-    smart_preprocessing(file_paths, output_path, voxel_size, is_mri, is_gist=is_gist)
+    smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task)
 
     # Analyze preprocessed dataset statistics
     print("\n=== Preprocessed Dataset Statistics Analysis ===")
@@ -215,7 +216,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
-def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3):
+def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3, model_task="classification"):
     """
     Load and preprocess a medical image dataset with N-repeated K-fold stratified cross-validation.
     Automatically checks for existing CV splits and creates them if they don't exist.
@@ -231,6 +232,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         mode (str): Mode of the experiment ('train' or 'test')
         cv_outer_folds_repeats (int): Number of repeats for repeated stratified K-fold
         cv_outer_folds_splits (int): Number of splits per repeat
+        model_task (str): Type of machine learning task: classification, semantic_segmentation, instance_segmentation
 
     Returns:
         dict: Dictionary containing dataset splits and metadata
@@ -248,20 +250,18 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             print(f"> Found existing cleaned dataset at {cleaned_dataset_path}, skipping dataset cleaning...\n")
         else:
             print("\nX Cleaned dataset not found, running dataset cleaning...\n")
-            cleaned_dataset_path = clean_dataset(data_path, dataset_name)
+            cleaned_dataset_path = clean_dataset(data_path, dataset_name, model_task)
 
         # Check if preprocessed dataset with the given voxel calculation method exists
         preprocessed_dataset_path = os.path.join(cleaned_dataset_path, f"preprocessed_{voxel_calculation}")
         if os.path.exists(preprocessed_dataset_path):
             print(f"> Found existing preprocessed dataset at {preprocessed_dataset_path}, skipping preprocessing...\n")
             # Get voxel size from existing cleaned data (we'll calculate it again)
-            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
         else:
             print("X Preprocessed dataset not found, running preprocessing...\n")
-            # TODO @Diane: Check if voxel size is also in (W, H, D) format
             voxel_size = calculate_voxel_size_from_images(cleaned_dataset_path, dataset_name, calculation_method=voxel_calculation)
-            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name)
+            preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name, model_task=model_task)
         # Keep the CSV path from the cleaned directory
         csv_path = os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")
     
@@ -505,7 +505,7 @@ def get_kfold_dataloaders(
     normalization_stats,
     augmentation_type,
     developer_mode,
-    image_size=None,
+    spatial_size=None,
     fold_directory=None,
     no_validation=False,
 ):
@@ -525,7 +525,7 @@ def get_kfold_dataloaders(
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
         developer_mode (bool): If True, uses smaller model target shape for faster development
-        image_size (tuple): Image size in (H, W, D) format for ViT; default None
+        spatial_size (tuple): Spatial size in (H, W, D) format for ViT; default None
         fold_directory (str, optional): Directory path for saving normalization stats
         no_validation (bool): If True, does not split train data in to train/val splits for validation
         
@@ -590,17 +590,13 @@ def get_kfold_dataloaders(
 
     # Create train and validation datasets
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=True))
-    elif augmentation_type == "trivial":
-        raise NotImplementedError("Trivial augmentation is not implemented yet.")  # TODO @Diane: Integrate TrivialAugment
-    elif augmentation_type == "groupaugment":
-        raise NotImplementedError("Group augmentation is not implemented yet.")  # TODO @Diane: Implement + integrate GroupAugment
+        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True))
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=image_size, is_training=False))
+        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False))
     else:
         val_dataset = None
 

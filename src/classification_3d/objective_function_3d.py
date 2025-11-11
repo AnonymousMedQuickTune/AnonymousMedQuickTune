@@ -29,83 +29,7 @@ from src.classification_3d.utils.normalization_stats import autonorm
 from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.utils.experiment_status_logger import InnerFoldProgressLogger
 
-# TODO @Diane: Improve this function in a more general way to be used for all datasets
-# TODO @Diane: Put this function to a different place and import it
-# TODO @Diane: Update values before running experiments on ViT and SwinUNETR as preprocessing updated!
-# TODO @Diane: Use spacial_size instead of image_size
-def extract_image_size(model_type, voxel_size, dataset_name, developer_mode):
-    """
-    Extract image size based on model type and voxel size.
-    
-    Args:
-        model_type (str): Type of model (e.g., "vit", "densenet", etc.)
-        voxel_size (tuple): Voxel size from dataset
-        dataset_name (str): Name of the dataset
-        developer_mode (bool): Whether the developer mode is enabled
-        
-    Returns:
-        tuple: Image size in (H, W, D) format, or None if not needed
-    """
-    if developer_mode:
-        image_size = (64, 64, 32)  # image in (H, W, D) format
-    else:
-        # Only ViT and SwinUNETR need specific image sizes
-        if model_type in ["vit", "swin_unetr"]:
-            print(f"Extracting image size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
-            print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
-            
-            if dataset_name == "lipo":
-                # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
-                # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
-                # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
-                # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
-                # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-                # Use approximate comparison with tolerance for floating point precision issues
-                if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
-                    image_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
-                    image_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
-                    image_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
-                    image_size = (274, 275, 176)  # spatial_size in (H, W, D) format
-                else:
-                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-            
-            elif dataset_name == "desmoid":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    image_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    image_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    image_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    image_size = (272, 295, 297)  # (H, W, D) format
-                else:
-                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-            
-            elif dataset_name == "gist":
-                image_size = (96, 96, 96)  # (H, W, D) format (should already be the case due to preprocessing)
-
-            else:
-                raise NotImplementedError(f"Image size extraction is not implemented for {dataset_name} dataset")
-            
-            # Update image size to be divisible by 32  # TODO @Diane: round up?
-            h = (image_size[0] // 32) * 32
-            w = (image_size[1] // 32) * 32
-            d = (image_size[2] // 32) * 32
-            image_size = (h, w, d)
-
-        else:
-            image_size = None
-    
-    print(f"Image size: {image_size}")
-    return image_size
+from src.classification_3d.utils.dataset_info import extract_spatial_size
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -114,6 +38,7 @@ def run_3d_pipeline(
     dataset_dict=None,
     num_classes=None,
     inner_fold_logger=None,
+    use_multifidelity=False,
     **hyperparameters,
 ):
     """
@@ -128,6 +53,8 @@ def run_3d_pipeline(
         experimental_setting (DictConfig): Hydra configuration object
         dataset_dict (dict, optional): Combined train+val data and labels dictionary if preloaded
         num_classes (int, optional): Number of classes in the dataset if preloaded
+        inner_fold_logger (InnerFoldProgressLogger, optional): Logger for inner fold progress tracking
+        use_multifidelity (bool, optional): Whether to use multifidelity optimization
         **hyperparameters: Configuration dictionary containing hyperparameters
 
     Returns:
@@ -147,8 +74,6 @@ def run_3d_pipeline(
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # TODO @Natalia: Is the search space complete? Yes
-    # TODO @Both: Discuss search space in a meeting
     print(f"\nHyperparameters: {hyperparameters}\n")  
     
     # Get model type from hyperparameters or experimental_setting
@@ -191,7 +116,7 @@ def run_3d_pipeline(
         voxel_size = dataset["voxel_size"]
 
     # Get image size based on developer mode, model type and voxel size
-    image_size = extract_image_size(model_type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
+    spatial_size = extract_spatial_size(model_type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
 
     # Initialize model and move it to the appropriate device
     # Use the model type determined above (either from QuickTune or NePS)
@@ -200,7 +125,7 @@ def run_3d_pipeline(
         model_config=model_config,
         hyperparameters=hyperparameters,
         developer_mode=experimental_setting.developer_mode,
-        image_size=image_size
+        spatial_size=spatial_size
     ).to(device)
 
     print(f"\nModel initialized: {model_type}\n")
@@ -208,7 +133,6 @@ def run_3d_pipeline(
     # Get k-fold parameter from experimental_setting or default to 5
     cv_inner_folds = experimental_setting.cv_inner_folds if hasattr(experimental_setting, "cv_inner_folds") else 5
 
-    # Initialize metrics storage for all folds # TODO @Natalia: are there any missing metrics? No
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
 
     # Initialize TensorBoard writer
@@ -259,16 +183,10 @@ def run_3d_pipeline(
             normalization_stats=normalization_stats,
             augmentation_type=experimental_setting.data.augmentation_type,
             developer_mode=experimental_setting.developer_mode,
-            image_size=image_size,
+            spatial_size=spatial_size,
             fold_directory=fold_directory,
             no_validation=experimental_setting.training.no_validation
         )
-
-        # TODO @Natalia: Do we need this? > dropout happens somewhere else (happens inside the model)
-        # Apply dropout rate to all applicable layers in the model
-        # model.apply(lambda m: set_dropout(m, hyperparameters.get("dropout_rate", 0.0)))
-        
-        print(f"Model initialized: {model_type}\n")
 
         # Setup loss function with optional label smoothing
         criterion = nn.CrossEntropyLoss(
@@ -325,28 +243,15 @@ def run_3d_pipeline(
         with open(experimental_setting.pipeline_space, "r") as f:
             pipeline_config = yaml.safe_load(f)
 
-        if "number_of_epochs" in pipeline_config:  # TODO @Diane: check how to access fidelity parameter properly (low priority)
-            if experimental_setting.searcher == "random_search":
-                if experimental_setting.developer_mode:
-                    epochs = experimental_setting.training.number_of_epochs
-                    print(f"\nRandom Search with a multi-fidelity searchspace.\n> Non-multi-fidelity optimization: Train model over {epochs} epochs!\n")
-                else:
-                    # The maximum number of epochs from the pipeline space is used for all evaluations.
-                    epochs = pipeline_config["number_of_epochs"]["upper"]
-                    print(f"\nRandom Search with a multi-fidelity searchspace.\n> Non-multi-fidelity optimization: Train model over {epochs} epochs!\n")
-            else:
-                print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({hyperparameters['number_of_epochs']}) as fidelity parameter!\n")
-                # For multi-fidelity compatible searchers (e.g., PriorBand, HyperBand):
-                # 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
-                # Early optimization runs use fewer epochs for rapid exploration,
-                # while promising hyperparameter configurations get more epochs later.
-                epochs = pipeline_config["number_of_epochs"]
+        if "number_of_epochs" in pipeline_config and use_multifidelity:
+            # For multi-fidelity runs 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
+            # Early optimization runs use fewer epochs for rapid exploration, while promising hyperparameter configurations get more epochs later.
+            epochs = hyperparameters['number_of_epochs']
+            print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({epochs}) as fidelity parameter!\n")
         else:
-            # For non-multi-fidelity search spaces: Use the number of epochs from the experimental_setting
-            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {experimental_setting.training.number_of_epochs} epochs!")
+            # For non-multi-fidelity search spaces (including Baseline runs): Use the number of epochs from the experimental_setting
             epochs = experimental_setting.training.number_of_epochs
-        
-        # TODO @Natalia: What are the number of epochs to train each config for to reproduce results for each dataset? 50-100
+            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {epochs} epochs!")
             
         # Initialize training components
         checkpoint_manager = CheckpointManager(
@@ -687,7 +592,6 @@ def run_3d_pipeline(
     # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one experimental_setting.
     cost = epoch_time
 
-    # TODO @Natalia: What are the goal performances that need to be achieved to reproduce results for each dataset? 82 for Lipo.
     return {
         "objective_to_minimize": neps_loss,  # Required by NePS
         "cost": cost,

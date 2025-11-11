@@ -1,4 +1,5 @@
 import os
+import datetime
 
 import numpy as np
 import torch
@@ -394,3 +395,92 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
             # Log each slice as a separate "epoch" for video-like scrolling
             for slice_idx, img_tensor in enumerate(images_with_text):
                 writer.add_image(f"Images/fold_{fold}", img_tensor, slice_idx)
+
+
+def save_cv_summary(experimental_setting, cv_outer_folds):
+    """
+    Save cross-validation summary to a text file.
+    
+    Args:
+        experimental_setting (DictConfig): Hydra configuration object
+        cv_outer_folds (int): Number of cross-validation folds
+    
+    Returns:
+        str: Path to the created summary file
+    """
+    # Create summary directory
+    summary_dir = os.path.join(experimental_setting.experiment_base_dir, "cv_summary")
+    os.makedirs(summary_dir, exist_ok=True)
+    
+    # Create summary file with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    summary_file = os.path.join(summary_dir, f"cv_summary_{timestamp}.txt")
+    
+    with open(summary_file, "w", encoding="utf-8") as f:
+        f.write("=" * 80 + "\n")
+        f.write("CROSS-VALIDATION SUMMARY\n")
+        f.write("=" * 80 + "\n\n")
+        
+        # Experiment information
+        f.write("EXPERIMENT INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Dataset: {experimental_setting.data.dataset}\n")
+        f.write(f"Dimensionality: {experimental_setting.data.dimensionality}\n")
+        f.write(f"Voxel Calculation: {experimental_setting.data.voxel_calculation}\n")
+        f.write(f"Number of Outer Cross-Validation Folds: {cv_outer_folds}\n")
+        f.write(f"N Repeats: {experimental_setting.cv_outer_folds_repeats}\n")
+        f.write(f"N Splits per Repeat: {experimental_setting.cv_outer_folds_splits}\n")
+        f.write(f"Seed: {experimental_setting.seed}\n")
+        f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
+        f.write(f"Optimizer: {experimental_setting.searcher}\n")
+        f.write(f"Developer Mode: {experimental_setting.developer_mode}\n")
+        f.write(f"Number of Epochs: {experimental_setting.training.number_of_epochs}\n")
+        f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        # CV Fold directories
+        f.write("CROSS-VALIDATION FOLD DIRECTORIES:\n")
+        f.write("-" * 40 + "\n")
+        for cv_outer_fold in range(cv_outer_folds):
+            cv_dir = f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}"
+            f.write(f"CV Fold {cv_outer_fold}: {cv_dir}\n")
+        f.write("\n")
+        
+        # Configuration files
+        f.write("CONFIGURATION FILES:\n")
+        f.write("-" * 40 + "\n")
+        config_dir = os.path.join(experimental_setting.experiment_base_dir, "hydra_output")
+        f.write(f"Configuration Directory: {config_dir}\n")
+        f.write("Files:\n")
+        f.write("  - experimental_setting.yaml\n")
+        f.write("  - pipeline_space.yaml\n")
+        f.write("  - pipeline_space_compact.yaml\n\n")
+        
+        # Data information
+        f.write("DATA INFORMATION:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Data Path: {experimental_setting.data.path}\n")
+        f.write(f"Cache Data: {experimental_setting.data.cache_data}\n")
+        f.write(f"Use Smart Preprocessing: {experimental_setting.data.use_smart_preprocessing}\n")
+        f.write(f"K-Folds: {experimental_setting.cv_inner_folds}\n")
+        f.write(f"Num Workers: {experimental_setting.data.num_workers}\n\n")
+        
+        # Pipeline space information
+        f.write("PIPELINE SPACE:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Pipeline Space File: {experimental_setting.pipeline_space}\n")
+        f.write(f"Developer Mode Pipeline: {experimental_setting.developer_mode}\n\n")
+        
+        # Summary
+        f.write("SUMMARY:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Total NePS Runs: {cv_outer_folds}\n")
+        f.write(f"Each run uses different train+val/test split\n")
+        f.write(f"Results saved in separate directories per fold\n")
+        f.write(f"Cross-validation ensures robust evaluation\n\n")
+        
+        f.write("=" * 80 + "\n")
+        f.write("END OF CROSS-VALIDATION SUMMARY\n")
+        f.write("=" * 80 + "\n")
+    
+    print(f"\nCross-validation summary saved to: {summary_file}")
+    return summary_file
