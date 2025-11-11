@@ -337,11 +337,12 @@ plot-performance-over-time-cluster DATASET EXPERIMENT_NAME EXPERIMENT_DIR OUTPUT
 # Example: just plot-performance-over-time-multi-extend-cluster gist_baseline_vs_autonorm experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model
 plot-performance-over-time-multi-cluster PLOT_NAME *EXPERIMENT_DIRS:
   #!/usr/bin/env bash
-  SEED=42
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/
+  BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
+  mkdir -p "${BASE_DIR}/experiments/Plots/cluster_oe/"
+  cd "${BASE_DIR}/code/MedQuickTune"
   sbatch --exclude=dlcgpu19 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --output="${BASE_DIR}/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out" \
+    --error="${BASE_DIR}/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out" \
     --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}" \
     cluster_scripts/plot_performance_over_time_multi.sh
 
@@ -349,10 +350,11 @@ plot-performance-over-time-multi-cluster PLOT_NAME *EXPERIMENT_DIRS:
 # Example: just plot-performance-over-time-multi-extend-cluster gist_baseline_vs_autonorm experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model experiments/Baseline/gist/50epochs_stratisfied-cv_densenet-model
 plot-performance-over-time-multi-extend-cluster PLOT_NAME *EXPERIMENT_DIRS:
   #!/usr/bin/env bash
-  SEED=42
-  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/
+  BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
+  mkdir -p "${BASE_DIR}/experiments/Plots/cluster_oe/"
+  cd "${BASE_DIR}/code/MedQuickTune"
   sbatch --exclude=dlcgpu19 \
-    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
-    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out \
+    --output="${BASE_DIR}/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out" \
+    --error="${BASE_DIR}/experiments/Plots/cluster_oe/%x.%A.%a.%N.err_out" \
     --export=PLOT_NAME="{{PLOT_NAME}}",EXPERIMENT_DIRS="{{EXPERIMENT_DIRS}}" \
     cluster_scripts/plot_performance_over_time_multi_extend.sh
