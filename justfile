@@ -44,6 +44,27 @@ neps2qt-cluster DATASET EXPERIMENT_NAME SEED:
 plot-cv-results EXPERIMENT_PATH OUTPUT_DIR="results/lipo_baseline":
   python src/analysis/plot_cluster_results.py {{EXPERIMENT_PATH}} --auto-structure --output-dir {{OUTPUT_DIR}}
 
+# Analyze most expensive dataset-model-voxel_calculation combinations for 50 epochs
+# Example: just analyze-expensive-configs (uses values from experimental_setting.yaml)
+# Example with custom CV settings: just analyze-expensive-configs 5 3 5
+# Example with custom top N: just analyze-expensive-configs 5 3 5 100
+analyze-expensive-configs CV_OUTER_FOLDS_REPEATS CV_OUTER_FOLDS_SPLITS CV_INNER_FOLDS TOP_N:
+  #!/usr/bin/env bash
+  ARGS=""
+  if [ -n "{{CV_OUTER_FOLDS_REPEATS}}" ]; then
+    ARGS="${ARGS} --cv-outer-folds-repeats {{CV_OUTER_FOLDS_REPEATS}}"
+  fi
+  if [ -n "{{CV_OUTER_FOLDS_SPLITS}}" ]; then
+    ARGS="${ARGS} --cv-outer-folds-splits {{CV_OUTER_FOLDS_SPLITS}}"
+  fi
+  if [ -n "{{CV_INNER_FOLDS}}" ]; then
+    ARGS="${ARGS} --cv-inner-folds {{CV_INNER_FOLDS}}"
+  fi
+  if [ -n "{{TOP_N}}" ]; then
+    ARGS="${ARGS} --top-n {{TOP_N}}"
+  fi
+  python src/analysis/analyze_most_expensive_configs.py ${ARGS}
+
 # Preprocess brain tumor dataset: process raw data, create CSV and cache for faster experiment initialization
 preprocess-brain-tumor-dataset:
     python -m src.classification_2d.preprocess_data_2d data.path=datasets
