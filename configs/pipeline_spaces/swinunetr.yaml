@@ -2,23 +2,23 @@
 patch_size:  # default = 2
   type: categorical
   choices: [2, 4]
-  prior: 2
-  prior_confidence: "low"
+  # prior: 2
+  # prior_confidence: "low"
 
 # feature_size determines stage channels: (f, 2f, 4f, 8f)
 # Choose values with many divisors to satisfy: (feature_size * 2^s) % num_heads[s] == 0
 feature_size:  # default = 24
   type: categorical
   choices: [24, 48]
-  prior: 24
-  prior_confidence: "low"
+  # prior: 24
+  # prior_confidence: "low"
 
 depths_0:  # default = 2 -> depths = (2, 2, 2, 2)
   type: int
   lower: 2
   upper: 4
-  prior: 2
-  prior_confidence: "low"
+  # prior: 2
+  # prior_confidence: "low"
 
 # num_heads per stage: must satisfy (feature_size * 2^s) % num_heads[s] == 0
 # Stage channels: (f, 2f, 4f, 8f) for feature_size f
@@ -26,24 +26,26 @@ depths_0:  # default = 2 -> depths = (2, 2, 2, 2)
 num_heads_0:  # Stage 0: feature_size channels, default = 3
   type: categorical
   choices: [3, 4, 6, 8, 12]
-  prior: 3
-  prior_confidence: "low"
+  # prior: 3
+  # prior_confidence: "low"
 
 num_heads_1:  # Stage 1: 2*feature_size channels, default = 6
   type: categorical
-  choices: [3, 4, 6, 8, 12, 16]
-  prior: 6
-  prior_confidence: "low"
+  choices: [4, 6, 8, 12, 16]
+  # prior: 6
+  # prior_confidence: "low"
 
 num_heads_2:  # Stage 2: 4*feature_size channels, default = 12
   type: categorical
-  choices: [3, 4, 6, 8, 12, 16, 24]
-  prior_confidence: "low"
+  choices: [6, 8, 12, 16, 24]
+  # prior: 12
+  # prior_confidence: "low"
 
 num_heads_3:  # Stage 3: 8*feature_size channels, default = 24
   type: categorical
-  choices: [3, 4, 6, 8, 12, 16, 24, 32]
-  prior_confidence: "low"
+  choices: [8, 12, 16, 24, 32]
+  # prior: 24
+  # prior_confidence: "low"
 
 # window_size is fixed to (4, 4, 1) to minimize Z padding across stages
 # This works well for anisotropic medical 3D volumes (Z << X, Y)
@@ -56,30 +58,30 @@ mlp_ratio:  # default = 4.0
   type: float
   lower: 2.0
   upper: 4.0
-  prior: 4.0
-  prior_confidence: "low"
+  # prior: 4.0
+  # prior_confidence: "low"
 
 dropout_prob:  # default = 0.0
   type: float
   log: false
   lower: 0.0
   upper: 0.3
-  prior: 0.0
-  prior_confidence: "low"
+  # prior: 0.0
+  # prior_confidence: "low"
 
 attn_drop_rate:  # default = 0.0
   type: float
   log: false
   lower: 0.0
   upper: 0.3
-  prior: 0.0
-  prior_confidence: "low"
+  # prior: 0.0
+  # prior_confidence: "low"
 
 dropout_path_rate:  # default = 0.0
   type: float
   log: false
   lower: 0.0
   upper: 0.3
-  prior: 0.0
-  prior_confidence: "low"
+  # prior: 0.0
+  # prior_confidence: "low"
 

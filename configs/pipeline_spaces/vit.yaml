@@ -3,53 +3,53 @@ patch_size_0:  # default = 16 for patch_size=(16, 16, 16/2)= (16, 16, 8)
   type: int
   lower: 16
   upper: 32
-  prior: 16
-  prior_confidence: "low"
+  # prior: 16
+  # prior_confidence: "low"
 
 hidden_size_multiplier:  # default = 64 > hidden_size = 64 * 12 = 768
   type: int
   lower: 32
   upper: 64
-  prior: 64
-  prior_confidence: "low"
+  # prior: 64
+  # prior_confidence: "low"
 
 # mlp_dim = hidden_size * mlp_dim_multiplier
 mlp_dim_multiplier:  # default = 4
   type: categorical
   choices: [2, 4]
-  prior: 4
-  prior_confidence: "low"
+  # prior: 4
+  # prior_confidence: "low"
 
 num_layers:  # default = 12
   type: int
   lower: 4
   upper: 12
-  prior: 12
-  prior_confidence: "low"
+  # prior: 12
+  # prior_confidence: "low"
 
 # hidden_size % num_heads == 0; We'll make hidden_size % 12 = 0
 num_heads:  # default = 6 (Decreased from 12 to 6 due to memory reasons)
   type: categorical
   choices: [3, 4, 6]  # 12 > CUDA error
-  prior: 6
-  prior_confidence: "low"
+  # prior: 6
+  # prior_confidence: "low"
 
 pos_embed_type:  # default = "learnable"
   type: categorical
   choices: ['none', 'sincos', 'learnable']
-  prior: "learnable"
-  prior_confidence: "low"
+  # prior: "learnable"
+  # prior_confidence: "low"
 
 dropout_prob:  # default = 0.0
   type: float
   log: false
   lower: 0.0
   upper: 0.3
-  prior: 0.0
-  prior_confidence: "low"
+  # prior: 0.0
+  # prior_confidence: "low"
   
 qkv_bias:  # default = False
   type: categorical
   choices: [True, False]
-  prior: False
-  prior_confidence: "low"
+  #  prior: False
+  # prior_confidence: "low"
