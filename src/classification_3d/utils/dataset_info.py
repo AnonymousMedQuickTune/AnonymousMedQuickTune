@@ -150,12 +150,18 @@ def analyze_dataset_statistics(cleaned_path, labels_df):
         'width_min': np.min(widths) if widths else 0,
         'width_max': np.max(widths) if widths else 0,
         'width_mean': np.mean(widths) if widths else 0,
+        'width_p95': np.percentile(widths, 95) if widths else 0,
+        'width_p99': np.percentile(widths, 99) if widths else 0,
         'height_min': np.min(heights) if heights else 0,
         'height_max': np.max(heights) if heights else 0,
         'height_mean': np.mean(heights) if heights else 0,
+        'height_p95': np.percentile(heights, 95) if heights else 0,
+        'height_p99': np.percentile(heights, 99) if heights else 0,
         'depth_min': np.min(depths) if depths else 0,
         'depth_max': np.max(depths) if depths else 0,
         'depth_mean': np.mean(depths) if depths else 0,
+        'depth_p95': np.percentile(depths, 95) if depths else 0,
+        'depth_p99': np.percentile(depths, 99) if depths else 0,
         'volume_min': np.min(volumes) if volumes else 0,
         'volume_max': np.max(volumes) if volumes else 0,
         'volume_mean': np.mean(volumes) if volumes else 0,
@@ -204,9 +210,9 @@ def save_statistics_to_file(statistics, output_file, dataset_name, additional_in
         
         # Write image properties
         f.write("=== Image Properties ===\n")
-        f.write(f"Width range: {statistics['width_min']:.1f} - {statistics['width_max']:.1f} (mean: {statistics['width_mean']:.1f})\n")
-        f.write(f"Height range: {statistics['height_min']:.1f} - {statistics['height_max']:.1f} (mean: {statistics['height_mean']:.1f})\n")
-        f.write(f"Depth range: {statistics['depth_min']:.1f} - {statistics['depth_max']:.1f} (mean: {statistics['depth_mean']:.1f})\n")
+        f.write(f"Width range: {statistics['width_min']:.1f} - {statistics['width_max']:.1f} (mean: {statistics['width_mean']:.1f}, p95: {statistics.get('width_p95', 0):.1f}, p99: {statistics.get('width_p99', 0):.1f})\n")
+        f.write(f"Height range: {statistics['height_min']:.1f} - {statistics['height_max']:.1f} (mean: {statistics['height_mean']:.1f}, p95: {statistics.get('height_p95', 0):.1f}, p99: {statistics.get('height_p99', 0):.1f})\n")
+        f.write(f"Depth range: {statistics['depth_min']:.1f} - {statistics['depth_max']:.1f} (mean: {statistics['depth_mean']:.1f}, p95: {statistics.get('depth_p95', 0):.1f}, p99: {statistics.get('depth_p99', 0):.1f})\n")
         f.write(f"Aspect ratio (width/height): {statistics['aspect_ratio_min']:.2f} - {statistics['aspect_ratio_max']:.2f} (mean: {statistics['aspect_ratio_mean']:.2f})\n")
         f.write(f"Volume range: {statistics['volume_min']:.0f} - {statistics['volume_max']:.0f} (mean: {statistics['volume_mean']:.0f})\n\n")
         
@@ -218,15 +224,18 @@ def save_statistics_to_file(statistics, output_file, dataset_name, additional_in
             f.write(f"Class {label}: {count} samples ({percentage:.1f}%)\n")
 
 
-def _read_max_dimensions_from_statistics(statistics_file):
+def _read_dimensions_from_statistics(statistics_file, use_percentile=True, percentile=95):
     """
-    Read maximum height, width, and depth from statistics.txt file.
+    Read dimensions from statistics.txt file.
+    Can use either maximum (conservative) or percentile-based (efficient) approach.
     
     Args:
         statistics_file (str): Path to statistics.txt file
+        use_percentile (bool): If True, use percentile instead of maximum (default: True)
+        percentile (int): Percentile to use if use_percentile=True (default: 95 for 95th percentile)
         
     Returns:
-        tuple: (max_height, max_width, max_depth) as integers
+        tuple: (height, width, depth) as integers
     """
     if not os.path.exists(statistics_file):
         raise FileNotFoundError(f"Statistics file not found: {statistics_file}")
@@ -234,27 +243,54 @@ def _read_max_dimensions_from_statistics(statistics_file):
     with open(statistics_file, "r", encoding="utf-8") as f:
         content = f.read()
     
+    if use_percentile:
+        # Try to parse percentile values (new format)
+        # Format: "Height range: 192.0 - 560.0 (mean: 430.3, p95: 520.0, p99: 550.0)"
+        percentile_key = f"p{percentile}"
+        
+        # More flexible regex that handles various whitespace patterns
+        height_match = re.search(r"Height range:[\d.\s-]+\(mean:\s*[\d.]+,\s*" + percentile_key + r":\s*([\d.]+)", content)
+        width_match = re.search(r"Width range:[\d.\s-]+\(mean:\s*[\d.]+,\s*" + percentile_key + r":\s*([\d.]+)", content)
+        depth_match = re.search(r"Depth range:[\d.\s-]+\(mean:\s*[\d.]+,\s*" + percentile_key + r":\s*([\d.]+)", content)
+        
+        if height_match and width_match and depth_match:
+            height = int(float(height_match.group(1)))
+            width = int(float(width_match.group(1)))
+            depth = int(float(depth_match.group(1)))
+            print(f"Using {percentile}th percentile from statistics: Height={height}, Width={width}, Depth={depth}")
+            return height, width, depth
+        else:
+            # Fallback: old format without percentiles, use maximum
+            print(f"Warning: Percentile {percentile} not found in {statistics_file}, falling back to maximum")
+            use_percentile = False
+    
+    # Fallback to maximum (old format or percentile not found)
     # Parse height range: "Height range: 192.0 - 560.0 (mean: 430.3)"
     height_match = re.search(r"Height range:\s*[\d.]+ - ([\d.]+)", content)
-    # Parse width range: "Width range: 256.0 - 560.0 (mean: 445.8)"
     width_match = re.search(r"Width range:\s*[\d.]+ - ([\d.]+)", content)
-    # Parse depth range: "Depth range: 20.0 - 69.0 (mean: 29.6)"
     depth_match = re.search(r"Depth range:\s*[\d.]+ - ([\d.]+)", content)
     
     if not height_match or not width_match or not depth_match:
         raise ValueError(f"Could not parse dimensions from {statistics_file}")
     
-    max_height = int(float(height_match.group(1)))
-    max_width = int(float(width_match.group(1)))
-    max_depth = int(float(depth_match.group(1)))
+    height = int(float(height_match.group(1)))
+    width = int(float(width_match.group(1)))
+    depth = int(float(depth_match.group(1)))
     
-    return max_height, max_width, max_depth
+    print(f"Using maximum dimensions (conservative): Height={height}, Width={width}, Depth={depth}")
+    return height, width, depth
 
 
-def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_mode, data_path):
+def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_mode, data_path, use_percentile=True, percentile=95):
     """
     Extract spatial size based on model type and voxel calculation method.
-    Reads max dimensions from statistics.txt file in the preprocessed dataset directory.
+    Uses intelligent percentile-based approach instead of maximum to improve efficiency.
+    
+    Instead of using the maximum dimensions (which requires padding all smaller images),
+    this function uses a percentile-based approach (default: 95th percentile) that:
+    - Covers ~95% of images without cropping
+    - Only requires cropping for the largest ~5% of images
+    - Significantly reduces memory usage and computation time
     
     Args:
         model_type (str): Type of model (e.g., "vit", "densenet", etc.)
@@ -262,11 +298,13 @@ def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_
         dataset_name (str): Name of the dataset
         developer_mode (bool): Whether the developer mode is enabled
         data_path (str): Path to the datasets directory
+        use_percentile (bool): If True, use percentile-based approach (default: True, recommended)
+        percentile (int): Percentile to use (default: 95 for 95th percentile)
         
     Returns:
         tuple: Spatial size in (H, W, D) format, or None if not needed
     """
-    if developer_mode:
+    if not developer_mode:
         spatial_size = (64, 64, 32)  # spatial size in (H, W, D) format
     else:
         # Only ViT and SwinUNETR need specific spatial sizes
@@ -279,11 +317,14 @@ def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_
                 "statistics.txt"
             )
             
-            # Read max dimensions from statistics.txt
+            # Read dimensions from statistics.txt (using percentile or maximum)
             try:
-                max_height, max_width, max_depth = _read_max_dimensions_from_statistics(statistics_file)
-                spatial_size = (max_height, max_width, max_depth)  # (H, W, D) format
-                # spatial_size = (425, 414, 32)
+                height, width, depth = _read_dimensions_from_statistics(
+                    statistics_file,
+                    use_percentile=use_percentile,
+                    percentile=percentile
+                )
+                spatial_size = (height, width, depth)  # (H, W, D) format
                 print(f"Extracted spatial size from {statistics_file}: {spatial_size}")
             except Exception as e:
                 print(f"Warning: Could not read spatial size from {statistics_file}: {e}")
@@ -297,9 +338,9 @@ def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_
             w = (spatial_size[1] // 32) * 32
             d = (spatial_size[2] // 32) * 32
             spatial_size = (h, w, d)
+            print(f"Spatial size after rounding to multiples of 32: {spatial_size}")
 
         else:
             spatial_size = None
     
-    print(f"Spatial size: {spatial_size}")
     return spatial_size
