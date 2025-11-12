@@ -1,6 +1,8 @@
 import os
 import numpy as np
 import datetime
+import re
+from pathlib import Path
 from tqdm import tqdm
 
 
@@ -216,15 +218,50 @@ def save_statistics_to_file(statistics, output_file, dataset_name, additional_in
             f.write(f"Class {label}: {count} samples ({percentage:.1f}%)\n")
 
 
-def extract_spatial_size(model_type, voxel_size, dataset_name, developer_mode):
+def _read_max_dimensions_from_statistics(statistics_file):
     """
-    Extract spatial size based on model type and voxel size.
+    Read maximum height, width, and depth from statistics.txt file.
+    
+    Args:
+        statistics_file (str): Path to statistics.txt file
+        
+    Returns:
+        tuple: (max_height, max_width, max_depth) as integers
+    """
+    if not os.path.exists(statistics_file):
+        raise FileNotFoundError(f"Statistics file not found: {statistics_file}")
+    
+    with open(statistics_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    
+    # Parse height range: "Height range: 192.0 - 560.0 (mean: 430.3)"
+    height_match = re.search(r"Height range:\s*[\d.]+ - ([\d.]+)", content)
+    # Parse width range: "Width range: 256.0 - 560.0 (mean: 445.8)"
+    width_match = re.search(r"Width range:\s*[\d.]+ - ([\d.]+)", content)
+    # Parse depth range: "Depth range: 20.0 - 69.0 (mean: 29.6)"
+    depth_match = re.search(r"Depth range:\s*[\d.]+ - ([\d.]+)", content)
+    
+    if not height_match or not width_match or not depth_match:
+        raise ValueError(f"Could not parse dimensions from {statistics_file}")
+    
+    max_height = int(float(height_match.group(1)))
+    max_width = int(float(width_match.group(1)))
+    max_depth = int(float(depth_match.group(1)))
+    
+    return max_height, max_width, max_depth
+
+
+def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_mode, data_path):
+    """
+    Extract spatial size based on model type and voxel calculation method.
+    Reads max dimensions from statistics.txt file in the preprocessed dataset directory.
     
     Args:
         model_type (str): Type of model (e.g., "vit", "densenet", etc.)
-        voxel_size (tuple): Voxel size from dataset
+        voxel_calculation (str): Voxel calculation method ("mean", "median", "isotropic", "volumetric_isotropic")
         dataset_name (str): Name of the dataset
         developer_mode (bool): Whether the developer mode is enabled
+        data_path (str): Path to the datasets directory
         
     Returns:
         tuple: Spatial size in (H, W, D) format, or None if not needed
@@ -234,113 +271,31 @@ def extract_spatial_size(model_type, voxel_size, dataset_name, developer_mode):
     else:
         # Only ViT and SwinUNETR need specific spatial sizes
         if model_type in ["vit", "swin_unetr"]:
-            # TODO @Diane: Fix the spacial size for each dataset since the preprocessing got updated!
-            raise NotImplementedError(f"Fix the spacial size for each dataset since the preprocessing got updated!")
-            print(f"Extracting spatial size for {model_type} for dataset {dataset_name} with voxel_size: {voxel_size}")
-            print(f"\n\n\n\nVOXEL SIZE: {voxel_size}\n\n\n\n")
+            # Construct path to statistics.txt file
+            statistics_file = os.path.join(
+                data_path,
+                f"{dataset_name}_cleaned",
+                f"preprocessed_{voxel_calculation}",
+                "statistics.txt"
+            )
             
-            if dataset_name == "lipo":
-                # Please see statistics.txt in lipo_cleaned/preprocessed_*/statistics.txt for the maximum width, height, and depth.
-                # For preprocessed_mean, the maximum width, height, and depth are 466, 558, and 50 respectively.
-                # For preprocessed_median, the maximum width, height, and depth are 446, 534, and 176 respectively.
-                # For preprocessed_isotropic, the maximum width, height, and depth are 381, 382, and 242 respectively.
-                # For preprocessed_volumetric_isotropic, the maximum width, height, and depth are 274, 275, and 176 respectively.
-                # Use approximate comparison with tolerance for floating point precision issues
-                if abs(voxel_size[0] - 0.68684727) < 1e-6:  # mean voxel calculation
-                    spatial_size = (466, 558, 50)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 0.71651787) < 1e-6:  # median voxel calculation
-                    spatial_size = (446, 534, 50)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 1.0) < 1e-6:  # isotropic voxel calculation
-                    spatial_size = (381, 382, 176)  # spatial_size in (H, W, D) format
-                elif abs(voxel_size[0] - 1.3903084893330422) < 1e-6:  # volumetric isotropic voxel calculation
-                    spatial_size = (274, 275, 176)  # spatial_size in (H, W, D) format
-                else:
-                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
+            # Read max dimensions from statistics.txt
+            try:
+                max_height, max_width, max_depth = _read_max_dimensions_from_statistics(statistics_file)
+                spatial_size = (max_height, max_width, max_depth)  # (H, W, D) format
+                # spatial_size = (425, 414, 32)
+                print(f"Extracted spatial size from {statistics_file}: {spatial_size}")
+            except Exception as e:
+                print(f"Warning: Could not read spatial size from {statistics_file}: {e}")
+                raise NotImplementedError(
+                    f"Could not extract spatial size for {dataset_name} with {voxel_calculation} voxel calculation. "
+                    f"Please ensure the statistics.txt file exists at: {statistics_file}"
+                )
             
-            elif dataset_name == "desmoid":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    spatial_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    spatial_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (272, 295, 297)  # (H, W, D) format
-                else:
-                    print(f"Warning: Unknown voxel_size[0] = {voxel_size[0]}, using default spatial_size")
-            
-            elif dataset_name == "liver":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    spatial_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    spatial_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (272, 295, 297)  # (H, W, D) format
-            
-            elif dataset_name == "gist":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    spatial_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    spatial_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (272, 295, 297)  # (H, W, D) format
-            
-            elif dataset_name == "crlm":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    spatial_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    spatial_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (272, 295, 297)  # (H, W, D) format
-            
-            elif dataset_name == "melanoma":
-                mean_voxel_size_0 = 0.673749
-                median_voxel_size_0 = 0.68359375
-                isotropic_voxel_size_0 = 1.0
-                volumetric_isotropic_voxel_size_0 = 1.2903189272642521
-
-                if abs(voxel_size[0] - mean_voxel_size_0) < 1e-6:
-                    spatial_size = (356, 565, 69)  # (H, W, D) format
-                elif abs(voxel_size[0] - median_voxel_size_0) < 1e-6:
-                    spatial_size = (352, 556, 77)  # (H, W, D) format
-                elif abs(voxel_size[0] - isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (351, 380, 383)  # (H, W, D) format
-                elif abs(voxel_size[0] - volumetric_isotropic_voxel_size_0) < 1e-6:
-                    spatial_size = (272, 295, 297)  # (H, W, D) format
-
-            else:
-                raise NotImplementedError(f"Spatial size extraction is not implemented for {dataset_name} dataset")
-            
-            # Update spatial size to be divisible by 32 (round up)
-            h = ((spatial_size[0] + 31) // 32) * 32
-            w = ((spatial_size[1] + 31) // 32) * 32
-            d = ((spatial_size[2] + 31) // 32) * 32
+            # Update spatial size to be divisible by 32 (round down)
+            h = (spatial_size[0] // 32) * 32
+            w = (spatial_size[1] // 32) * 32
+            d = (spatial_size[2] // 32) * 32
             spatial_size = (h, w, d)
 
         else:
