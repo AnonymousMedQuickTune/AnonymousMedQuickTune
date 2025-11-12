@@ -304,7 +304,7 @@ def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_
     Returns:
         tuple: Spatial size in (H, W, D) format, or None if not needed
     """
-    if not developer_mode:
+    if developer_mode:
         spatial_size = (64, 64, 32)  # spatial size in (H, W, D) format
     else:
         # Only ViT and SwinUNETR need specific spatial sizes
