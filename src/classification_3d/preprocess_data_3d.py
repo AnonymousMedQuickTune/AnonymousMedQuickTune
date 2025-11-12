@@ -33,7 +33,8 @@ from src.classification_3d.utils.preprocessing_utils import (
     save_preprocessed_images_and_segmentations_to_nifti,
     get_image_dimensions_from_input,
     resample_image,
-    resize_gist_images
+    resize_gist_melanoma_images,
+    resize_lipo_desmoid_liver_images
 )
 import datetime
 
@@ -130,8 +131,12 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
 
         # Apply GIST-specific resizing to reduce memory usage
         if dataset_name == "gist" or dataset_name == "melanoma":
-            print("Applying GIST-specific resizing to reduce memory usage...")
-            image, segmentation = resize_gist_images(image, segmentation)
+            print("Applying GIST- and MELANOMA-specific resizing in the depth dimension to reduce memory usage...")
+            image, segmentation = resize_gist_melanoma_images(image, segmentation)
+        
+        if dataset_name == "lipo" or dataset_name == "desmoid" or dataset_name == "liver":
+            print("Applying LIPO- and DESMOMID- and LIVER-specific resizing in the depth dimension to reduce memory usage...")
+            image, segmentation = resize_lipo_desmoid_liver_images(image, segmentation)
 
         # Extract the original directory name from the file path
         # and save the processed images and segmentations

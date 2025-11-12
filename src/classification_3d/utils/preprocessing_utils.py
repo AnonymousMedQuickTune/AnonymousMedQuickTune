@@ -603,12 +603,13 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
         return image, segmentation
 
 
-def resize_gist_images(image, segmentation):
+def resize_gist_melanoma_images(image, segmentation):
     """
-    Resize GIST images to reduce memory usage.
+    Resize GIST and MELANOMA images to reduce memory usage.
     
-    This function resizes dimensions that exceed 96 voxels to 96, while preserving
-    smaller dimensions. This prevents out-of-memory errors while minimizing information loss.
+    This function reduces only the depth (Z) dimension to a maximum of 96 voxels,
+    while preserving the width (X) and height (Y) dimensions. This preserves
+    X-Y resolution (important for diagnostic features) while reducing computational cost.
     
     Args:
         image (sitk.Image): The image to resize
@@ -630,10 +631,17 @@ def resize_gist_images(image, segmentation):
     # Get SimpleITK size for consistent printing (x, y, z format)
     sitk_size_before = image.GetSize()  # (x, y, z)
     
-    # Calculate target size: only resize dimensions that exceed 96 voxels
-    # Note: img_array.shape is (z, y, x), so we need to map it correctly
+    # Calculate target size: only reduce depth (Z) dimension to max 96
+    # Note: img_array.shape is (z, y, x), so:
+    #   - Index 0 = z (depth) - reduce to max 96
+    #   - Index 1 = y (height) - keep unchanged
+    #   - Index 2 = x (width) - keep unchanged
     current_shape_np = img_array.shape  # (z, y, x)
-    target_size_np = tuple(min(dim, 96) for dim in current_shape_np)  # (z, y, x)
+    target_size_np = (
+        min(current_shape_np[0], 96),  # z (depth) - reduce to max 96
+        current_shape_np[1],            # y (height) - unchanged
+        current_shape_np[2]             # x (width) - unchanged
+    )
     
     # Check if resizing is needed
     if current_shape_np == target_size_np:
@@ -652,7 +660,85 @@ def resize_gist_images(image, segmentation):
     sitk_size_after = temp_img.GetSize()  # (x, y, z)
     
     # Print in consistent (x, y, z) format to match other print statements
-    print(f"GIST: Resized from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
+    print(f"GIST/Melanoma: Resized depth from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
+    
+    # Convert back to SimpleITK images
+    # sitk.GetImageFromArray expects (z, y, x) numpy array and converts to (x, y, z) SimpleITK
+    final_img = sitk.GetImageFromArray(resized_img_data)
+    final_seg = sitk.GetImageFromArray(resized_seg_data)
+    
+    # Preserve spatial information
+    # spacing is in (x, y, z) format, which matches SimpleITK's orientation
+    final_img.SetSpacing(spacing)
+    final_seg.SetSpacing(spacing)
+    final_img.SetOrigin(origin)
+    final_seg.SetOrigin(origin)
+    final_img.SetDirection(direction)
+    final_seg.SetDirection(direction)
+    
+    return final_img, final_seg
+
+
+def resize_lipo_desmoid_liver_images(image, segmentation):
+    """
+    Resize LIPO, DESMOID, and LIVER images to reduce memory usage.
+    
+    This function resizes:
+    - Height (Y) and Width (X) dimensions to 256 voxels
+    - Depth (Z) dimension to 32 voxels
+    
+    This reduces computational cost while maintaining reasonable spatial resolution.
+    
+    Args:
+        image (sitk.Image): The image to resize
+        segmentation (sitk.Image): The segmentation to resize
+        
+    Returns:
+        tuple: (resized_image, resized_segmentation) as SimpleITK images
+    """
+    # Convert SimpleITK to numpy arrays
+    # SimpleITK uses (x, y, z) indexing but GetArrayFromImage returns (z, y, x)
+    img_array = sitk.GetArrayFromImage(image)  # Shape: (z, y, x)
+    seg_array = sitk.GetArrayFromImage(segmentation)  # Shape: (z, y, x)
+    
+    # Get image metadata
+    origin = image.GetOrigin()
+    spacing = image.GetSpacing()  # This is (x, y, z) spacing
+    direction = image.GetDirection()
+    
+    # Get SimpleITK size for consistent printing (x, y, z format)
+    sitk_size_before = image.GetSize()  # (x, y, z)
+    
+    # Calculate target size:
+    # Note: img_array.shape is (z, y, x), so:
+    #   - Index 0 = z (depth) - resize to 32
+    #   - Index 1 = y (height) - resize to 256
+    #   - Index 2 = x (width) - resize to 256
+    current_shape_np = img_array.shape  # (z, y, x)
+    target_size_np = (
+        32,   # z (depth) - resize to 32
+        256,  # y (height) - resize to 256
+        256   # x (width) - resize to 256
+    )
+    
+    # Check if resizing is needed
+    if current_shape_np == target_size_np:
+        # No resizing needed, return original images
+        return image, segmentation
+    
+    # Calculate zoom factors (1.0 means no change for that dimension)
+    zoom_factors = [target_size_np[i] / current_shape_np[i] for i in range(3)]
+    
+    # Resize image and segmentation
+    resized_img_data = zoom(img_array, zoom_factors, order=1)  # Linear interpolation
+    resized_seg_data = zoom(seg_array, zoom_factors, order=0)  # Nearest neighbor
+    
+    # Convert back to SimpleITK to get final size in (x, y, z) format for consistent printing
+    temp_img = sitk.GetImageFromArray(resized_img_data)
+    sitk_size_after = temp_img.GetSize()  # (x, y, z)
+    
+    # Print in consistent (x, y, z) format to match other print statements
+    print(f"LIPO/Desmoid/Liver: Resized from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
     
     # Convert back to SimpleITK images
     # sitk.GetImageFromArray expects (z, y, x) numpy array and converts to (x, y, z) SimpleITK
