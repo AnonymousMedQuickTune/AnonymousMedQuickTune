@@ -129,7 +129,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
             print("CT image normalization is done in the run pipeline based on training data statistics depending on the cross-validation folds according to nnU-Net's approach...")
 
         # Apply GIST-specific resizing to reduce memory usage
-        if dataset_name == "gist":
+        if dataset_name == "gist" or dataset_name == "melanoma":
             print("Applying GIST-specific resizing to reduce memory usage...")
             image, segmentation = resize_gist_images(image, segmentation)
 
