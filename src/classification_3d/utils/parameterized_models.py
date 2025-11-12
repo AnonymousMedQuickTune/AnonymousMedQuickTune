@@ -307,15 +307,55 @@ class ParameterizedSwinUNETR(nn.Module):
         # Stage 2: 96 % 12 = 0 > per-head dim = 96/12 = 8
         # Stage 3: 192 % 24 = 0 > per-head dim = 192/24 = 8
 
+        # Convert depths_0 to tuple if present, otherwise use depths directly
+        if developer_mode:
+            depths_0 = 1
+        else:
+            depths_0 = hyperparameters.get("depths_0", 2)
+            depths = (depths_0, depths_0, depths_0, depths_0)
+        
+        # Convert num_heads per stage to tuple if present, otherwise use num_heads directly
+        if developer_mode:
+            num_heads = (1, 2, 3, 4)
+        elif all(f"num_heads_{i}" in hyperparameters for i in range(4)):
+            num_heads = (
+                hyperparameters.get("num_heads_0", 3),
+                hyperparameters.get("num_heads_1", 6),
+                hyperparameters.get("num_heads_2", 12),
+                hyperparameters.get("num_heads_3", 24),
+            )
+        else:
+            num_heads = hyperparameters.get("num_heads", (3, 6, 12, 24))
+        
+        # NOTE: window_size is fixed to (4, 4, 1) to minimize Z padding across stages
+        # This works well for anisotropic medical 3D volumes (Z << X, Y)
+        # Parametrization is NOT recommended due to complex constraints:
+        # - window_size must be <= token_resolution at each stage
+        # - Token resolution depends on spatial_size and patch_size (dataset-dependent)
+        # - (4, 4, 1) minimizes padding/masking and matches stage 3 where Z often = 1
+
+        # NOTE: feature_size is fixed to 24 for good divisibility and to satisfy the constraint: (feature_size * 2^s) % num_heads[s] == 0
+        # Higher feature_sizes (like 48 which is also divisible by 24) is not feasible due to memory reasons
+
         patch_size = 2 if developer_mode else hyperparameters.get("patch_size", 2)  # larger patches = fewer tokens
-        feature_size = 12 if developer_mode else hyperparameters.get("feature_size", 24)
-        depths = (1, 1, 1, 1) if developer_mode else hyperparameters.get("depths", (2, 2, 2, 2))
-        num_heads = (1, 2, 3, 4) if developer_mode else hyperparameters.get("num_heads", (3, 6, 12, 24))
-        window_size = 2 if developer_mode else hyperparameters.get("window_size", (4, 4, 1))  # Update from 7 to (4,4,1): minimizes Z padding across stages and matches (… , … , 1) at stage 3
+        feature_size = 12 if developer_mode else 24
+        depths = (depths_0, depths_0, depths_0, depths_0)  # default: (2, 2, 2, 2)
+        num_heads = num_heads  # default: (3, 6, 12, 24)
+        window_size = 2 if developer_mode else (4, 4, 1)  # Update from 7 to (4,4,1): minimizes Z padding across stages and matches (… , … , 1) at stage 3
         mlp_ratio = 2.0 if developer_mode else hyperparameters.get("mlp_ratio", 4.0)
         drop_rate = hyperparameters.get("dropout_prob", 0.0)
         attn_drop_rate = hyperparameters.get("attn_drop_rate", 0.0)
         dropout_path_rate = hyperparameters.get("dropout_path_rate", 0.0)
+
+        # Validate constraint: (feature_size * 2^s) % num_heads[s] == 0 for each stage
+        stage_channels = [feature_size * (2 ** s) for s in range(4)]
+        for s, (channels, heads) in enumerate(zip(stage_channels, num_heads)):
+            if channels % heads != 0:
+                raise ValueError(
+                    f"Constraint violation at stage {s}: "
+                    f"channels={channels} (feature_size={feature_size} * 2^{s}) "
+                    f"must be divisible by num_heads={heads}, but {channels} % {heads} = {channels % heads}"
+                )
         # --------------------------------
         
         # Build model

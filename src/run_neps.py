@@ -519,11 +519,15 @@ def main(experimental_setting: DictConfig) -> None:
 
         # Create optimizer
         if experimental_setting.searcher == "random_search":  # TODO @Diane: Use user priors or not?
+            # For using Random Search with user priors:
             # https://github.com/automl/neps/blob/master/docs/reference/optimizers.md
             # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.random_search
-            optimizer = ("random_search", {"use_priors": True, "ignore_fidelity": True})
-            # use_multifidelity is False when ignore_fidelity=True, True when ignore_fidelity=False
-            use_multifidelity = not optimizer[1]["ignore_fidelity"]
+            # optimizer = ("random_search", {"use_priors": True, "ignore_fidelity": True})
+            # use_multifidelity = not optimizer[1]["ignore_fidelity"]
+
+            # For using default random search:
+            optimizer = experimental_setting.searcher
+            use_multifidelity = False
             
         elif experimental_setting.searcher == "priorband":
             # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.priorband

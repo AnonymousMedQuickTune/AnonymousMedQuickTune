@@ -465,12 +465,16 @@ def evaluate_config_on_test_set(
         if "voxel_calculation" in str(experimental_setting.pipeline_space):
             if hyperparameters["voxel_calculation"] == "mean":
                 dataset = dataset_dict["dataset_dict_mean"]
+                voxel_calculation = "mean"
             elif hyperparameters["voxel_calculation"] == "median":
                 dataset = dataset_dict["dataset_dict_median"]
+                voxel_calculation = "median"
             elif hyperparameters["voxel_calculation"] == "isotropic":
                 dataset = dataset_dict["dataset_dict_isotropic"]
+                voxel_calculation = "isotropic"
             elif hyperparameters["voxel_calculation"] == "volumetric_isotropic":
                 dataset = dataset_dict["dataset_dict_volumetric_isotropic"]
+                voxel_calculation = "volumetric_isotropic"
             else:
                 raise ValueError(f"Invalid voxel calculation method: {hyperparameters['voxel_calculation']}")
             voxel_size = dataset["voxel_size"]
@@ -481,9 +485,16 @@ def evaluate_config_on_test_set(
             else:
                 dataset = dataset_dict["dataset_dict_median"]
             voxel_size = dataset["voxel_size"]
+            voxel_calculation = "median"
         
         # Get image size based on developer mode, model type and voxel size
-        spatial_size = extract_spatial_size(experimental_setting.model.type, voxel_size, experimental_setting.data.dataset, experimental_setting.developer_mode)
+        spatial_size = extract_spatial_size(
+            experimental_setting.model.type, 
+            voxel_calculation, 
+            experimental_setting.data.dataset, 
+            experimental_setting.developer_mode,
+            data_path=experimental_setting.data.path
+        )
 
         # MODEL INITIALIZATION
         # ------------------------------------------------------------------------------------------------

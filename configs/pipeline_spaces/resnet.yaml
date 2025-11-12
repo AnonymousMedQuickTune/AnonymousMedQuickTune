@@ -1,38 +1,38 @@
 resnet_type:  # default = "resnet18"
   type: categorical
   choices: ["resnet18", "resnet34", "resnet50"]
-  prior: "resnet18"
-  prior_confidence: "low"
+  # prior: "resnet18"
+  # prior_confidence: "low"
 
 conv1_t_size:  # default = 7
   type: int
   lower: 3
   upper: 7
-  prior: 7
-  prior_confidence: "low"
+  # prior: 7
+  # prior_confidence: "low"
 
 conv1_t_stride:  # default = 1
   type: int
   lower: 1
   upper: 2
-  prior: 1
-  prior_confidence: "low"
+  # prior: 1
+  # prior_confidence: "low"
 
 no_max_pool:  # default = False
   type: categorical
   choices: [True, False]
-  prior: False
-  prior_confidence: "low"
+  # prior: False
+  # prior_confidence: "low"
 
 widen_factor:  # default = 1.0
   type: float
   lower: 1.0
   upper: 2.0
-  prior: 1.0
-  prior_confidence: "low"
+  # prior: 1.0
+  # prior_confidence: "low"
 
 act:  # default = "relu"
   type: categorical
   choices: ["relu", "leakyrelu", "gelu"]
-  prior: "relu"
-  prior_confidence: "low"
+  # prior: "relu"
+  # prior_confidence: "low"
