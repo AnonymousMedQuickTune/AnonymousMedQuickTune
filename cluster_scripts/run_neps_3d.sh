@@ -28,5 +28,7 @@ python -m src.run_neps \
     training.number_of_epochs=50 \
     cv_outer_folds_repeats=1 \
     cv_outer_folds_splits=5 \
+    cv_inner_folds=5 \
+    max_evaluations=50 \
     combine_model_and_training_space=False \
-    developer_mode=false
+    developer_mode=False
