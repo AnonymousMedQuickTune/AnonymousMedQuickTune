@@ -55,7 +55,7 @@ def load_normalization_stats_from_fold(pipeline_directory, fold_idx):
                 "std": [std_value]
             }
             
-            print(f"Loaded normalization stats for fold {fold_idx}: mean={mean_value:.6e}, std={std_value:.6e}")
+            print(f"\nLoaded normalization stats for fold {fold_idx}: mean={mean_value:.6e}, std={std_value:.6e}")
             return normalization_stats
         else:
             print(f"Warning: Could not parse normalization stats from {normalization_stats_file}")
@@ -520,7 +520,7 @@ def evaluate_config_on_test_set(
             spatial_size=spatial_size
         ).to(device)
 
-        print(f"\nModel initialized: {model_type}\n")
+        print(f"\nModel initialized: {model_type}")
 
         # Create test data in the format expected by 3D dataloaders
         test_data = [{"index": idx, "image": img, "label": label} 
