@@ -603,13 +603,15 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
         return image, segmentation
 
 
-def resize_gist_melanoma_images(image, segmentation):
+def resize_gist_melanoma_crlm_images(image, segmentation):
     """
-    Resize GIST and MELANOMA images to reduce memory usage.
+    Resize GIST, Melanoma and CRLM images to reduce memory usage.
     
-    This function reduces only the depth (Z) dimension to a maximum of 96 voxels,
-    while preserving the width (X) and height (Y) dimensions. This preserves
-    X-Y resolution (important for diagnostic features) while reducing computational cost.
+    This function resizes:
+    - Height (Y) and Width (X) dimensions to 256 voxels
+    - Depth (Z) dimension to 96 voxels
+    
+    This reduces computational cost while maintaining reasonable spatial resolution.
     
     Args:
         image (sitk.Image): The image to resize
@@ -678,8 +680,146 @@ def resize_gist_melanoma_images(image, segmentation):
     
     return final_img, final_seg
 
+def resize_lipo_desmoid_liver_images(image, segmentation, dataset_name):
+    """
+    Resize LIPO, DESMOID, and LIVER images to reduce memory usage.
+    
+    For LIPO and LIVER: Resizes using zoom interpolation:
+    - Height (Y) and Width (X) dimensions to 256 voxels
+    - Depth (Z) dimension to 32 voxels
+    
+    For DESMOID: Uses central crop instead of resizing to preserve small structures:
+    - Crops to 256x256x32 (x, y, z) from the center of the image
+    
+    This reduces computational cost while maintaining reasonable spatial resolution.
+    
+    Args:
+        image (sitk.Image): The image to resize/crop
+        segmentation (sitk.Image): The segmentation to resize/crop
+        dataset_name (str): Name of the dataset ("lipo", "desmoid", or "liver")
+        
+    Returns:
+        tuple: (processed_image, processed_segmentation) as SimpleITK images
+    """
+    # Convert SimpleITK to numpy arrays
+    # SimpleITK uses (x, y, z) indexing but GetArrayFromImage returns (z, y, x)
+    img_array = sitk.GetArrayFromImage(image)  # Shape: (z, y, x)
+    seg_array = sitk.GetArrayFromImage(segmentation)  # Shape: (z, y, x)
+    
+    # Get image metadata
+    origin = image.GetOrigin()
+    spacing = image.GetSpacing()  # This is (x, y, z) spacing
+    direction = image.GetDirection()
+    
+    # Get SimpleITK size for consistent printing (x, y, z format)
+    sitk_size_before = image.GetSize()  # (x, y, z)
+    
+    # Calculate target size:
+    # Note: img_array.shape is (z, y, x), so:
+    #   - Index 0 = z (depth) - target 32
+    #   - Index 1 = y (height) - target 256
+    #   - Index 2 = x (width) - target 256
+    current_shape_np = img_array.shape  # (z, y, x)
+    target_size_np = (
+        32,   # z (depth) - target 32
+        256,  # y (height) - target 256
+        256   # x (width) - target 256
+    )
+    
+    # Check if processing is needed
+    if current_shape_np == target_size_np:
+        # No processing needed, return original images
+        return image, segmentation
+    
+    if dataset_name == "desmoid":
+        # For DESMOID: use central crop to preserve small structures
+        # Calculate center indices for each dimension
+        center_z = current_shape_np[0] // 2
+        center_y = current_shape_np[1] // 2
+        center_x = current_shape_np[2] // 2
+        
+        # Calculate crop boundaries (centered around the center)
+        # Handle cases where image is smaller than target (shouldn't happen, but safe)
+        crop_z_start = max(0, center_z - target_size_np[0] // 2)
+        crop_z_end = min(current_shape_np[0], crop_z_start + target_size_np[0])
+        crop_z_start = max(0, crop_z_end - target_size_np[0])  # Adjust start if end was clipped
+        
+        crop_y_start = max(0, center_y - target_size_np[1] // 2)
+        crop_y_end = min(current_shape_np[1], crop_y_start + target_size_np[1])
+        crop_y_start = max(0, crop_y_end - target_size_np[1])  # Adjust start if end was clipped
+        
+        crop_x_start = max(0, center_x - target_size_np[2] // 2)
+        crop_x_end = min(current_shape_np[2], crop_x_start + target_size_np[2])
+        crop_x_start = max(0, crop_x_end - target_size_np[2])  # Adjust start if end was clipped
+        
+        # Perform central crop
+        cropped_img_data = img_array[crop_z_start:crop_z_end, crop_y_start:crop_y_end, crop_x_start:crop_x_end]
+        cropped_seg_data = seg_array[crop_z_start:crop_z_end, crop_y_start:crop_y_end, crop_x_start:crop_x_end]
+        
+        # If cropped size is smaller than target, pad symmetrically
+        if cropped_img_data.shape != target_size_np:
+            pad_z = max(0, target_size_np[0] - cropped_img_data.shape[0])
+            pad_y = max(0, target_size_np[1] - cropped_img_data.shape[1])
+            pad_x = max(0, target_size_np[2] - cropped_img_data.shape[2])
+            
+            pad_z_before = pad_z // 2
+            pad_z_after = pad_z - pad_z_before
+            pad_y_before = pad_y // 2
+            pad_y_after = pad_y - pad_y_before
+            pad_x_before = pad_x // 2
+            pad_x_after = pad_x - pad_x_before
+            
+            cropped_img_data = np.pad(cropped_img_data, 
+                                     ((pad_z_before, pad_z_after), (pad_y_before, pad_y_after), (pad_x_before, pad_x_after)),
+                                     mode='constant', constant_values=0)
+            cropped_seg_data = np.pad(cropped_seg_data,
+                                     ((pad_z_before, pad_z_after), (pad_y_before, pad_y_after), (pad_x_before, pad_x_after)),
+                                     mode='constant', constant_values=0)
+        
+        processed_img_data = cropped_img_data
+        processed_seg_data = cropped_seg_data
+        
+        # Convert back to SimpleITK to get final size in (x, y, z) format for consistent printing
+        temp_img = sitk.GetImageFromArray(processed_img_data)
+        sitk_size_after = temp_img.GetSize()  # (x, y, z)
+        
+        # Print in consistent (x, y, z) format to match other print statements
+        print(f"DESMOID: Central cropped from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
+        
+    else:
+        # For LIPO and LIVER: use zoom/resize
+        # Calculate zoom factors (1.0 means no change for that dimension)
+        zoom_factors = [target_size_np[i] / current_shape_np[i] for i in range(3)]
+        
+        # Resize image and segmentation
+        processed_img_data = zoom(img_array, zoom_factors, order=1)  # Linear interpolation
+        processed_seg_data = zoom(seg_array, zoom_factors, order=0)  # Nearest neighbor
+        
+        # Convert back to SimpleITK to get final size in (x, y, z) format for consistent printing
+        temp_img = sitk.GetImageFromArray(processed_img_data)
+        sitk_size_after = temp_img.GetSize()  # (x, y, z)
+        
+        # Print in consistent (x, y, z) format to match other print statements
+        dataset_label = "LIPO" if dataset_name == "lipo" else "LIVER"
+        print(f"{dataset_label}: Resized from (x, y, z) = {sitk_size_before} to (x, y, z) = {sitk_size_after}")
+    
+    # Convert back to SimpleITK images
+    # sitk.GetImageFromArray expects (z, y, x) numpy array and converts to (x, y, z) SimpleITK
+    final_img = sitk.GetImageFromArray(processed_img_data)
+    final_seg = sitk.GetImageFromArray(processed_seg_data)
+    
+    # Preserve spatial information
+    # spacing is in (x, y, z) format, which matches SimpleITK's orientation
+    final_img.SetSpacing(spacing)
+    final_seg.SetSpacing(spacing)
+    final_img.SetOrigin(origin)
+    final_seg.SetOrigin(origin)
+    final_img.SetDirection(direction)
+    final_seg.SetDirection(direction)
+    
+    return final_img, final_seg
 
-def resize_lipo_desmoid_liver_images(image, segmentation):
+def resize_lipo_desmoid_liver_images_old(image, segmentation):
     """
     Resize LIPO, DESMOID, and LIVER images to reduce memory usage.
     
