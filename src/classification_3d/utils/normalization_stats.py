@@ -43,7 +43,9 @@ def calculate_normalization_stats(train_data, is_rgb=False):
     then calculate mean and std for Z-score normalization.
     
     Args:
-        train_data (list): List of dictionaries containing 'image' key with file paths to 3D volumes
+        train_data (list): List of dictionaries containing 'image' key with either:
+            - file paths to 3D volumes (str) for WORC datasets
+            - numpy arrays (np.ndarray) for MedMNIST datasets
         is_rgb (bool): Whether the dataset is RGB or grayscale (not supported yet)
     
     Returns:
@@ -59,8 +61,17 @@ def calculate_normalization_stats(train_data, is_rgb=False):
     loader = LoadImage(image_only=True)
     
     for data_dict in train_data:
-        # Load the image from file path
-        img = loader(data_dict['image'])
+        img_data = data_dict['image']
+        
+        # Check if image_data is a numpy array (MedMNIST) or a file path (WORC)
+        if isinstance(img_data, np.ndarray):
+            # MedMNIST: image is already a numpy array
+            img = img_data
+        elif isinstance(img_data, str):
+            # WORC: Load the image from file path
+            img = loader(img_data)
+        else:
+            raise TypeError(f"Unsupported image type: {type(img_data)}. Expected str (file path) or np.ndarray.")
         
         # Convert to numpy array if it's a torch tensor
         if isinstance(img, torch.Tensor):

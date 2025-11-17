@@ -305,11 +305,13 @@ def evaluate_model(model, data_loader, criterion, device):
             - recall (list): Recall for each class
             - f1 (list): F1 score for each class
             - confusion_matrix (np.array): Confusion matrix
+            - auc (float): AUC score
     """
     model.eval()
     total_loss = 0.0
     all_predictions = []
     all_targets = []
+    all_probs = []  # Store probabilities for AUC calculation
 
     with torch.no_grad():
         for batch in data_loader:
@@ -326,13 +328,18 @@ def evaluate_model(model, data_loader, criterion, device):
 
             total_loss += loss.item()
             predictions = outputs.max(1)[1]
+            
+            # Apply softmax to get probabilities for AUC calculation
+            probs = torch.nn.functional.softmax(outputs, dim=1)
 
             all_predictions.extend(predictions.cpu().numpy())
             all_targets.extend(targets.cpu().numpy())
+            all_probs.extend(probs.cpu().numpy())
 
     # Convert to numpy arrays for faster computation
     all_predictions = np.array(all_predictions)
     all_targets = np.array(all_targets)
+    all_probs = np.array(all_probs)
 
     # Calculate basic metrics
     accuracy = np.mean(all_predictions == all_targets)
@@ -350,7 +357,14 @@ def evaluate_model(model, data_loader, criterion, device):
     conf_matrix = confusion_matrix(all_targets, all_predictions)
 
     # Calculate AUC
-    auc = roc_auc_score(all_targets, all_predictions)
+    # Determine if binary or multi-class
+    n_classes = len(np.unique(all_targets))
+    if n_classes == 2:
+        # Binary classification: use probabilities for positive class
+        auc = roc_auc_score(all_targets, all_probs[:, 1])
+    else:
+        # Multi-class classification: use one-vs-rest (ovr) strategy
+        auc = roc_auc_score(all_targets, all_probs, multi_class='ovr', average='macro')
 
     # Create metrics dictionary
     metrics = {

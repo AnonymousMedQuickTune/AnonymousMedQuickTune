@@ -5,6 +5,9 @@ from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
 import pickle
 from tqdm import tqdm
 import SimpleITK as sitk
+import torch
+from monai.transforms import Lambdad
+from monai.data import MetaTensor
 
 from monai.transforms import (
     Compose,
@@ -216,6 +219,136 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     return output_path, voxel_size
 
 
+def load_medmnist_3d_dataset(dataset_name, data_path="datasets", seed=42):
+    """
+    Load MedMNIST 3D dataset and combine all splits (train, val, test) into a single dataset.
+    
+    Args:
+        dataset_name (str): Name of the MedMNIST 3D dataset:
+            - 'organmnist3d' (OrganMNIST3D)
+            - 'nodulemnist3d' (NoduleMNIST3D)
+            - 'adrenalmnist3d' (AdrenalMNIST3D)
+            - 'fracturemnist3d' (FractureMNIST3D)
+            - 'vesselmnist3d' (VesselMNIST3D)
+            - 'synapsemnist3d' (SynapseMNIST3D)
+        data_path (str): Base path to the datasets directory. Defaults to 'datasets'
+        seed (int): Random seed for reproducibility (used for consistent dataset loading)
+    
+    Returns:
+        tuple: (images, labels, num_classes) where:
+            - images (list): List of numpy arrays (3D volumes)
+            - labels (numpy.ndarray): Array of labels
+            - num_classes (int): Number of classes
+    """
+    try:
+        import medmnist
+        from medmnist import INFO
+    except ImportError:
+        raise ImportError(
+            "medmnist package is required for MedMNIST datasets. "
+            "Install it with: pip install medmnist"
+        )
+    
+    # Map dataset names to MedMNIST dataset classes
+    dataset_map = {
+        'organmnist3d': ('OrganMNIST3D', 'organmnist3d'),
+        'nodulemnist3d': ('NoduleMNIST3D', 'nodulemnist3d'),
+        'adrenalmnist3d': ('AdrenalMNIST3D', 'adrenalmnist3d'),
+        'fracturemnist3d': ('FractureMNIST3D', 'fracturemnist3d'),
+        'vesselmnist3d': ('VesselMNIST3D', 'vesselmnist3d'),
+        'synapsemnist3d': ('SynapseMNIST3D', 'synapsemnist3d'),
+    }
+    
+    if dataset_name.lower() not in dataset_map:
+        raise ValueError(
+            f"Unknown MedMNIST 3D dataset: {dataset_name}. "
+            f"Supported datasets: {list(dataset_map.keys())}"
+        )
+    
+    dataset_class_name, info_key = dataset_map[dataset_name.lower()]
+    
+    # Get dataset info
+    info = INFO[info_key]
+    num_classes = len(info['label'])
+    
+    print(f"\nLoading {dataset_class_name} dataset...")
+    print(f"Number of classes: {num_classes}")
+    print(f"Class names: {info['label']}")
+    
+    # Import the dataset class dynamically
+    dataset_module = getattr(medmnist, dataset_class_name)
+    
+    # Load train, val, and test splits
+    train_dataset = dataset_module(split='train', download=True, root=data_path, as_rgb=False)
+    val_dataset = dataset_module(split='val', download=True, root=data_path, as_rgb=False)
+    test_dataset = dataset_module(split='test', download=True, root=data_path, as_rgb=False)
+    
+    # print(f"Train samples: {len(train_dataset)}")
+    # print(f"Val samples: {len(val_dataset)}")
+    # print(f"Test samples: {len(test_dataset)}")
+    
+    # Combine all splits
+    all_images = []
+    all_labels = []
+    
+    # Process train split
+    for img, label in train_dataset:
+        # img is a numpy array with shape (H, W, D) or (C, H, W, D)
+        # Convert to numpy if it's a PIL Image or tensor
+        if hasattr(img, 'numpy'):
+            img = img.numpy()
+        elif hasattr(img, 'array'):
+            img = np.array(img)
+        else:
+            img = np.array(img)
+        
+        # Ensure shape is (H, W, D) - remove channel dimension if present
+        if len(img.shape) == 4:  # (C, H, W, D)
+            img = img[0]  # Take first channel if single channel
+        elif len(img.shape) != 3:  # Should be (H, W, D)
+            raise ValueError(f"Unexpected image shape: {img.shape}")
+        
+        all_images.append(img)
+        all_labels.append(int(label))
+    
+    # Process val split
+    for img, label in val_dataset:
+        if hasattr(img, 'numpy'):
+            img = img.numpy()
+        elif hasattr(img, 'array'):
+            img = np.array(img)
+        else:
+            img = np.array(img)
+        
+        if len(img.shape) == 4:
+            img = img[0]
+        all_images.append(img)
+        all_labels.append(int(label))
+    
+    # Process test split
+    for img, label in test_dataset:
+        if hasattr(img, 'numpy'):
+            img = img.numpy()
+        elif hasattr(img, 'array'):
+            img = np.array(img)
+        else:
+            img = np.array(img)
+        
+        if len(img.shape) == 4:
+            img = img[0]
+        all_images.append(img)
+        all_labels.append(int(label))
+    
+    all_labels = np.array(all_labels)
+    
+    print(f"\nCombined dataset:")
+    print(f"  Total samples: {len(all_images)}")
+    print(f"  Image shape: {all_images[0].shape}")
+    print(f"  Class distribution: {dict(zip(*np.unique(all_labels, return_counts=True)))}")
+    
+    return all_images, all_labels, num_classes
+
+
 def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data_path="datasets", seed=42, use_smart_preprocessing=True, voxel_calculation="median", cv_outer_fold=0, mode="train", cv_outer_folds_repeats=5, cv_outer_folds_splits=3, model_task="classification"):
     """
     Load and preprocess a medical image dataset with N-repeated K-fold stratified cross-validation.
@@ -223,11 +356,13 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
 
     Args:
         experiment_base_dir (str): Path to the experiment base directory
-        dataset_name (str): Name of the dataset to load ('lipo', 'desmoid', 'gist')
+        dataset_name (str): Name of the dataset to load:
+            - WORC database: 'lipo', 'desmoid', 'gist', 'liver', 'melanoma', 'crlm'
+            - MedMNIST 3D: 'organmnist3d', 'nodulemnist3d', 'adrenalmnist3d', 'fracturemnist3d', 'vesselmnist3d', 'synapsemnist3d'
         data_path (str): Base path to the datasets directory. Defaults to 'datasets'
         seed (int): Random seed for reproducibility
-        use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing
-        voxel_calculation (str): Method to calculate voxel size for preprocessing
+        use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing (only for WORC datasets)
+        voxel_calculation (str): Method to calculate voxel size for preprocessing (only for WORC datasets)
         cv_outer_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
         mode (str): Mode of the experiment ('train' or 'test')
         cv_outer_folds_repeats (int): Number of repeats for repeated stratified K-fold
@@ -237,7 +372,35 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
     Returns:
         dict: Dictionary containing dataset splits and metadata
     """
-    if use_smart_preprocessing:
+    # Check if this is a MedMNIST 3D dataset
+    medmnist_datasets = ['organmnist3d', 'nodulemnist3d', 'adrenalmnist3d', 'fracturemnist3d', 'vesselmnist3d', 'synapsemnist3d']
+    is_medmnist = dataset_name.lower() in medmnist_datasets
+    
+    if is_medmnist:
+        # Load MedMNIST 3D dataset (combines all splits)
+        print(f"\n{'='*100}")
+        print(f"Loading MedMNIST 3D dataset: {dataset_name}")
+        print(f"{'='*100}\n")
+        
+        images, labels, num_classes = load_medmnist_3d_dataset(dataset_name, data_path=data_path, seed=seed)
+        
+        # Convert labels to numpy array if not already
+        if not isinstance(labels, np.ndarray):
+            labels = np.array(labels)
+        
+        # Calculate and print class distribution (for consistency with WORC datasets)
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        print(f"\nClass distribution: {dict(zip(unique_labels, counts))}")
+        
+        # MedMNIST datasets are CT-like (need normalization)
+        # Use dummy voxel_size for MedMNIST (not used for preprocessing)  # TODO @Diane: check what to do with the voxel_size here
+        voxel_size = (1.0, 1.0, 1.0)
+        
+        # Convert images to list format compatible with existing pipeline
+        # For MedMNIST, images are already numpy arrays, not file paths
+        images_list = images  # List of numpy arrays
+        
+    elif use_smart_preprocessing:
         if dataset_name in ["lipo", "desmoid", "liver"]:
             is_mri = True
         elif dataset_name in ["gist", "crlm", "melanoma"]:
@@ -264,32 +427,33 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             preprocessed_dataset_path, voxel_size = apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method=voxel_calculation, is_mri=is_mri, dataset_name=dataset_name, model_task=model_task)
         # Keep the CSV path from the cleaned directory
         csv_path = os.path.join(cleaned_dataset_path, f"{dataset_name}_labels.csv")
-    
+        
+        # Get image and segmentation paths from preprocessed data
+        images, segmentations, _ = get_paths(preprocessed_dataset_path, dataset_name)
+
+        # Load labels
+        labels_csv = pd.read_csv(csv_path)
+        labels = labels_csv['Diagnosis_binary'].to_numpy()
+
+        # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
+        # NOTE: When adding a new dataset, pls verify if -1 is not a valid label!
+        if dataset_name in ["lipo", "desmoid", "gist"]:
+            # Create a list of indices for which the label is not -1 and not NaN
+            filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
+            # Keep only the images corresponding to valid indices
+            images = [images[i] for i in filtered_indices]
+            # Keep only the segmentations corresponding to valid indices
+            segmentations = [segmentations[i] for i in filtered_indices]
+            # Keep only the labels that are not -1 and not NaN
+            labels = [labels[i] for i in filtered_indices]
+        
+        # Convert to list format for consistency
+        images_list = images
+        unique_labels, counts = np.unique(labels, return_counts=True)
+        num_classes = len(unique_labels)
+        print(f"\nClass distribution after filtering: {dict(zip(unique_labels, counts))}")
     else:
-        raise NotImplementedError("Smart preprocessing must be applied to use this function.")
-
-    # Get image and segmentation paths from preprocessed data
-    images, segmentations, _ = get_paths(preprocessed_dataset_path, dataset_name)
-
-    # Load labels
-    labels_csv = pd.read_csv(csv_path)
-    labels = labels_csv['Diagnosis_binary'].to_numpy()
-
-    # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
-    # NOTE: When adding a new dataset, pls verify if -1 is not a valid label!
-    if dataset_name in ["lipo", "desmoid", "gist"]:
-        # Create a list of indices for which the label is not -1 and not NaN
-        filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
-        # Keep only the images corresponding to valid indices
-        images = [images[i] for i in filtered_indices]
-        # Keep only the segmentations corresponding to valid indices
-        segmentations = [segmentations[i] for i in filtered_indices]
-        # Keep only the labels that are not -1 and not NaN
-        labels = [labels[i] for i in filtered_indices]
-
-    # Recheck class distribution after filtering
-    unique_labels, counts = np.unique(labels, return_counts=True)
-    print(f"\nClass distribution after filtering: {dict(zip(unique_labels, counts))}")
+        raise NotImplementedError("Smart preprocessing must be applied to use this function for WORC datasets.")
 
     # STEP 1: Check if CV splits already exist
     cv_splits_dir = os.path.join(experiment_base_dir, "cv_splits")
@@ -313,7 +477,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         )
         
         # Generate all splits
-        cv_splits = list(rskf.split(images, labels))
+        cv_splits = list(rskf.split(images_list, labels))
         
         # Save CV splits to file
         os.makedirs(cv_splits_dir, exist_ok=True)
@@ -324,9 +488,9 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             "base_seed": seed,
             "total_splits": len(cv_splits),
             "dataset_info": {
-                "total_samples": len(images),
-                "n_classes": len(np.unique(labels)),
-                "class_distribution": {str(i): int(np.sum(np.array(labels) == i)) for i in np.unique(labels)}
+                "total_samples": len(images_list),
+                "n_classes": len(unique_labels),
+                "class_distribution": dict(zip(unique_labels, counts))
             }
         }
         
@@ -341,8 +505,8 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         train_indices, test_indices = cv_splits[cv_outer_fold]
         
         # Split data using the pre-generated indices
-        train_val_images = [images[i] for i in train_indices]
-        test_images = [images[i] for i in test_indices]
+        train_val_images = [images_list[i] for i in train_indices]
+        test_images = [images_list[i] for i in test_indices]
         train_val_labels = [labels[i] for i in train_indices]
         test_labels = [labels[i] for i in test_indices]
         
@@ -365,69 +529,85 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         train_val_labels, 
         test_labels, 
         voxel_calculation,
-        seed
+        seed,
+        is_medmnist=is_medmnist
     )
     
-    # Save CV split in the preprocessed dataset folder
-    cv_split_dir = os.path.join(preprocessed_dataset_path, "cv_splits")
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    split_file = os.path.join(cv_split_dir, f"{mode}_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_outer_fold_{cv_outer_fold}_split_info_{timestamp}.txt")
-    
-    save_cv_split_info( 
-        cv_split_dir,
-        split_file,
-        dataset_name, 
-        cv_outer_fold, 
-        train_val_images, 
-        test_images, 
-        train_val_labels, 
-        test_labels, 
-        voxel_calculation,
-        seed
-    )
+    # Save CV split in the preprocessed dataset folder (only for WORC datasets)
+    if not is_medmnist:
+        cv_split_dir = os.path.join(preprocessed_dataset_path, "cv_splits")
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        split_file = os.path.join(cv_split_dir, f"{mode}_{str(experiment_base_dir).split('/')[-2]}_{str(experiment_base_dir).split('/')[-1]}_cv_outer_fold_{cv_outer_fold}_split_info_{timestamp}.txt")
+        
+        save_cv_split_info( 
+            cv_split_dir,
+            split_file,
+            dataset_name, 
+            cv_outer_fold, 
+            train_val_images, 
+            test_images, 
+            train_val_labels, 
+            test_labels, 
+            voxel_calculation,
+            seed,
+            is_medmnist=is_medmnist
+        )
 
     return {
         "train_val_images": train_val_images,
         "train_val_labels": train_val_labels,
         "test_images": test_images,
         "test_labels": test_labels,
-        "num_classes": len(unique_labels),
+        "num_classes": num_classes,
         "voxel_size": voxel_size,
+        "is_medmnist": is_medmnist,  # Flag to indicate if this is a MedMNIST dataset
     }
     
 
-def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_training=True):
+def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_training=True, is_medmnist=False):
     """
-    Transform the training, validation, and test data. For training set, it applies data augmentation.
+    Transform 3D medical image data for training, validation, and test.
+    For training set, it applies data augmentation.
+    
+    Supports both WORC datasets (NIfTI file paths) and MedMNIST datasets (numpy arrays).
     
     Args:
         normalization_stats (dict): Normalization statistics for CT images only; default None for MRI images
         developer_mode (bool): If True, uses smaller model target shape for faster development; default False
         spatial_size (tuple): Image size in (H, W, D) format for e.g., ViT; default None
         is_training (bool): If True, applies data augmentation; if False, no data augmentation; default True
+        is_medmnist (bool): If True, expects numpy arrays (MedMNIST); if False, expects file paths (WORC); default False
     """
-    # Base transform that is always applied
-    transforms = [
-        # Load NIfTI images; usually in (H, W, D) format
-        LoadImaged(keys="image"),  
-        # Debug: Print shape after LoadImaged
-        # lambda data: print(f"DEBUG LoadImaged: {data['image'].shape}") or data,
-        #
-        # Ensure channels are first (for MONAI compatibility):
-        # (H, W, D) -> (C, H, W, D) or (H, W, D, C) -> (C, H, W, D) depending on the dataset.
-        EnsureChannelFirstd(keys="image"),
-        # Debug: Print shape after EnsureChannelFirstd
-        # lambda data: print(f"DEBUG EnsureChannelFirstd: {data['image'].shape}") or data,
-        #
-        # NOTE @Natalia:
-        # Removed Spacingd because resampling to a target voxel size is already performed during preprocessing to ensure consistent spacing.
-    ]
+    # Base transforms: different for MedMNIST (numpy arrays) vs WORC (file paths)
+    if is_medmnist:
+        # MedMNIST: Convert numpy array to dict format and ensure channels are first
+        # Input: numpy array with shape (H, W, D)
+        # Output: dict with "image" key containing array with shape (C, H, W, D)
+        transforms = [
+            Lambdad(
+                keys="image",
+                func=lambda x: np.expand_dims(x, axis=0) if isinstance(x, np.ndarray) and len(x.shape) == 3 else x
+            ),
+            # Note: We don't need EnsureChannelFirstd here because we already added the channel dimension at position 0
+        ]
+    else:
+        # WORC: Load NIfTI images from file paths
+        transforms = [
+            # Load NIfTI images; usually in (H, W, D) format
+            LoadImaged(keys="image"),
+            # Ensure channels are first (for MONAI compatibility):
+            # (H, W, D) -> (C, H, W, D) or (H, W, D, C) -> (C, H, W, D) depending on the dataset.
+            EnsureChannelFirstd(keys="image"),
+            # NOTE @Natalia:
+            # Removed Spacingd because resampling to a target voxel size is already performed during preprocessing to ensure consistent spacing.
+        ]
 
     # Add data normalization for CT images only.
     # > For CT: Data normalization statistics are either
     #   - calculated from the training data following nnU-Net's approach.
     #   - provided by NePS (AutoNorm).
     # > For MRI: Data normalization is done in the preprocessing per image/patient individually.
+    # > For MedMNIST: Always CT-like (always needs normalization)
     is_mri = normalization_stats is None
     if not is_mri:
         transforms.append(
@@ -453,7 +633,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
             RandFlipd(keys="image", prob=0.2, spatial_axis=[0, 1, 2]),
             #
             # Randomly rotate the image around the depth (z) axis by ±25°.
-            # IMPORTANT: ranges are in radians, not degrees1
+            # IMPORTANT: ranges are in radians, not degrees
             # NOTE @Natalia:
             # Changed from (-25, 25) to np.deg2rad(25) for correct units.
             # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
@@ -487,7 +667,8 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
 
     # Ensures the image is a torch.Tensor instead of a NumPy array.
     # Keeps MONAI's meta_dict synchronized, so spatial information (affine, spacing, etc.) remains attached and consistent throughout the pipeline.
-    transforms.append(EnsureTyped(keys="image"))
+    # Use dtype=torch.float32 to ensure compatibility with model weights (which are float32)
+    transforms.append(EnsureTyped(keys="image", dtype=torch.float32))
     
     return Compose(transforms)
 
@@ -508,6 +689,7 @@ def get_kfold_dataloaders(
     spatial_size=None,
     fold_directory=None,
     no_validation=False,
+    is_medmnist=False,
 ):
     """
     Create data loaders for k-fold cross validation of brain tumor dataset.
@@ -528,7 +710,7 @@ def get_kfold_dataloaders(
         spatial_size (tuple): Spatial size in (H, W, D) format for ViT; default None
         fold_directory (str, optional): Directory path for saving normalization stats
         no_validation (bool): If True, does not split train data in to train/val splits for validation
-        
+        is_medmnist (bool): If True, the dataset is a MedMNIST dataset
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
@@ -536,6 +718,7 @@ def get_kfold_dataloaders(
     if no_validation:
         print("No validation set mode: Using all data for training")
         # Use all data for training, no validation split
+        # For MedMNIST, data contains numpy arrays; for WORC, data contains file paths
         train_data_images = [{"index": idx, "image": img, "label": label} 
                         for idx, (img, label) in enumerate(zip(data, labels))]
         train_data = train_data_images
@@ -551,6 +734,7 @@ def get_kfold_dataloaders(
                 break
         
         # Combine images and labels into a list of dictionaries
+        # For MedMNIST, data contains numpy arrays; for WORC, data contains file paths
         train_data_images = [{"index": idx, "image": img, "label": label} 
                         for idx, (img, label) in enumerate(zip(data, labels))]
         
@@ -559,13 +743,11 @@ def get_kfold_dataloaders(
         valid_data = [train_data_images[i] for i in val_idx]
 
     # Calculate normalization stats from preprocessed CT training data if not provided by NePS (AutoNorm)
-    if dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets
-        # Normalization is done in the preprocessing per image/patient individually
-        normalization_stats = None
-    elif dataset_name in ["gist", "crlm", "melanoma"]:  # CT datasets
+    if is_medmnist or dataset_name in ["gist", "crlm", "melanoma"]:  # CT datasets (WORC or MedMNIST)
         if normalization_stats is None:
             # Calculate normalization stats from preprocessed training data if not provided by NePS (AutoNorm)
             # The training data is dependent on the cross-validation fold.
+            # Works for both WORC (file paths) and MedMNIST (numpy arrays)
             stats = calculate_normalization_stats(train_data)  
             normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
             stats_source = "Calculated from training data"
@@ -580,23 +762,28 @@ def get_kfold_dataloaders(
             with open(normalization_stats_file, "w", encoding="utf-8") as f:
                 f.write(f"Normalization Statistics for Inner CV Fold {fold_idx}\n")
                 f.write(f"{'='*50}\n")
-                f.write(f"Mean: {normalization_stats['mean']}\n")
-                f.write(f"Std:  {normalization_stats['std']}\n")
+                # Convert numpy types to Python floats for proper serialization
+                mean_val = float(normalization_stats['mean'][0]) if isinstance(normalization_stats['mean'], (list, np.ndarray)) else float(normalization_stats['mean'])
+                std_val = float(normalization_stats['std'][0]) if isinstance(normalization_stats['std'], (list, np.ndarray)) else float(normalization_stats['std'])
+                f.write(f"Mean: [{mean_val}]\n")
+                f.write(f"Std:  [{std_val}]\n")
                 f.write(f"\nSource: {stats_source}\n")
             print(f"Normalization stats saved to: {normalization_stats_file}")
-
+    elif dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets
+        # Normalization is done in the preprocessing per image/patient individually
+        normalization_stats = None
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
 
-    # Create train and validation datasets
+    
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True))
+        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True, is_medmnist=is_medmnist))
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False))
+        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=is_medmnist))
     else:
         val_dataset = None
 

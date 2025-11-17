@@ -200,7 +200,8 @@ def run_3d_pipeline(
             developer_mode=experimental_setting.developer_mode,
             spatial_size=spatial_size,
             fold_directory=fold_directory,
-            no_validation=experimental_setting.training.no_validation
+            no_validation=experimental_setting.training.no_validation,
+            is_medmnist=dataset.get("is_medmnist", False)
         )
 
         # Setup loss function with optional label smoothing
