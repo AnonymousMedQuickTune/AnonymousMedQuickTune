@@ -33,6 +33,12 @@ weight_decay:
   # prior: 1e-4
   # prior_confidence: "low"
 
+scheduler_type:
+  type: categorical
+  choices: ["warmup", "cosine_warmup"]
+  # prior: "warmup"
+  # prior_confidence: "low"
+
 warmup_epochs:
   type: int
   lower: 0

@@ -20,6 +20,7 @@ from src.utils.model_lifecycle_utils import (CheckpointManager,
                                             evaluate_and_log_metrics,
                                             get_optimizer,
                                             get_warmup_scheduler,
+                                            get_cosine_annealing_scheduler,
                                             train_epoch)
 from src.utils.ema_utils import ModelEMA
 
@@ -218,19 +219,57 @@ def run_3d_pipeline(
         # ema_decay = hyperparameters.get("ema_decay", 0.999)
         # ema = ModelEMA(model, decay=ema_decay)
 
+        # Training setup: number of epochs (needed for scheduler initialization)
+        with open(experimental_setting.pipeline_space, "r") as f:
+            pipeline_config = yaml.safe_load(f)
 
-        # Setup warmup scheduler if warmup epochs > 0
+        if "number_of_epochs" in pipeline_config and use_multifidelity:
+            # For multi-fidelity runs 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
+            # Early optimization runs use fewer epochs for rapid exploration, while promising hyperparameter configurations get more epochs later.
+            epochs = hyperparameters['number_of_epochs']
+            print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({epochs}) as fidelity parameter!\n")
+        else:
+            # For non-multi-fidelity search spaces (including Baseline runs): Use the number of epochs from the experimental_setting
+            epochs = experimental_setting.training.number_of_epochs
+            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {epochs} epochs!")
+
+        # Setup learning rate scheduler
+        # Get scheduler type from hyperparameters or experimental_setting (with fallback to "none")
+        scheduler_type = hyperparameters.get(
+            "scheduler_type", 
+            getattr(experimental_setting.training, "scheduler_type", "warmup")
+        )  # Options: "warmup" (linear warmup only) or "cosine_warmup" (cosine annealing with optional warmup)
+           # Note: warmup_epochs = 0 means no warmup (constant LR for "warmup", pure cosine for "cosine_warmup")
         warmup_epochs = hyperparameters.get("warmup_epochs", 0)
-        scheduler = (
-            get_warmup_scheduler(
+        
+        # Get base learning rate for relative cosine_eta_min calculation
+        base_lr = hyperparameters.get("learning_rate", 1e-4)
+        # cosine_eta_min_factor is a fixed parameter from experimental_setting (not in search space)
+        cosine_eta_min_factor = getattr(experimental_setting.training, "cosine_eta_min_factor", 0.01)
+        cosine_eta_min = base_lr * cosine_eta_min_factor  # Calculate absolute minimum LR (e.g., 0.01 means eta_min = 0.01 * learning_rate)
+
+        if scheduler_type == "cosine_warmup":
+            # Use cosine annealing scheduler (with optional warmup)
+            scheduler = get_cosine_annealing_scheduler(
+                optimizer,
+                T_max=epochs,
+                eta_min=cosine_eta_min,
+                warmup_epochs=warmup_epochs
+            )
+            warmup_str = f" with {warmup_epochs} warmup epochs" if warmup_epochs > 0 else " (no warmup)"
+            print(f"Using Cosine Annealing scheduler (T_max={epochs}, eta_min={cosine_eta_min:.2e} = {cosine_eta_min_factor:.3f} * {base_lr:.2e}){warmup_str}")
+        else:
+            # Use warmup scheduler (or constant LR if warmup_epochs = 0)
+            scheduler = get_warmup_scheduler(
                 optimizer,
                 warmup_epochs,
                 len(train_loader),
                 hyperparameters.get("learning_rate", 1e-3),
             )
-            if warmup_epochs > 0
-            else None
-        )
+            if warmup_epochs > 0:
+                print(f"Using Warmup scheduler ({warmup_epochs} epochs)")
+            else:
+                print("Using constant learning rate (warmup_epochs = 0)")
 
         # Initialize metrics dynamically based on all_folds_final_metrics
         base_metrics = list(all_folds_final_metrics.keys()) + ["loss"]
@@ -249,20 +288,6 @@ def run_3d_pipeline(
         patience = experimental_setting.training.patience
         early_stopping_enabled = experimental_setting.training.early_stopping
         use_loss_threshold = experimental_setting.training.use_loss_threshold
-
-        # Training setup: number of epochs
-        with open(experimental_setting.pipeline_space, "r") as f:
-            pipeline_config = yaml.safe_load(f)
-
-        if "number_of_epochs" in pipeline_config and use_multifidelity:
-            # For multi-fidelity runs 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
-            # Early optimization runs use fewer epochs for rapid exploration, while promising hyperparameter configurations get more epochs later.
-            epochs = hyperparameters['number_of_epochs']
-            print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({epochs}) as fidelity parameter!\n")
-        else:
-            # For non-multi-fidelity search spaces (including Baseline runs): Use the number of epochs from the experimental_setting
-            epochs = experimental_setting.training.number_of_epochs
-            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {epochs} epochs!")
             
         # Initialize training components
         checkpoint_manager = CheckpointManager(

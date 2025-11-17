@@ -420,16 +420,59 @@ def get_warmup_scheduler(optimizer, warmup_epochs, steps_per_epoch, base_lr):
         base_lr (float): Target learning rate after warmup
 
     Returns:
-        LambdaLR scheduler
+        LambdaLR scheduler (or constant LR scheduler if warmup_epochs = 0)
     """
-
-    def lr_lambda(epoch):
-        """Calculate lr_lambda for LambdaLR scheduler."""
-        if epoch <= warmup_epochs:
-            return float(epoch + 1) / float(warmup_epochs)
-        return 1.0
+    if warmup_epochs == 0:
+        # No warmup: return a scheduler that keeps LR constant
+        def lr_lambda(epoch):
+            return 1.0
+    else:
+        def lr_lambda(epoch):
+            """Calculate lr_lambda for LambdaLR scheduler."""
+            if epoch < warmup_epochs:
+                return float(epoch + 1) / float(warmup_epochs)
+            return 1.0
 
     return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+
+
+def get_cosine_annealing_scheduler(optimizer, T_max, eta_min=0.0, warmup_epochs=0):
+    """
+    Create a cosine annealing learning rate scheduler with optional warmup.
+
+    Args:
+        optimizer: The optimizer whose learning rate should be scheduled
+        T_max (int): Maximum number of epochs (period of cosine annealing)
+        eta_min (float): Minimum learning rate (default: 0.0)
+        warmup_epochs (int): Number of warmup epochs before cosine annealing starts (default: 0)
+
+    Returns:
+        CosineAnnealingLR scheduler or SequentialLR (if warmup is enabled)
+    """
+    from torch.optim.lr_scheduler import CosineAnnealingLR, SequentialLR
+    
+    if warmup_epochs > 0:
+        # Create warmup scheduler
+        warmup_scheduler = get_warmup_scheduler(
+            optimizer, warmup_epochs, steps_per_epoch=1, base_lr=optimizer.param_groups[0]['lr']
+        )
+        
+        # Create cosine annealing scheduler (starts after warmup)
+        cosine_scheduler = CosineAnnealingLR(
+            optimizer, 
+            T_max=T_max - warmup_epochs, 
+            eta_min=eta_min
+        )
+        
+        # Chain warmup and cosine annealing schedulers
+        return SequentialLR(
+            optimizer,
+            schedulers=[warmup_scheduler, cosine_scheduler],
+            milestones=[warmup_epochs]
+        )
+    else:
+        # Use cosine annealing without warmup
+        return CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
 
 
 def adjust_learning_rate(scheduler):
