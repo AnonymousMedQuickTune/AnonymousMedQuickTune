@@ -33,8 +33,8 @@ from src.classification_3d.utils.preprocessing_utils import (
     save_preprocessed_images_and_segmentations_to_nifti,
     get_image_dimensions_from_input,
     resample_image,
-    resize_gist_melanoma_crlm_images,
-    resize_lipo_desmoid_liver_images
+    resize_worcdatabase_images,
+    resize_depth_dimension
 )
 import datetime
 
@@ -114,6 +114,10 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         size_after_cropping = image.GetSize()  # (x, y, z) format
         print(f"Image size after cropping/padding (x, y, z) = {size_after_cropping}")
 
+        # Resize worcdatabase images to reduce memory usage and speed up the preprocessing pipeline
+        print("Resizing WORC database images to reduce memory usage and speed up the preprocessing pipeline...")
+        image, segmentation = resize_worcdatabase_images(image, segmentation, dataset_name)
+
         # Only normalize if is_mri is True
         # NOTE @Natalia:
         # - No normalization for segmentation masks!
@@ -128,15 +132,6 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
             image = normalize_mri_image_nnunet(image, use_masked)
         else:
             print("CT image normalization is done in the run pipeline based on training data statistics depending on the cross-validation folds according to nnU-Net's approach...")
-
-        # Apply GIST-specific resizing to reduce memory usage
-        if dataset_name == "gist" or dataset_name == "melanoma" or dataset_name == "crlm":
-            print("Applying GIST- and MELANOMA- and CRLM-specific resizing in the depth dimension to reduce memory usage...")
-            image, segmentation = resize_gist_melanoma_crlm_images(image, segmentation)
-        
-        if dataset_name == "lipo" or dataset_name == "desmoid" or dataset_name == "liver":
-            print("Applying LIPO- and DESMOID- and LIVER-specific resizing/cropping to reduce memory usage...")
-            image, segmentation = resize_lipo_desmoid_liver_images(image, segmentation, dataset_name)
 
         # Extract the original directory name from the file path
         # and save the processed images and segmentations
