@@ -548,7 +548,10 @@ def evaluate_config_on_test_set(
             # Create test loader
             test_loader = DataLoader(
                 test_dataset,
-                batch_size=hyperparameters.get("batch_size", 1),
+                batch_size=hyperparameters.get(
+                    "batch_size",
+                    getattr(experimental_setting.training, "batch_size", 1)
+                ),
                 shuffle=False,
                 num_workers=experimental_setting.data.num_workers,
             )

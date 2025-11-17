@@ -188,7 +188,10 @@ def run_3d_pipeline(
             data=dataset["train_val_images"],
             labels=dataset["train_val_labels"],
             cv_inner_folds=cv_inner_folds,
-            batch_size=hyperparameters.get("batch_size", 1),
+            batch_size=hyperparameters.get(
+                "batch_size",
+                getattr(experimental_setting.training, "batch_size", 1)
+            ),
             num_workers=experimental_setting.data.num_workers,
             fold_idx=fold,
             voxel_size=dataset["voxel_size"],
@@ -212,7 +215,7 @@ def run_3d_pipeline(
             # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
             # otherwise use default value of 0.001
             learning_rate=hyperparameters.get("learning_rate", 1e-4),
-            weight_decay=hyperparameters.get("weight_decay", 0.0),
+            weight_decay=hyperparameters.get("weight_decay", 1e-6),
         )
 
         # Initialize Exponential Moving Average (EMA)

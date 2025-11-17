@@ -603,7 +603,7 @@ def get_kfold_dataloaders(
     # Create data loaders
     train_loader = DataLoader(
         train_dataset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
@@ -612,7 +612,7 @@ def get_kfold_dataloaders(
     if val_dataset is not None:
         val_loader = DataLoader(
             val_dataset,
-            batch_size=1,
+            batch_size=batch_size,
             shuffle=False,
             num_workers=num_workers,
             pin_memory=True,

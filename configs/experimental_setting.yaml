@@ -24,7 +24,7 @@ cv_inner_folds: 5           # Number of inner folds for cross-validation: train/
 training:
   number_of_epochs: 50   # Total number of training epochs (for non-multi-fidelity searchspaces)
   early_stopping: True   # Whether to use early stopping
-  patience: 20            # Number of epochs with no improvement after which training will be stopped
+  patience: 10            # Number of epochs with no improvement after which training will be stopped
   use_loss_threshold: True  # Whether to use loss threshold to stop training
   no_validation: False     # Whether to split train data in to train/val splits for validation
   scheduler_type: warmup           # Learning rate scheduler type: "warmup" (linear warmup only) or "cosine_warmup" (cosine annealing with optional warmup)
@@ -32,6 +32,7 @@ training:
   cosine_eta_min_factor: 0.01  # Factor of learning_rate for minimum LR in cosine annealing:
                                  #   0.0 = no minimum (LR can go to 0), 0.01 = 1% of initial LR, 0.1 = 10% of initial LR
   warmup_epochs: 0          # Number of epochs to warmup for
+  batch_size: 1             # Batch size for training
 
 #------------------------------------------------------------------------------
 # QuickTune Optimization Settings

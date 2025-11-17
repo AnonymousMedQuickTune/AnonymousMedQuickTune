@@ -15,7 +15,7 @@ learning_rate:
 gradient_accumulation_steps: 
   type: int
   lower: 1
-  upper: 10
+  upper: 2  # limit to max effective batch size (batch_size × gradient_accumulation_steps ≤ 8)
   # prior: 1
   # prior_confidence: "low"
   
@@ -30,7 +30,7 @@ weight_decay:
   log: true
   lower: 1e-6
   upper: 1e-3
-  # prior: 1e-4
+  # prior: 1e-6
   # prior_confidence: "low"
 
 scheduler_type:
@@ -62,8 +62,9 @@ mixup_alpha:
   # prior: 0.0
   # prior_confidence: "low"
 
-# NOTE: Batch size is fixed to 1 and will not be part of the search space
-# batch_size:
-#   type: int
-#   lower: 2
-#   upper: 32
+batch_size:
+  type: int
+  lower: 1
+  upper: 4
+  # prior: 1
+  # prior_confidence: "low"
