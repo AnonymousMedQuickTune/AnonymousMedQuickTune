@@ -544,7 +544,7 @@ def evaluate_config_on_test_set(
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(
                 test_data, 
-                transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=dataset.get("is_medmnist", False))
+                transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=dataset.get("is_medmnist", False), augmentation_type=experimental_setting.data.augmentation_type)
             )
             
             # Create test loader

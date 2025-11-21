@@ -17,6 +17,7 @@ from monai.transforms import (
     RandRotated,
     RandZoomd,
     RandFlipd,
+    RandGridDistortiond,
     ResizeWithPadOrCropd,
     EnsureTyped,
 )
@@ -563,8 +564,37 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         "is_medmnist": is_medmnist,  # Flag to indicate if this is a MedMNIST dataset
     }
     
+def apply_gamma_correction(img):
+    """Apply random gamma correction to an image."""
+    # Sample gamma value once per image
+    gamma = np.random.uniform(0.7, 1.4)
+                
+    # Handle both torch.Tensor and numpy arrays
+    if isinstance(img, torch.Tensor):
+        # Normalize to [0, 1] range for gamma correction, then scale back
+        img_min = img.min()
+        img_max = img.max()
+        if img_max > img_min:
+            img_norm = (img - img_min) / (img_max - img_min)
+            img_gamma = torch.pow(torch.clamp(img_norm, min=0.0), gamma)
+            img_out = img_gamma * (img_max - img_min) + img_min
+        else:
+            img_out = img
+        return img_out
+    else:
+        # Handle numpy arrays
+        img = np.asarray(img)
+        img_min = img.min()
+        img_max = img.max()
+        if img_max > img_min:
+            img_norm = (img - img_min) / (img_max - img_min)
+            img_gamma = np.power(np.clip(img_norm, 0, None), gamma)
+            img_out = img_gamma * (img_max - img_min) + img_min
+        else:
+            img_out = img
+        return img_out
 
-def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_training=True, is_medmnist=False):
+def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_training=True, is_medmnist=False, augmentation_type="basic"):
     """
     Transform 3D medical image data for training, validation, and test.
     For training set, it applies data augmentation.
@@ -577,6 +607,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
         spatial_size (tuple): Image size in (H, W, D) format for e.g., ViT; default None
         is_training (bool): If True, applies data augmentation; if False, no data augmentation; default True
         is_medmnist (bool): If True, expects numpy arrays (MedMNIST); if False, expects file paths (WORC); default False
+        augmentation_type (str): Type of augmentation to use; default "basic"
     """
     # Base transforms: different for MedMNIST (numpy arrays) vs WORC (file paths)
     if is_medmnist:
@@ -625,45 +656,112 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
     
     # Add data augmentation for training set only; no data augmentation for validation and test set!
     if is_training:
-        transforms.extend([
-            # Flip the image along a random spatial axis (H, W, or D).
+        if augmentation_type == "basic":
+            transforms.extend([
+                # Flip the image along a random spatial axis (H, W, or D).
+                # Note: spatial_axis refers to spatial dims only — not the channel dim (C in (C, H, W, D)).
+                # NOTE @Natalia:
+                # Updated this from spatial_axis=0 to spatial_axis=[0, 1, 2] to flip the image along a random spatial axis.
+                RandFlipd(keys="image", prob=0.2, spatial_axis=[0, 1, 2]),
+                #
+                # Randomly rotate the image around the depth (z) axis by ±25°.
+                # IMPORTANT: ranges are in radians, not degrees
+                # NOTE @Natalia:
+                # Changed from (-25, 25) to np.deg2rad(25) for correct units.
+                # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
+                # fill empty regions created by rotation using border values (to avoid black edges),
+                # and keep the original spatial size after transformation for consistent batching.
+                RandRotated(
+                    keys="image",
+                    range_x=0.0,
+                    range_y=0.0,
+                    range_z=np.deg2rad(25),  # 25 degrees about z
+                    prob=0.2,
+                    mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                    padding_mode="border",
+                    keep_size=True,
+                ),
+                # Randomly zoom the image by a factor between 0.8 and 1.2.
+                # NOTE @Natalia:
+                # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
+                # fill empty regions created by zooming using edge values (to avoid black edges),
+                # and keep the original spatial size after transformation for consistent batching.
+                RandZoomd(
+                    keys="image",
+                    prob=0.2,
+                    min_zoom=0.8,
+                    max_zoom=1.2,
+                    mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                    padding_mode="edge",
+                    keep_size=True,
+                ),
+            ])
+
+        elif augmentation_type == "nnunet":
+            transforms.extend([
+            # 1. Mirroring (flipping) - nnU-Net standard augmentation
+            # Flip the image along random spatial axes (H, W, or D).
             # Note: spatial_axis refers to spatial dims only — not the channel dim (C in (C, H, W, D)).
-            # NOTE @Natalia:
-            # Updated this from spatial_axis=0 to spatial_axis=[0, 1, 2] to flip the image along a random spatial axis.
-            RandFlipd(keys="image", prob=0.2, spatial_axis=[0, 1, 2]),
-            #
-            # Randomly rotate the image around the depth (z) axis by ±25°.
+            RandFlipd(keys="image", prob=0.5, spatial_axis=[0, 1, 2]),
+            
+            # 2. Random rotations - nnU-Net uses 3D rotations in all axes
+            # Rotate the image randomly around all three axes (±15° for x, y; ±15° for z)
             # IMPORTANT: ranges are in radians, not degrees
-            # NOTE @Natalia:
-            # Changed from (-25, 25) to np.deg2rad(25) for correct units.
             # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
             # fill empty regions created by rotation using border values (to avoid black edges),
             # and keep the original spatial size after transformation for consistent batching.
             RandRotated(
                 keys="image",
-                range_x=0.0,
-                range_y=0.0,
-                range_z=np.deg2rad(25),  # 25 degrees about z
-                prob=0.2,
-                mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                range_x=np.deg2rad(15),  # ±15 degrees about x-axis
+                range_y=np.deg2rad(15),  # ±15 degrees about y-axis
+                range_z=np.deg2rad(15),  # ±15 degrees about z-axis
+                prob=0.5,
+                mode=InterpolateMode.TRILINEAR,
                 padding_mode="border",
                 keep_size=True,
             ),
-            # Randomly zoom the image by a factor between 0.8 and 1.2.
-            # NOTE @Natalia:
+            
+            # 3. Random scaling (zooming) - nnU-Net standard augmentation
+            # Randomly zoom the image by a factor between 0.85 and 1.15 (nnU-Net typical range)
             # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
             # fill empty regions created by zooming using edge values (to avoid black edges),
             # and keep the original spatial size after transformation for consistent batching.
             RandZoomd(
                 keys="image",
-                prob=0.2,
-                min_zoom=0.8,
-                max_zoom=1.2,
-                mode=InterpolateMode.TRILINEAR,  # NOTE: For segmentation tasks, use InterpolateMode.NEAREST for the mask.
+                prob=0.5,
+                min_zoom=0.85,
+                max_zoom=1.15,
+                mode=InterpolateMode.TRILINEAR,
                 padding_mode="edge",
                 keep_size=True,
             ),
+            
+            # 4. Random elastic deformations - nnU-Net standard augmentation
+            # Apply random elastic deformations to simulate anatomical variations
+            # num_cells: number of grid points for deformation (3-5 is typical)
+            # distort_limit: maximum deformation distance (0.1-0.2 is typical)
+            # mode: interpolation mode for smooth deformations
+            # padding_mode: how to handle border regions
+            RandGridDistortiond(
+                keys="image",
+                num_cells=5,
+                prob=0.5,
+                distort_limit=0.15,
+                mode=InterpolateMode.TRILINEAR,
+                padding_mode="border",
+            ),
+            
+            # 5. Gamma correction augmentation - nnU-Net standard augmentation
+            # Apply random gamma correction to simulate different intensity distributions
+            # Gamma values: 0.7-1.4 (typical range for medical images)
+            # Formula: I_out = I_in^gamma, where gamma is randomly sampled per image
+            Lambdad(
+                keys="image",
+                func=apply_gamma_correction,
+            ),
         ])
+        else:
+            raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
     # Ensures the image is a torch.Tensor instead of a NumPy array.
     # Keeps MONAI's meta_dict synchronized, so spatial information (affine, spacing, etc.) remains attached and consistent throughout the pipeline.
@@ -775,15 +873,19 @@ def get_kfold_dataloaders(
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
 
-    
     if augmentation_type == "basic":
-        train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True, is_medmnist=is_medmnist))
+        print("Using basic augmentation")
+    elif augmentation_type == "nnunet":
+        print("Using nnU-Net augmentation")
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
+    # Create training dataset
+    train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True, is_medmnist=is_medmnist, augmentation_type=augmentation_type))
+
     # Create validation dataset only if validation data exists
     if valid_data:
-        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=is_medmnist))
+        val_dataset = Dataset(valid_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=is_medmnist, augmentation_type=augmentation_type))
     else:
         val_dataset = None
 
