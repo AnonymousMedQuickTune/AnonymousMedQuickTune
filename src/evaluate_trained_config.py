@@ -341,7 +341,7 @@ def evaluate_fold(fold, test_loader, model, experimental_setting, hyperparameter
     # MODEL CHECKPOINT LOADING
     # ------------------------------------------------------------------------------------------------
     # Load the trained model checkpoint for this fold
-    if experimental_setting.training.no_validation:
+    if experimental_setting.training.no_validation or not experimental_setting.training.early_stopping:
         model_checkpoint = "model_latest_checkpoint.pth"
     else:
         model_checkpoint = "best_model_checkpoint.pth"
