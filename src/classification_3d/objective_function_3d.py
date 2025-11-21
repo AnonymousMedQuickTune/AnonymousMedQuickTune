@@ -165,474 +165,481 @@ def run_3d_pipeline(
             print(f"{'-' * 50}")
             print(f"Training Inner Cross-Validation Fold {fold + 1}/{cv_inner_folds}")
             print(f"{'-' * 50}\n")
-        
-        # Log start of inner fold training
-        # This updates the outer fold status file to show this inner fold is now running
-        inner_fold_logger.update_inner_fold_progress(
-            inner_fold=fold + 1,        # Convert to 1-based indexing (Python uses 0-based, we need 1-based)
-            status="in_progress",       # Mark as currently running
-            epoch=0,                    # Starting at epoch 0
-            total_inner_folds=cv_inner_folds   # Total number of inner folds for progress calculation
-        )
-
-        # Create fold-specific directory
-        fold_directory = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
-        os.makedirs(fold_directory, exist_ok=True)
-
-        # Initialize logging files for this fold
-        logging_dir = os.path.join(fold_directory, "logging")
-        log_files = initialize_logging_files(logging_dir)
-
-        # ... Training ...
-
-        # Get data loaders for this fold
-        train_loader, val_loader = get_kfold_dataloaders(
-            seed=experimental_setting.seed,
-            dataset_name=experimental_setting.data.dataset,
-            data=dataset["train_val_images"],
-            labels=dataset["train_val_labels"],
-            cv_inner_folds=cv_inner_folds,
-            batch_size=hyperparameters.get(
-                "batch_size",
-                getattr(experimental_setting.training, "batch_size", 1)
-            ),
-            num_workers=experimental_setting.data.num_workers,
-            fold_idx=fold,
-            voxel_size=dataset["voxel_size"],
-            normalization_stats=normalization_stats,
-            augmentation_type=experimental_setting.data.augmentation_type,
-            developer_mode=experimental_setting.developer_mode,
-            spatial_size=spatial_size,
-            fold_directory=fold_directory,
-            no_validation=experimental_setting.training.no_validation,
-            is_medmnist=dataset.get("is_medmnist", False)
-        )
-
-        # Setup loss function with optional label smoothing
-        criterion = nn.CrossEntropyLoss(
-            label_smoothing=hyperparameters.get("label_smoothing", 0.0)
-        )
-
-        # Initialize optimizer with specified parameters
-        optimizer = get_optimizer(
-            model=model,
-            optimizer_type=hyperparameters.get("optimizer_type", "adam"),
-            # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
-            # otherwise use default value of 0.001
-            learning_rate=hyperparameters.get("learning_rate", 1e-4),
-            weight_decay=hyperparameters.get("weight_decay", 1e-6),
-        )
-
-        # Initialize Exponential Moving Average (EMA)
-        # ema_decay = hyperparameters.get("ema_decay", 0.999)
-        # ema = ModelEMA(model, decay=ema_decay)
-
-        # Training setup: number of epochs (needed for scheduler initialization)
-        with open(experimental_setting.pipeline_space, "r") as f:
-            pipeline_config = yaml.safe_load(f)
-
-        if "number_of_epochs" in pipeline_config and use_multifidelity:
-            # For multi-fidelity runs 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
-            # Early optimization runs use fewer epochs for rapid exploration, while promising hyperparameter configurations get more epochs later.
-            epochs = hyperparameters['number_of_epochs']
-            print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({epochs}) as fidelity parameter!\n")
-        else:
-            # For non-multi-fidelity search spaces (including Baseline runs): Use the number of epochs from the experimental_setting
-            epochs = experimental_setting.training.number_of_epochs
-            print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {epochs} epochs!")
-
-        # Setup learning rate scheduler
-        # Get scheduler type from hyperparameters or experimental_setting (with fallback to "none")
-        scheduler_type = hyperparameters.get(
-            "scheduler_type", 
-            getattr(experimental_setting.training, "scheduler_type", "warmup")
-        )  # Options: "warmup" (linear warmup only) or "cosine_warmup" (cosine annealing with optional warmup)
-           # Note: warmup_epochs = 0 means no warmup (constant LR for "warmup", pure cosine for "cosine_warmup")
-        warmup_epochs = hyperparameters.get("warmup_epochs", 0)
-        
-        # Get base learning rate for relative cosine_eta_min calculation
-        base_lr = hyperparameters.get("learning_rate", 1e-4)
-        # cosine_eta_min_factor is a fixed parameter from experimental_setting (not in search space)
-        cosine_eta_min_factor = getattr(experimental_setting.training, "cosine_eta_min_factor", 0.01)
-        cosine_eta_min = base_lr * cosine_eta_min_factor  # Calculate absolute minimum LR (e.g., 0.01 means eta_min = 0.01 * learning_rate)
-
-        if scheduler_type == "cosine_warmup":
-            # Use cosine annealing scheduler (with optional warmup)
-            scheduler = get_cosine_annealing_scheduler(
-                optimizer,
-                T_max=epochs,
-                eta_min=cosine_eta_min,
-                warmup_epochs=warmup_epochs
+            
+            # Log start of inner fold training
+            # This updates the outer fold status file to show this inner fold is now running
+            inner_fold_logger.update_inner_fold_progress(
+                inner_fold=fold + 1,        # Convert to 1-based indexing (Python uses 0-based, we need 1-based)
+                status="in_progress",       # Mark as currently running
+                epoch=0,                    # Starting at epoch 0
+                total_inner_folds=cv_inner_folds   # Total number of inner folds for progress calculation
             )
-            warmup_str = f" with {warmup_epochs} warmup epochs" if warmup_epochs > 0 else " (no warmup)"
-            print(f"Using Cosine Annealing scheduler (T_max={epochs}, eta_min={cosine_eta_min:.2e} = {cosine_eta_min_factor:.3f} * {base_lr:.2e}){warmup_str}")
-        else:
-            # Use warmup scheduler (or constant LR if warmup_epochs = 0)
-            scheduler = get_warmup_scheduler(
-                optimizer,
-                warmup_epochs,
-                len(train_loader),
-                hyperparameters.get("learning_rate", 1e-3),
+
+            # Create fold-specific directory
+            fold_directory = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
+            os.makedirs(fold_directory, exist_ok=True)
+
+            # Initialize logging files for this fold
+            logging_dir = os.path.join(fold_directory, "logging")
+            log_files = initialize_logging_files(logging_dir)
+
+            # ... Training ...
+
+            # Get data loaders for this fold
+            train_loader, val_loader = get_kfold_dataloaders(
+                seed=experimental_setting.seed,
+                dataset_name=experimental_setting.data.dataset,
+                data=dataset["train_val_images"],
+                labels=dataset["train_val_labels"],
+                cv_inner_folds=cv_inner_folds,
+                batch_size=hyperparameters.get(
+                    "batch_size",
+                    getattr(experimental_setting.training, "batch_size", 1)
+                ),
+                num_workers=experimental_setting.data.num_workers,
+                fold_idx=fold,
+                voxel_size=dataset["voxel_size"],
+                normalization_stats=normalization_stats,
+                augmentation_type=experimental_setting.data.augmentation_type,
+                developer_mode=experimental_setting.developer_mode,
+                spatial_size=spatial_size,
+                fold_directory=fold_directory,
+                no_validation=experimental_setting.training.no_validation,
+                is_medmnist=dataset.get("is_medmnist", False)
             )
-            if warmup_epochs > 0:
-                print(f"Using Warmup scheduler ({warmup_epochs} epochs)")
+
+            # Setup loss function with optional label smoothing
+            criterion = nn.CrossEntropyLoss(
+                label_smoothing=hyperparameters.get("label_smoothing", 0.0)
+            )
+
+            # Initialize optimizer with specified parameters
+            optimizer = get_optimizer(
+                model=model,
+                optimizer_type=hyperparameters.get("optimizer_type", "adam"),
+                # Get learning_rate from hyperparameters if 'learning_rate' exists in the search space,
+                # otherwise use default value of 0.001
+                learning_rate=hyperparameters.get("learning_rate", 1e-4),
+                weight_decay=hyperparameters.get("weight_decay", 1e-6),
+            )
+
+            # Initialize Exponential Moving Average (EMA)
+            # ema_decay = hyperparameters.get("ema_decay", 0.999)
+            # ema = ModelEMA(model, decay=ema_decay)
+
+            # Training setup: number of epochs (needed for scheduler initialization)
+            with open(experimental_setting.pipeline_space, "r") as f:
+                pipeline_config = yaml.safe_load(f)
+
+            if "number_of_epochs" in pipeline_config and use_multifidelity:
+                # For multi-fidelity runs 'number_of_epochs' is a fidelity parameter dynamically adjusted by NePS.
+                # Early optimization runs use fewer epochs for rapid exploration, while promising hyperparameter configurations get more epochs later.
+                epochs = hyperparameters['number_of_epochs']
+                print(f"\nMulti-fidelity optimization:\n> Using number_of_epochs ({epochs}) as fidelity parameter!\n")
             else:
-                print("Using constant learning rate (warmup_epochs = 0)")
+                # For non-multi-fidelity search spaces (including Baseline runs): Use the number of epochs from the experimental_setting
+                epochs = experimental_setting.training.number_of_epochs
+                print(f"\nBaseline run or non-multi-fidelity optimization:\nTrain model over {epochs} epochs!")
 
-        # Initialize metrics dynamically based on all_folds_final_metrics
-        base_metrics = list(all_folds_final_metrics.keys()) + ["loss"]
-        metrics = {
-            "train": {metric: [] for metric in base_metrics},
-            "val": {
-                **{metric: [] for metric in base_metrics},
-                "confusion_matrices": [],  # Additional metric specific to validation
-            },
-        }
+            # Setup learning rate scheduler
+            # Get scheduler type from hyperparameters or experimental_setting (with fallback to "none")
+            scheduler_type = hyperparameters.get(
+                "scheduler_type", 
+                getattr(experimental_setting.training, "scheduler_type", "warmup")
+            )  # Options: "warmup" (linear warmup only) or "cosine_warmup" (cosine annealing with optional warmup)
+               # Note: warmup_epochs = 0 means no warmup (constant LR for "warmup", pure cosine for "cosine_warmup")
+            warmup_epochs = hyperparameters.get("warmup_epochs", 0)
+        
+            # Get base learning rate for relative cosine_eta_min calculation
+            base_lr = hyperparameters.get("learning_rate", 1e-4)
+            # cosine_eta_min_factor is a fixed parameter from experimental_setting (not in search space)
+            cosine_eta_min_factor = getattr(experimental_setting.training, "cosine_eta_min_factor", 0.01)
+            cosine_eta_min = base_lr * cosine_eta_min_factor  # Calculate absolute minimum LR (e.g., 0.01 means eta_min = 0.01 * learning_rate)
 
-        # Initialize early stopping variables
-        best_metric = float('-inf')  # Track best validation metric (higher is better)
-        best_loss = float('inf')  # Track best validation loss (lower is better)
-        patience_counter = 0
-        patience = experimental_setting.training.patience
-        early_stopping_enabled = experimental_setting.training.early_stopping
-        use_loss_threshold = experimental_setting.training.use_loss_threshold
-            
-        # Initialize training components
-        checkpoint_manager = CheckpointManager(
-            fold_directory, previous_pipeline_directory
-        )
-
-        # Modified scaler initialization to be more robust
-        scaler = torch.amp.GradScaler() if device == "cuda" else None
-
-        # Load checkpoint and initialize training state
-        start_epoch = checkpoint_manager.initialize_training(
-            model, optimizer, scheduler, metrics
-        )
-
-        # Setup logging
-        model.log_gradients = lambda epoch: log_gradients(
-            model, epoch, log_files["gradients"]
-        )
-
-        log_initial_state(
-            log_files=log_files,
-            hyperparameters={
-                "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
-                **hyperparameters,  # Include all other hyperparameters
-            },
-            experimental_setting=experimental_setting,
-            model=model,
-            epochs=epochs,
-            pipeline_dir=fold_directory,
-            prev_pipeline_dir=previous_pipeline_directory,
-        )
-
-        # Main training loop
-        for training_epochs in range(start_epoch, epochs):
-            epoch_start_time = time.time()
-
-            # Update inner fold progress in inner fold logger at the beginning of an epoch
-            # This shows the current training epoch in the status file for real-time progress tracking
-            if inner_fold_logger is not None:
-                inner_fold_logger.update_inner_fold_progress(
-                    inner_fold=fold + 1,
-                    status="in_progress",           # Still running
-                    epoch=training_epochs + 1,      # Current epoch (1-based for display)
-                    total_inner_folds=cv_inner_folds       # Total for progress calculation
+            if scheduler_type == "cosine_warmup":
+                # Use cosine annealing scheduler (with optional warmup)
+                scheduler = get_cosine_annealing_scheduler(
+                    optimizer,
+                    T_max=epochs,
+                    eta_min=cosine_eta_min,
+                    warmup_epochs=warmup_epochs
                 )
+                warmup_str = f" with {warmup_epochs} warmup epochs" if warmup_epochs > 0 else " (no warmup)"
+                print(f"Using Cosine Annealing scheduler (T_max={epochs}, eta_min={cosine_eta_min:.2e} = {cosine_eta_min_factor:.3f} * {base_lr:.2e}){warmup_str}")
+            else:
+                # Use warmup scheduler (or constant LR if warmup_epochs = 0)
+                scheduler = get_warmup_scheduler(
+                    optimizer,
+                    warmup_epochs,
+                    len(train_loader),
+                    hyperparameters.get("learning_rate", 1e-3),
+                )
+                if warmup_epochs > 0:
+                    print(f"Using Warmup scheduler ({warmup_epochs} epochs)")
+                else:
+                    print("Using constant learning rate (warmup_epochs = 0)")
 
-            # Training phase
-            train_start_time = time.time()
-            train_metrics = train_epoch(
-                model,
-                train_loader,
-                criterion,
-                optimizer,
-                scaler,
-                device,
-                metrics,
-                training_epochs,
-                hyperparameters.get("mixup_alpha", 0.0),
-                accumulation_steps=hyperparameters.get("gradient_accumulation_steps", 1),
-            )
-            # Update EMA weights after each training epoch
-            # ema.update(model)
+            # Initialize metrics dynamically based on all_folds_final_metrics
+            base_metrics = list(all_folds_final_metrics.keys()) + ["loss"]
+            metrics = {
+                "train": {metric: [] for metric in base_metrics},
+                "val": {
+                    **{metric: [] for metric in base_metrics},
+                    "confusion_matrices": [],  # Additional metric specific to validation
+                },
+            }
 
-            train_time = time.time() - train_start_time
+            # Initialize early stopping variables
+            best_metric = float('-inf')  # Track best validation metric (higher is better)
+            best_loss = float('inf')  # Track best validation loss (lower is better)
+            patience_counter = 0
+            patience = experimental_setting.training.patience
+            early_stopping_enabled = experimental_setting.training.early_stopping
+            use_loss_threshold = experimental_setting.training.use_loss_threshold
             
-            # Validation phase
-            eval_start_time = time.time()
-            val_metrics = None  # Initialize val_metrics as None
-            if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1):
-                # Evaluate with EMA weights (smoother version of the model)
-                # original_state = model.state_dict()
-                # model.load_state_dict(ema.ema_model.state_dict(), strict=False)
+            # Initialize training components
+            checkpoint_manager = CheckpointManager(
+                fold_directory, previous_pipeline_directory
+            )
 
-                val_metrics = evaluate_and_log_metrics(
+            # Modified scaler initialization to be more robust
+            scaler = torch.amp.GradScaler() if device == "cuda" else None
+
+            # Load checkpoint and initialize training state
+            start_epoch = checkpoint_manager.initialize_training(
+                model, optimizer, scheduler, metrics
+            )
+
+            # Setup logging
+            model.log_gradients = lambda epoch: log_gradients(
+                model, epoch, log_files["gradients"]
+            )
+
+            log_initial_state(
+                log_files=log_files,
+                hyperparameters={
+                    "optimizer_type": hyperparameters.get("optimizer_type", "adam"),
+                    **hyperparameters,  # Include all other hyperparameters
+                },
+                experimental_setting=experimental_setting,
+                model=model,
+                epochs=epochs,
+                pipeline_dir=fold_directory,
+                prev_pipeline_dir=previous_pipeline_directory,
+            )
+
+            # Main training loop
+            for training_epochs in range(start_epoch, epochs):
+                epoch_start_time = time.time()
+
+                # Update inner fold progress in inner fold logger at the beginning of an epoch
+                # This shows the current training epoch in the status file for real-time progress tracking
+                if inner_fold_logger is not None:
+                    inner_fold_logger.update_inner_fold_progress(
+                        inner_fold=fold + 1,
+                        status="in_progress",           # Still running
+                        epoch=training_epochs + 1,      # Current epoch (1-based for display)
+                        total_inner_folds=cv_inner_folds       # Total for progress calculation
+                    )
+
+                # Training phase
+                train_start_time = time.time()
+                train_metrics = train_epoch(
                     model,
-                    val_loader,
+                    train_loader,
                     criterion,
+                    optimizer,
+                    scaler,
                     device,
                     metrics,
-                    phase="val",
-                    epoch=training_epochs,
+                    training_epochs,
+                    hyperparameters.get("mixup_alpha", 0.0),
+                    accumulation_steps=hyperparameters.get("gradient_accumulation_steps", 1),
                 )
+                # Update EMA weights after each training epoch
+                # ema.update(model)
 
-                # Restore original weights
-                # model.load_state_dict(original_state, strict=False)
-
-                # Log EMA validation metric separately to compare
-                
-                # if val_metrics is not None:
-                #     writer.add_scalar(
-                #         f"{experimental_setting.metric.upper()}/val_ema/cv_inner_fold_{fold}",
-                #         np.mean(val_metrics[experimental_setting.metric]) * 100,
-                #         training_epochs,
-                #     )
-
-            eval_time = time.time() - eval_start_time
-
-            # Calculate total epoch time
-            epoch_time = time.time() - epoch_start_time
-
-
-            # Log all metrics and information at the end of the epoch
-            log_timing(log_files["timing"], training_epochs, train_time, eval_time, epoch_time)
-            log_learning_rate(log_files["lr"], training_epochs, optimizer)
-            log_resources(log_files["resource"], training_epochs)
-
-            # Log training metrics
-            log_metrics(log_files["metrics"], training_epochs, "train", train_metrics)
-
-            # Log validation metrics if available
-            if val_metrics is not None:
-                log_metrics(log_files["metrics"], training_epochs, "val", val_metrics)
-
-            # Save progress (not the best model, just regular checkpoint)
-            checkpoint_manager.save(
-                model,  # ema.ema_model, # Save EMA model instead of raw model
-                optimizer,
-                scheduler,
-                (
-                    val_metrics[experimental_setting.metric] if val_metrics is not None else train_metrics[experimental_setting.metric]
-                ),  # Use training metric if 'no validation' mode is enabled
-                experimental_setting,
-                num_classes,
-                hyperparameters,
-                device,
-                training_epochs,
-                metrics,
-                is_best=False,  # This is not the best model
-            )
+                train_time = time.time() - train_start_time
             
-            # Early stopping logic
-            if early_stopping_enabled and val_metrics is not None:
-                improved = False
-                
-                if use_loss_threshold:
-                    # Use loss for early stopping (minimize loss)
-                    current_loss = val_metrics["loss"]
-                    if current_loss < best_loss:
-                        best_loss = current_loss
-                        patience_counter = 0
-                        improved = True
-                        # Save best model checkpoint
-                        checkpoint_manager.save(
-                            model,
-                            optimizer,
-                            scheduler,
-                            best_loss,  # Use the actual metric we're tracking
-                            experimental_setting,
-                            num_classes,
-                            hyperparameters,
-                            device,
-                            training_epochs,
-                            metrics,
-                            is_best=True
-                        )
-                        print(f"New best loss: {best_loss:.4f}")
-                else:
-                    # Use metric for early stopping (maximize metric)
-                    current_metric = val_metrics[experimental_setting.metric]
-                    if current_metric > best_metric:
-                        best_metric = current_metric
-                        patience_counter = 0
-                        improved = True
-                        # Save best model checkpoint
-                        checkpoint_manager.save(
-                            model,
-                            optimizer,
-                            scheduler,
-                            best_metric,  # Use the actual metric we're tracking
-                            experimental_setting,
-                            num_classes,
-                            hyperparameters,
-                            device,
-                            training_epochs,
-                            metrics,
-                            is_best=True
-                        )
-                        print(f"New best {experimental_setting.metric}: {best_metric:.4f}")
-                
-                if not improved:
-                    patience_counter += 1
-                    if use_loss_threshold:
-                        if patience_counter == 1:
-                            print(f"No improvement for {patience_counter} epoch. Best loss: {best_loss:.4f}")
-                        else:
-                            print(f"No improvement for {patience_counter} epochs. Best loss: {best_loss:.4f}")
-                    else:
-                        if patience_counter == 1:
-                            print(f"No improvement for {patience_counter} epoch. Best {experimental_setting.metric}: {best_metric:.4f}")
-                        else:
-                            print(f"No improvement for {patience_counter} epochs. Best {experimental_setting.metric}: {best_metric:.4f}")
-                
-                if patience_counter >= patience:
-                    if use_loss_threshold:
-                        print(f"Early stopping triggered after {patience_counter} epochs without loss improvement")
-                    else:
-                        print(f"Early stopping triggered after {patience_counter} epochs without {experimental_setting.metric} improvement")
-                    break
+                # Validation phase
+                eval_start_time = time.time()
+                val_metrics = None  # Initialize val_metrics as None
+                if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.eval_every == 0 or training_epochs == epochs - 1):
+                    # Evaluate with EMA weights (smoother version of the model)
+                    # original_state = model.state_dict()
+                    # model.load_state_dict(ema.ema_model.state_dict(), strict=False)
 
-            # Store final metrics for all folds (at the end of training or after early stopping)
-            if training_epochs == epochs - 1:
+                    val_metrics = evaluate_and_log_metrics(
+                        model,
+                        val_loader,
+                        criterion,
+                        device,
+                        metrics,
+                        phase="val",
+                        epoch=training_epochs,
+                    )
+
+                    # Restore original weights
+                    # model.load_state_dict(original_state, strict=False)
+
+                    # Log EMA validation metric separately to compare
+                
+                    # if val_metrics is not None:
+                    #     writer.add_scalar(
+                    #         f"{experimental_setting.metric.upper()}/val_ema/cv_inner_fold_{fold}",
+                    #         np.mean(val_metrics[experimental_setting.metric]) * 100,
+                    #         training_epochs,
+                    #     )
+
+                eval_time = time.time() - eval_start_time
+
+                # Calculate total epoch time
+                epoch_time = time.time() - epoch_start_time
+
+
+                # Log all metrics and information at the end of the epoch
+                log_timing(log_files["timing"], training_epochs, train_time, eval_time, epoch_time)
+                log_learning_rate(log_files["lr"], training_epochs, optimizer)
+                log_resources(log_files["resource"], training_epochs)
+
+                # Log training metrics
+                log_metrics(log_files["metrics"], training_epochs, "train", train_metrics)
+
+                # Log validation metrics if available
                 if val_metrics is not None:
-                    # Use validation metrics if available
-                    all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
-                    all_folds_final_metrics["precision"].append(
-                        np.mean(val_metrics["precision"]) * 100
-                    )
-                    all_folds_final_metrics["recall"].append(
-                        np.mean(val_metrics["recall"]) * 100
-                    )
-                    all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
-                    all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
-                else:
-                    # Use training metrics when no validation is available
-                    all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"])
-                    all_folds_final_metrics["precision"].append(
-                        np.mean(train_metrics["precision"]) * 100
-                    )
-                    all_folds_final_metrics["recall"].append(
-                        np.mean(train_metrics["recall"]) * 100
-                    )
-                    all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
-                    all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
+                    log_metrics(log_files["metrics"], training_epochs, "val", val_metrics)
 
-            # Log metrics to TensorBoard
-            writer.add_scalar(f"Loss/train/cv_inner_fold_{fold}", train_metrics["loss"], training_epochs)
-            writer.add_scalar(
-                f"Accuracy/train/cv_inner_fold_{fold}", train_metrics["accuracy"] * 100, training_epochs
-            )
-            writer.add_scalar(
-                f"Precision/train/cv_inner_fold_{fold}",
-                np.mean(train_metrics["precision"]) * 100,
-                training_epochs,
-            )
-            writer.add_scalar(
-                f"Recall/train/cv_inner_fold_{fold}", np.mean(train_metrics["recall"]) * 100, training_epochs
-            )
-            writer.add_scalar(
-                f"F1/train/cv_inner_fold_{fold}", np.mean(train_metrics["f1"]) * 100, training_epochs
-            )
-            writer.add_scalar(
-                f"AUC/train/cv_inner_fold_{fold}", np.mean(train_metrics["auc"]) * 100, training_epochs
-            )
+                # Save progress (not the best model, just regular checkpoint)
+                checkpoint_manager.save(
+                    model,  # ema.ema_model, # Save EMA model instead of raw model
+                    optimizer,
+                    scheduler,
+                    (
+                        val_metrics[experimental_setting.metric] if val_metrics is not None else train_metrics[experimental_setting.metric]
+                    ),  # Use training metric if 'no validation' mode is enabled
+                    experimental_setting,
+                    num_classes,
+                    hyperparameters,
+                    device,
+                    training_epochs,
+                    metrics,
+                    is_best=False,  # This is not the best model
+                )
+            
+                # Early stopping logic
+                if early_stopping_enabled and val_metrics is not None:
+                    improved = False
+                
+                    if use_loss_threshold:
+                        # Use loss for early stopping (minimize loss)
+                        current_loss = val_metrics["loss"]
+                        if current_loss < best_loss:
+                            best_loss = current_loss
+                            patience_counter = 0
+                            improved = True
+                            # Save best model checkpoint
+                            checkpoint_manager.save(
+                                model,
+                                optimizer,
+                                scheduler,
+                                best_loss,  # Use the actual metric we're tracking
+                                experimental_setting,
+                                num_classes,
+                                hyperparameters,
+                                device,
+                                training_epochs,
+                                metrics,
+                                is_best=True
+                            )
+                            print(f"New best loss: {best_loss:.4f}")
+                    else:
+                        # Use metric for early stopping (maximize metric)
+                        current_metric = val_metrics[experimental_setting.metric]
+                        if current_metric > best_metric:
+                            best_metric = current_metric
+                            patience_counter = 0
+                            improved = True
+                            # Save best model checkpoint
+                            checkpoint_manager.save(
+                                model,
+                                optimizer,
+                                scheduler,
+                                best_metric,  # Use the actual metric we're tracking
+                                experimental_setting,
+                                num_classes,
+                                hyperparameters,
+                                device,
+                                training_epochs,
+                                metrics,
+                                is_best=True
+                            )
+                            print(f"New best {experimental_setting.metric}: {best_metric:.4f}")
+                
+                    if not improved:
+                        patience_counter += 1
+                        if use_loss_threshold:
+                            if patience_counter == 1:
+                                print(f"No improvement for {patience_counter} epoch. Best loss: {best_loss:.4f}")
+                            else:
+                                print(f"No improvement for {patience_counter} epochs. Best loss: {best_loss:.4f}")
+                        else:
+                            if patience_counter == 1:
+                                print(f"No improvement for {patience_counter} epoch. Best {experimental_setting.metric}: {best_metric:.4f}")
+                            else:
+                                print(f"No improvement for {patience_counter} epochs. Best {experimental_setting.metric}: {best_metric:.4f}")
+                
+                    if patience_counter >= patience:
+                        if use_loss_threshold:
+                            print(f"Early stopping triggered after {patience_counter} epochs without loss improvement")
+                        else:
+                            print(f"Early stopping triggered after {patience_counter} epochs without {experimental_setting.metric} improvement")
+                        break
 
-            # Log learning rate (moved outside the val_metrics check)
-            writer.add_scalar(
-                f"Learning_Rate/cv_inner_fold_{fold}", optimizer.param_groups[0]["lr"], training_epochs
-            )
+                # Store final metrics for all folds (at the end of training or after early stopping)
+                if training_epochs == epochs - 1:
+                    if val_metrics is not None:
+                        # Use validation metrics if available
+                        all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+                        all_folds_final_metrics["precision"].append(
+                            np.mean(val_metrics["precision"]) * 100
+                        )
+                        all_folds_final_metrics["recall"].append(
+                            np.mean(val_metrics["recall"]) * 100
+                        )
+                        all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+                        all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+                    else:
+                        # Use training metrics when no validation is available
+                        all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"])
+                        all_folds_final_metrics["precision"].append(
+                            np.mean(train_metrics["precision"]) * 100
+                        )
+                        all_folds_final_metrics["recall"].append(
+                            np.mean(train_metrics["recall"]) * 100
+                        )
+                        all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
+                        all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
 
-            if val_metrics is not None:
-                writer.add_scalar(f"Loss/val/cv_inner_fold_{fold}", val_metrics["loss"], training_epochs)
+                # Log metrics to TensorBoard
+                writer.add_scalar(f"Loss/train/cv_inner_fold_{fold}", train_metrics["loss"], training_epochs)
                 writer.add_scalar(
-                    f"Accuracy/val/cv_inner_fold_{fold}", val_metrics["accuracy"] * 100, training_epochs
+                    f"Accuracy/train/cv_inner_fold_{fold}", train_metrics["accuracy"] * 100, training_epochs
                 )
                 writer.add_scalar(
-                    f"Precision/val/cv_inner_fold_{fold}",
-                    np.mean(val_metrics["precision"]) * 100,
+                    f"Precision/train/cv_inner_fold_{fold}",
+                    np.mean(train_metrics["precision"]) * 100,
                     training_epochs,
                 )
                 writer.add_scalar(
-                    f"Recall/val/cv_inner_fold_{fold}", np.mean(val_metrics["recall"]) * 100, training_epochs
+                    f"Recall/train/cv_inner_fold_{fold}", np.mean(train_metrics["recall"]) * 100, training_epochs
                 )
                 writer.add_scalar(
-                    f"F1/val/cv_inner_fold_{fold}", np.mean(val_metrics["f1"]) * 100, training_epochs
+                    f"F1/train/cv_inner_fold_{fold}", np.mean(train_metrics["f1"]) * 100, training_epochs
                 )
                 writer.add_scalar(
-                    f"AUC/val/cv_inner_fold_{fold}", np.mean(val_metrics["auc"]) * 100, training_epochs
+                    f"AUC/train/cv_inner_fold_{fold}", np.mean(train_metrics["auc"]) * 100, training_epochs
                 )
 
-                # Add confusion matrix as image
-                if "confusion_matrices" in val_metrics:
-                    fig = plt.figure(figsize=(8, 8))
-                    plt.imshow(val_metrics["confusion_matrices"][-1], cmap="Blues")
-                    plt.colorbar()
-                    plt.title(f"Confusion Matrix - Epoch {training_epochs}")
-                    writer.add_figure(f"Confusion_Matrix/cv_inner_fold_{fold}", fig, training_epochs)
-                    plt.close()
+                # Log learning rate (moved outside the val_metrics check)
+                writer.add_scalar(
+                    f"Learning_Rate/cv_inner_fold_{fold}", optimizer.param_groups[0]["lr"], training_epochs
+                )
 
-            # Log sample images with predictions (every N epochs or at the end)
-            if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1):
-                log_validation_images(writer, model, val_loader, device, fold, training_epochs)
+                if val_metrics is not None:
+                    writer.add_scalar(f"Loss/val/cv_inner_fold_{fold}", val_metrics["loss"], training_epochs)
+                    writer.add_scalar(
+                        f"Accuracy/val/cv_inner_fold_{fold}", val_metrics["accuracy"] * 100, training_epochs
+                    )
+                    writer.add_scalar(
+                        f"Precision/val/cv_inner_fold_{fold}",
+                        np.mean(val_metrics["precision"]) * 100,
+                        training_epochs,
+                    )
+                    writer.add_scalar(
+                        f"Recall/val/cv_inner_fold_{fold}", np.mean(val_metrics["recall"]) * 100, training_epochs
+                    )
+                    writer.add_scalar(
+                        f"F1/val/cv_inner_fold_{fold}", np.mean(val_metrics["f1"]) * 100, training_epochs
+                    )
+                    writer.add_scalar(
+                        f"AUC/val/cv_inner_fold_{fold}", np.mean(val_metrics["auc"]) * 100, training_epochs
+                    )
 
-            # Apply learning rate scheduler after training
-            adjust_learning_rate(scheduler)
+                    # Add confusion matrix as image
+                    if "confusion_matrices" in val_metrics:
+                        fig = plt.figure(figsize=(8, 8))
+                        plt.imshow(val_metrics["confusion_matrices"][-1], cmap="Blues")
+                        plt.colorbar()
+                        plt.title(f"Confusion Matrix - Epoch {training_epochs}")
+                        writer.add_figure(f"Confusion_Matrix/cv_inner_fold_{fold}", fig, training_epochs)
+                        plt.close()
 
-        # Store final metrics for all folds (after training is completed, whether by early stopping or normal completion)
-        if val_metrics is not None:
-            # Use validation metrics if available
-            all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"] * 100)
-            all_folds_final_metrics["precision"].append(
-                np.mean(val_metrics["precision"]) * 100
-            )
-            all_folds_final_metrics["recall"].append(
-                np.mean(val_metrics["recall"]) * 100
-            )
-            all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
-            all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
-        else:
-            # Use training metrics when no validation is available
-            all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"] * 100)
-            all_folds_final_metrics["precision"].append(
-                np.mean(train_metrics["precision"]) * 100
-            )
-            all_folds_final_metrics["recall"].append(
-                np.mean(train_metrics["recall"]) * 100
-            )
-            all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
-            all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
+                # Log sample images with predictions (every N epochs or at the end)
+                if val_loader is not None and ((training_epochs + 1) % experimental_setting.logging.viz_images_every == 0 or training_epochs == epochs - 1):
+                    log_validation_images(writer, model, val_loader, device, fold, training_epochs)
 
-        # Log completion of inner fold training and mark inner fold as completed.
-        if inner_fold_logger is not None:
-            inner_fold_logger.update_inner_fold_progress(
-                inner_fold=fold + 1,
-                status="completed",         # Mark as finished
-                total_inner_folds=cv_inner_folds   # Total for progress calculation
-            )
+                # Apply learning rate scheduler after training
+                adjust_learning_rate(scheduler)
+
+            # Store final metrics for all folds (after training is completed, whether by early stopping or normal completion)
+            if val_metrics is not None:
+                # Use validation metrics if available
+                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"] * 100)
+                all_folds_final_metrics["precision"].append(
+                    np.mean(val_metrics["precision"]) * 100
+                )
+                all_folds_final_metrics["recall"].append(
+                    np.mean(val_metrics["recall"]) * 100
+                )
+                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
+                all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+            else:
+                # Use training metrics when no validation is available
+                all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"] * 100)
+                all_folds_final_metrics["precision"].append(
+                    np.mean(train_metrics["precision"]) * 100
+                )
+                all_folds_final_metrics["recall"].append(
+                    np.mean(train_metrics["recall"]) * 100
+                )
+                all_folds_final_metrics["f1"].append(np.mean(train_metrics["f1"]) * 100)
+                all_folds_final_metrics["auc"].append(np.mean(train_metrics["auc"]) * 100)
+
+            # Log completion of inner fold training and mark inner fold as completed.
+            if inner_fold_logger is not None:
+                inner_fold_logger.update_inner_fold_progress(
+                    inner_fold=fold + 1,
+                    status="completed",         # Mark as finished
+                    total_inner_folds=cv_inner_folds   # Total for progress calculation
+                )
         
-        print("\nTraining completed!\n")
-    
-    except ValueError as e:
+            print("\nTraining completed!\n")
+
+    except (ValueError, RuntimeError) as e:
         # Catch spatial dimension errors (e.g., InstanceNorm with 1x1x1, incompatible model/dataset combinations)
+        # Also catch RuntimeError (e.g., CUDA errors, OOM errors)
         error_msg = str(e)
+        error_type = type(e).__name__
+        
+        # Flush stdout to ensure error messages appear in log files
+        import sys
+        sys.stdout.flush()
+        
         if "Expected more than 1 spatial element" in error_msg:
-            print(f"\n{'='*80}")
-            print(f"ERROR: Incompatible model/dataset combination detected!")
-            print(f"{'='*80}")
-            print(f"Model: {model_type}")
-            print(f"Dataset: {experimental_setting.data.dataset}")
+            print(f"\n{'='*80}", flush=True)
+            print(f"ERROR: Incompatible model/dataset combination detected!", flush=True)
+            print(f"{'='*80}", flush=True)
+            print(f"Model: {model_type}", flush=True)
+            print(f"Dataset: {experimental_setting.data.dataset}", flush=True)
             if 'spatial_size' in locals():
-                print(f"Spatial size: {spatial_size}")
-            print(f"Error: {error_msg}")
-            print(f"\nThis model is not suitable for this input size.")
+                print(f"Spatial size: {spatial_size}", flush=True)
+            print(f"Error: {error_msg}", flush=True)
+            print(f"\nThis model is not suitable for this input size.", flush=True)
             is_medmnist = dataset.get("is_medmnist", False) if 'dataset' in locals() else False
             if is_medmnist:
-                print(f"For MedMNIST datasets (32x32x32), please use DenseNet (with remove_last_block=True), ResNet, or ViT instead.")
-                print(f"SwinUNETR and EfficientNet are not recommended for small input sizes.")
-            print(f"{'='*80}\n")
+                print(f"For MedMNIST datasets (32x32x32), please use DenseNet (with remove_last_block=True), ResNet, or ViT instead.", flush=True)
+                print(f"SwinUNETR and EfficientNet are not recommended for small input sizes.", flush=True)
+            print(f"{'='*80}\n", flush=True)
             
             # Ensure all_folds_final_metrics is initialized
             if 'all_folds_final_metrics' not in locals():
@@ -655,7 +662,17 @@ def run_3d_pipeline(
                 },
             }
         else:
-            # Re-raise if it's a different ValueError
+            # Print other exceptions (ValueError or RuntimeError)
+            print(f"\n{'='*80}", flush=True)
+            print(f"ERROR: {error_type} during training!", flush=True)
+            print(f"{'='*80}", flush=True)
+            print(f"Model: {model_type}", flush=True)
+            print(f"Dataset: {experimental_setting.data.dataset}", flush=True)
+            if 'spatial_size' in locals():
+                print(f"Spatial size: {spatial_size}", flush=True)
+            print(f"Error type: {error_type}", flush=True)
+            print(f"Error message: {error_msg}", flush=True)
+            print(f"{'='*80}\n", flush=True)
             raise
     
     # Close TensorBoard writer
