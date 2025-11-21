@@ -493,7 +493,8 @@ def evaluate_config_on_test_set(
             voxel_calculation, 
             experimental_setting.data.dataset, 
             experimental_setting.developer_mode,
-            data_path=experimental_setting.data.path
+            data_path=experimental_setting.data.path,
+            is_medmnist=dataset.get("is_medmnist", False)
         )
 
         # MODEL INITIALIZATION
@@ -517,7 +518,8 @@ def evaluate_config_on_test_set(
             model_config=model_config,
             hyperparameters=hyperparameters,
             developer_mode=experimental_setting.developer_mode,
-            spatial_size=spatial_size
+            spatial_size=spatial_size,
+            is_medmnist=dataset.get("is_medmnist", False)
         ).to(device)
 
         print(f"\nModel initialized: {model_type}")

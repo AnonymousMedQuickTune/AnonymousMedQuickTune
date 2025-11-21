@@ -325,7 +325,7 @@ def _read_dimensions_from_statistics(statistics_file, use_percentile=True, perce
     return height, width, depth
 
 
-def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_mode, data_path, use_percentile=True, percentile=95):
+def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_mode, data_path, is_medmnist, use_percentile=True, percentile=95):
     """
     Extract spatial size based on model type and voxel calculation method.
     Uses intelligent percentile-based approach instead of maximum to improve efficiency.
@@ -342,49 +342,54 @@ def extract_spatial_size(model_type, voxel_calculation, dataset_name, developer_
         dataset_name (str): Name of the dataset
         developer_mode (bool): Whether the developer mode is enabled
         data_path (str): Path to the datasets directory
+        is_medmnist (bool): If True, the dataset is a MedMNIST dataset
         use_percentile (bool): If True, use percentile-based approach (default: True, recommended)
         percentile (int): Percentile to use (default: 95 for 95th percentile)
         
     Returns:
         tuple: Spatial size in (H, W, D) format, or None if not needed
     """
-    if developer_mode:
-        spatial_size = (64, 64, 32)  # spatial size in (H, W, D) format
+    if is_medmnist:
+        spatial_size = (32, 32, 32)  # original spatial size for MedMNIST datasets: (28, 28, 28)
+        print(f"Using fixed spatial size for MedMNIST dataset {dataset_name}: {spatial_size}")
     else:
-        # Only ViT and SwinUNETR need specific spatial sizes
-        if model_type in ["vit", "swin_unetr"]:
-            # Construct path to statistics.txt file
-            statistics_file = os.path.join(
-                data_path,
-                f"{dataset_name}_cleaned",
-                f"preprocessed_{voxel_calculation}",
-                "statistics.txt"
-            )
-            
-            # Read dimensions from statistics.txt (using percentile or maximum)
-            try:
-                height, width, depth = _read_dimensions_from_statistics(
-                    statistics_file,
-                    use_percentile=use_percentile,
-                    percentile=percentile
-                )
-                spatial_size = (height, width, depth)  # (H, W, D) format
-                print(f"Extracted spatial size from {statistics_file}: {spatial_size}")
-            except Exception as e:
-                print(f"Warning: Could not read spatial size from {statistics_file}: {e}")
-                raise NotImplementedError(
-                    f"Could not extract spatial size for {dataset_name} with {voxel_calculation} voxel calculation. "
-                    f"Please ensure the statistics.txt file exists at: {statistics_file}"
-                )
-            
-            # Update spatial size to be divisible by 32 (round down)
-            h = (spatial_size[0] // 32) * 32
-            w = (spatial_size[1] // 32) * 32
-            d = (spatial_size[2] // 32) * 32
-            spatial_size = (h, w, d)
-            print(f"Spatial size after rounding to multiples of 32: {spatial_size}")
-
+        if developer_mode:
+            spatial_size = (64, 64, 32)  # spatial size in (H, W, D) format
         else:
-            spatial_size = None
+            # Only ViT and SwinUNETR need specific spatial sizes
+            if model_type in ["vit", "swin_unetr"]:
+                # Construct path to statistics.txt file
+                statistics_file = os.path.join(
+                    data_path,
+                    f"{dataset_name}_cleaned",
+                    f"preprocessed_{voxel_calculation}",
+                    "statistics.txt"
+                )
+                
+                # Read dimensions from statistics.txt (using percentile or maximum)
+                try:
+                    height, width, depth = _read_dimensions_from_statistics(
+                        statistics_file,
+                        use_percentile=use_percentile,
+                        percentile=percentile
+                    )
+                    spatial_size = (height, width, depth)  # (H, W, D) format
+                    print(f"Extracted spatial size from {statistics_file}: {spatial_size}")
+                except Exception as e:
+                    print(f"Warning: Could not read spatial size from {statistics_file}: {e}")
+                    raise NotImplementedError(
+                        f"Could not extract spatial size for {dataset_name} with {voxel_calculation} voxel calculation. "
+                        f"Please ensure the statistics.txt file exists at: {statistics_file}"
+                    )
+                
+                # Update spatial size to be divisible by 32 (round down)
+                h = (spatial_size[0] // 32) * 32
+                w = (spatial_size[1] // 32) * 32
+                d = (spatial_size[2] // 32) * 32
+                spatial_size = (h, w, d)
+                print(f"Spatial size after rounding to multiples of 32: {spatial_size}")
+
+            else:
+                spatial_size = None
     
     return spatial_size

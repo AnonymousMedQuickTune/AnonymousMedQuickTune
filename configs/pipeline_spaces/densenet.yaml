@@ -4,6 +4,12 @@ densenet_type:  # default = "densenet121"
   # prior: "densenet121"
   # prior_confidence: "low"
 
+remove_last_block:  # default = False
+  type: categorical
+  choices: [True, False]
+  # prior: "False"
+  # prior_confidence: "low"
+
 init_features:  # default = 64
   type: int
   lower: 16

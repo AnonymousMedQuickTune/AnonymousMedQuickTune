@@ -91,7 +91,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
 
     return model
 
-def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=None):
+def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=None, is_medmnist=False, run_mode="Baseline"):
     """
     Create and initialize a parametrized 3D model for medical 3D image classification.
     
@@ -160,6 +160,8 @@ def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=Non
             - qkv_bias (bool): Whether to use bias in QKV projection (default: False)
         developer_mode (bool): Whether to use reduced model sizes for faster development/testing
         spatial_size (tuple, optional): Spatial size for ViT model in (H, W, D) format (required for ViT)
+        is_medmnist (bool): Whether the dataset is a MedMNIST dataset (affects DenseNet architecture for small inputs)
+        run_mode (str): Whether to use NePS or QuickTune (default: "Baseline")
 
     Returns:
         nn.Module: Initialized PyTorch model with customizable architecture
@@ -175,7 +177,7 @@ def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=Non
     num_classes = model_config["num_classes"]
 
     if model_type == "densenet":
-        model = ParameterizedDenseNet(hyperparameters, num_classes, developer_mode)
+        model = ParameterizedDenseNet(hyperparameters, num_classes, developer_mode, is_medmnist, run_mode)
 
     elif model_type == "resnet":
         model = ParameterizedResNet(hyperparameters, num_classes, developer_mode)

@@ -36,7 +36,7 @@ class ParameterizedDenseNet(nn.Module):
         The architecture is NOT compatible with the Med3D pretrained weights: https://github.com/Tencent/MedicalNet
     """
     
-    def __init__(self, hyperparameters: dict, num_classes: int, developer_mode: bool):
+    def __init__(self, hyperparameters: dict, num_classes: int, developer_mode: bool, is_medmnist: bool, run_mode: str):
         super().__init__()
         
         # Extract hyperparameters
@@ -50,6 +50,24 @@ class ParameterizedDenseNet(nn.Module):
             block_config = (6, 12, 48, 32)
         else:
             raise ValueError(f"Invalid densenet type: {densenet_type}")
+
+        # Remove last block if:
+        # 1. Hyperparameter 'remove_last_block' is explicitly set to True
+        # 2. MedMNIST dataset with Baseline run (32x32x32 input too small for 4 blocks)
+        #    After conv0 (stride=2) and pool0 (stride=2): 32→16→8, then 3 transitions: 8→4→2→1
+        #    With 4 blocks, we get 1x1x1 before denseblock4, which causes InstanceNorm to fail
+        should_remove_last_block = (
+            hyperparameters.get("remove_last_block", False) or
+            (is_medmnist and run_mode == "Baseline")
+        )
+        
+        if should_remove_last_block and len(block_config) == 4:
+            block_config = block_config[:3]  # Remove last block: (6, 12, 24, 16) → (6, 12, 24)
+            if is_medmnist and run_mode == "Baseline":
+                print(f"Reduced DenseNet blocks from 4 to 3 for MedMNIST dataset (32x32x32 input) "
+                      f"to prevent InstanceNorm error with 1x1x1 spatial dimensions")
+            else:
+                print(f"Removed last block from DenseNet as requested by hyperparameter 'remove_last_block'")
 
         init_features = 8 if developer_mode else hyperparameters.get("init_features", 64)
         growth_rate = 6 if developer_mode else hyperparameters.get("growth_rate", 32)

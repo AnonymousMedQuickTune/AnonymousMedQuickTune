@@ -145,7 +145,7 @@ def get_max_hyperparameters(search_space: Dict, model_type: str = None) -> Dict:
     return hyperparameters
 
 
-def estimate_model_parameters(model_type: str, hyperparameters: Dict, spatial_size: Optional[Tuple], num_classes: int) -> int:
+def estimate_model_parameters(model_type: str, hyperparameters: Dict, spatial_size: Optional[Tuple], num_classes: int, is_medmnist: bool = False) -> int:
     """
     Estimate model parameters by instantiating the model.
     Returns number of trainable parameters.
@@ -165,14 +165,16 @@ def estimate_model_parameters(model_type: str, hyperparameters: Dict, spatial_si
                 model_config=model_config,
                 hyperparameters=hyperparameters,
                 developer_mode=False,
-                spatial_size=spatial_size
+                spatial_size=spatial_size,
+                is_medmnist=is_medmnist
             )
         else:
             model = get_3d_model(
                 model_config=model_config,
                 hyperparameters=hyperparameters,
                 developer_mode=False,
-                spatial_size=None
+                spatial_size=None,
+                is_medmnist=is_medmnist
             )
         
         # Count parameters
@@ -434,6 +436,10 @@ def analyze_combination(
         "cost_50_epochs_gpu_hours": 0.0,
         "error": None
     }
+    if dataset_name in ["organmnist3d", "nodulemnist3d", "adrenalmnist3d", "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
+        is_medmnist = True
+    else:
+        is_medmnist = False
     
     try:
         # Extract spatial_size
@@ -445,6 +451,7 @@ def analyze_combination(
                 dataset_name=dataset_name,
                 developer_mode=False,
                 data_path=data_path,
+                is_medmnist=is_medmnist,
                 use_percentile=False  # Use maximum dimensions
             )
             result["spatial_size"] = spatial_size
@@ -494,7 +501,8 @@ def analyze_combination(
             model_type=model_type,
             hyperparameters=all_hps,
             spatial_size=spatial_size,
-            num_classes=NUM_CLASSES
+            num_classes=NUM_CLASSES,
+            is_medmnist=is_medmnist
         )
         result["num_params"] = num_params
         

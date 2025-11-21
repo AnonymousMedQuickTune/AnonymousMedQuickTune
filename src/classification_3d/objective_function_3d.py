@@ -127,7 +127,8 @@ def run_3d_pipeline(
         voxel_calculation, 
         experimental_setting.data.dataset, 
         experimental_setting.developer_mode,
-        data_path=experimental_setting.data.path
+        data_path=experimental_setting.data.path,
+        is_medmnist=dataset.get("is_medmnist", False)
     )
 
     # Initialize model and move it to the appropriate device
@@ -137,7 +138,9 @@ def run_3d_pipeline(
         model_config=model_config,
         hyperparameters=hyperparameters,
         developer_mode=experimental_setting.developer_mode,
-        spatial_size=spatial_size
+        spatial_size=spatial_size,
+        is_medmnist=dataset.get("is_medmnist", False),
+        run_mode=experimental_setting.run_mode
     ).to(device)
 
     print(f"\nModel initialized: {model_type}\n")
@@ -157,10 +160,11 @@ def run_3d_pipeline(
     inner_fold_logger = InnerFoldProgressLogger(pipeline_directory)
     
     # Run k-fold cross validation
-    for fold in range(cv_inner_folds):
-        print(f"{'-' * 50}")
-        print(f"Training Inner Cross-Validation Fold {fold + 1}/{cv_inner_folds}")
-        print(f"{'-' * 50}\n")
+    try:
+        for fold in range(cv_inner_folds):
+            print(f"{'-' * 50}")
+            print(f"Training Inner Cross-Validation Fold {fold + 1}/{cv_inner_folds}")
+            print(f"{'-' * 50}\n")
         
         # Log start of inner fold training
         # This updates the outer fold status file to show this inner fold is now running
@@ -610,6 +614,49 @@ def run_3d_pipeline(
             )
         
         print("\nTraining completed!\n")
+    
+    except ValueError as e:
+        # Catch spatial dimension errors (e.g., InstanceNorm with 1x1x1, incompatible model/dataset combinations)
+        error_msg = str(e)
+        if "Expected more than 1 spatial element" in error_msg:
+            print(f"\n{'='*80}")
+            print(f"ERROR: Incompatible model/dataset combination detected!")
+            print(f"{'='*80}")
+            print(f"Model: {model_type}")
+            print(f"Dataset: {experimental_setting.data.dataset}")
+            if 'spatial_size' in locals():
+                print(f"Spatial size: {spatial_size}")
+            print(f"Error: {error_msg}")
+            print(f"\nThis model is not suitable for this input size.")
+            is_medmnist = dataset.get("is_medmnist", False) if 'dataset' in locals() else False
+            if is_medmnist:
+                print(f"For MedMNIST datasets (32x32x32), please use DenseNet (with remove_last_block=True), ResNet, or ViT instead.")
+                print(f"SwinUNETR and EfficientNet are not recommended for small input sizes.")
+            print(f"{'='*80}\n")
+            
+            # Ensure all_folds_final_metrics is initialized
+            if 'all_folds_final_metrics' not in locals():
+                all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
+            
+            # Return worst possible score to signal this configuration is invalid
+            # NePS minimizes objective_to_minimize, so we return a large positive value
+            # (normal: -selected_metric, so good metric=80% → -80, bad metric=0% → 0)
+            # For invalid configs, we return a very large positive value to signal it's bad
+            return {
+                "objective_to_minimize": 0.0,  # Very large value (NePS minimizes, so this is worst)
+                "cost": 0.0,
+                "extra": {
+                    "selected_metric": 0.0,
+                    "all_folds_final_metrics": {
+                        metric: 0.0 for metric in all_folds_final_metrics.keys()
+                    },
+                    "error": "Incompatible model/dataset combination",
+                    "error_details": error_msg
+                },
+            }
+        else:
+            # Re-raise if it's a different ValueError
+            raise
     
     # Close TensorBoard writer
     writer.close()
