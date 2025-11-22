@@ -461,7 +461,10 @@ def save_cv_summary(experimental_setting, cv_outer_folds):
         f.write(f"Data Path: {experimental_setting.data.path}\n")
         f.write(f"Cache Data: {experimental_setting.data.cache_data}\n")
         f.write(f"Use Smart Preprocessing: {experimental_setting.data.use_smart_preprocessing}\n")
-        f.write(f"K-Folds: {experimental_setting.cv_inner_folds}\n")
+        cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+        cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+        total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+        f.write(f"K-Folds: {total_inner_folds} (repeats: {cv_inner_folds_repeats}, splits: {cv_inner_folds_splits})\n")
         f.write(f"Num Workers: {experimental_setting.data.num_workers}\n\n")
         
         # Pipeline space information

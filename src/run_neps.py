@@ -139,7 +139,11 @@ def run_pipeline(
     
     # Delete model checkpoints to save disk space  # TODO @Diane: Keep incumbent model checkpoint?
     # NOTE: After test evaluation, model checkpoints are no longer needed
-    cleanup_training_artifacts(pipeline_directory, experimental_setting.cv_inner_folds)
+    # Calculate total inner folds (repeats * splits)
+    cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+    cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+    total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+    cleanup_training_artifacts(pipeline_directory, total_inner_folds)
     
     # Print pipeline result and test metrics
     print(f"\n\nPipeline result: {pipeline_result}")
@@ -209,13 +213,21 @@ def main(experimental_setting: DictConfig) -> None:
             experimental_setting.max_evaluations = 2
             experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
         experimental_setting.training.number_of_epochs = 2
-        experimental_setting.cv_inner_folds = 2
+        # Set number of inner CV folds for developer mode: #repeats * #splits per repeat = #total inner folds
+        experimental_setting.cv_inner_folds_repeats = 1
+        experimental_setting.cv_inner_folds_splits = 2
         # Set number of outer CV folds for developer mode: #repeats * #splits per repeat = #total outer folds
         experimental_setting.cv_outer_folds_repeats = 1
         experimental_setting.cv_outer_folds_splits = 2  # splits  (minimum!) per repeat
     
+    # Calculate total inner folds (repeats * splits)
+    cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+    cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+    total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+
+    # If no validation set is used, set total inner folds to 1
     if experimental_setting.training.no_validation:
-        experimental_setting.cv_inner_folds = 1
+        total_inner_folds = 1
         if experimental_setting.run_mode != "Baseline":
             raise ValueError("No validation set mode is not supported for non-baseline runs.")
 
@@ -509,7 +521,7 @@ def main(experimental_setting: DictConfig) -> None:
         status_logger.main_status['outer_folds_progress'][cv_outer_fold + 1] = {
             'status': 'in_progress',                                # Current fold is now running
             'inner_folds_completed': 0,                             # No inner folds completed yet
-            'total_inner_folds': experimental_setting.cv_inner_folds  # Total inner folds for this outer fold
+            'total_inner_folds': total_inner_folds  # Total inner folds for this outer fold
         }
         # Save status for webapp
         status_logger._save_main_status()
@@ -580,8 +592,8 @@ def main(experimental_setting: DictConfig) -> None:
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_neps_progress(
             outer_fold=cv_outer_fold + 1,                                   # Convert to 1-based indexing
-            inner_folds_completed=experimental_setting.cv_inner_folds,  # All inner folds are done
-            total_inner_folds=experimental_setting.cv_inner_folds       # Total inner folds for this outer fold
+            inner_folds_completed=total_inner_folds,  # All inner folds are done
+            total_inner_folds=total_inner_folds       # Total inner folds for this outer fold
         )
         
         # Note: Inner fold progress is tracked by InnerFoldProgressLogger in the pipeline

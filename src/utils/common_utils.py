@@ -123,13 +123,13 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False  # Disable benchmark mode
     os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
 
-def cleanup_training_artifacts(pipeline_directory, cv_inner_folds):
+def cleanup_training_artifacts(pipeline_directory, total_inner_folds):
     """
     Delete model checkpoints after test evaluation to save disk space.
     
     Args:
         pipeline_directory (str): Directory containing the pipeline results
-        cv_inner_folds (int): Number of cross-validation folds
+        total_inner_folds (int): Total number of cross-validation folds (repeats * splits)
     """
     print(f"\n{'='*80}")
     print(f"CLEANING UP TRAINING ARTIFACTS")
@@ -139,7 +139,7 @@ def cleanup_training_artifacts(pipeline_directory, cv_inner_folds):
     deleted_files = 0
     
     # Delete checkpoints for each fold
-    for fold in range(cv_inner_folds):
+    for fold in range(total_inner_folds):
         fold_dir = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
         
         if os.path.exists(fold_dir):

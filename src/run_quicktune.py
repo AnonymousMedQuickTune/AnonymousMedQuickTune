@@ -226,6 +226,11 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     hyperparameters = trial["config"]
     print("\n\nHyperparameters: ", hyperparameters, "\n\n")
 
+    # Calculate total inner folds (repeats * splits) for repeated stratified K-fold cross-validation
+    cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+    cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+    total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+
     # Set fidelity as number of epochs
     trial["fidelity"] = hyperparameters["number_of_epochs"]
     print("trial fidelity (# epochs): ", trial["fidelity"])
@@ -241,7 +246,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             inner_fold_logger.update_inner_fold_progress(
                 inner_fold=1,  # Start with first inner fold
                 status='in_progress',
-                total_inner_folds=experimental_setting.cv_inner_folds
+                total_inner_folds=total_inner_folds
             )
 
         if dimensionality == "2d":
@@ -297,7 +302,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             print(f"Warning: Test evaluation failed or no valid checkpoints found!")
 
         # Delete model checkpoints to save disk space after test evaluation
-        cleanup_training_artifacts(str(pipeline_dir), experimental_setting.cv_inner_folds)
+        cleanup_training_artifacts(str(pipeline_dir), total_inner_folds)
 
         # Extract metrics safely
         info_dict = result.get("extra", {})
@@ -352,7 +357,8 @@ def main(experimental_setting: DictConfig) -> None:
     if experimental_setting.developer_mode:
         print(f"\n\n\nDeveloper mode is enabled!\n\n\n")
         experimental_setting.max_evaluations = 2
-        experimental_setting.cv_inner_folds = 2
+        experimental_setting.cv_inner_folds_repeats = 1
+        experimental_setting.cv_inner_folds_splits = 2
         experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
         experimental_setting.training.number_of_epochs = 3
         # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
@@ -411,8 +417,13 @@ def main(experimental_setting: DictConfig) -> None:
     print("\nTrial info:\n", trial_info, "\n")
     print("\nMeta features:\n", metafeat, "\n")
 
-    # Calculate total outer CV folds for N-repeated 3-fold stratified cross-validation
+    # Calculate total outer CV folds (repeats * splits) for repeated stratified K-fold cross-validation
     cv_outer_folds = experimental_setting.cv_outer_folds_repeats * experimental_setting.cv_outer_folds_splits
+
+    # Calculate total inner folds (repeats * splits) for repeated stratified K-fold cross-validation
+    cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+    cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+    cv_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
     
     print(f"\n=== Using N-repeated 3-fold stratified cross-validation ===")
     print(f"N repeats: {experimental_setting.cv_outer_folds_repeats}")
@@ -439,11 +450,12 @@ def main(experimental_setting: DictConfig) -> None:
         cv_experiment_dir = Path(experimental_setting.experiment_base_dir) / f"cv_outer_fold_{cv_outer_fold}"
         cv_experiment_dir.mkdir(parents=True, exist_ok=True)
         
+        # TODO @Diane: double check this!
         # Mark outer fold as in progress
         status_logger.main_status['outer_folds_progress'][cv_outer_fold + 1] = {
             'status': 'in_progress',
             'inner_folds_completed': 0,
-            'total_inner_folds': experimental_setting.cv_inner_folds
+            'total_inner_folds': cv_inner_folds
         }
         # Save status for webapp
         status_logger._save_main_status()
@@ -609,8 +621,8 @@ def main(experimental_setting: DictConfig) -> None:
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_main_progress(
             outer_fold=cv_outer_fold + 1,                                   # Convert to 1-based indexing
-            inner_folds_completed=experimental_setting.cv_inner_folds,  # All inner folds are done
-            total_inner_folds=experimental_setting.cv_inner_folds       # Total inner folds for this outer fold
+            inner_folds_completed=cv_inner_folds,  # All inner folds are done
+            total_inner_folds=cv_inner_folds       # Total inner folds for this outer fold
         )
         
         # Save updated status for webapp

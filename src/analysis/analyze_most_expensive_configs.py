@@ -57,7 +57,8 @@ def load_cv_settings(
     yaml_path: str,
     cv_outer_folds_repeats: Optional[int] = None,
     cv_outer_folds_splits: Optional[int] = None,
-    cv_inner_folds: Optional[int] = None
+    cv_inner_folds_splits: Optional[int] = None,
+    cv_inner_folds_repeats: Optional[int] = None
 ) -> Dict:
     """
     Load CV settings from experimental_setting.yaml or use provided parameters.
@@ -66,10 +67,11 @@ def load_cv_settings(
         yaml_path: Path to experimental_setting.yaml
         cv_outer_folds_repeats: Override cv_outer_folds_repeats (optional)
         cv_outer_folds_splits: Override cv_outer_folds_splits (optional)
-        cv_inner_folds: Override cv_inner_folds (optional)
+        cv_inner_folds_splits: Override cv_inner_folds_splits (optional)
+        cv_inner_folds_repeats: Override cv_inner_folds_repeats (optional)
     """
     # Load from YAML if parameters not provided
-    if any(x is None for x in [cv_outer_folds_repeats, cv_outer_folds_splits, cv_inner_folds]):
+    if any(x is None for x in [cv_outer_folds_repeats, cv_outer_folds_splits, cv_inner_folds_splits, cv_inner_folds_repeats]):
         with open(yaml_path, 'r') as f:
             config = yaml.safe_load(f)
         
@@ -77,18 +79,23 @@ def load_cv_settings(
             cv_outer_folds_repeats = config.get("cv_outer_folds_repeats", 5)
         if cv_outer_folds_splits is None:
             cv_outer_folds_splits = config.get("cv_outer_folds_splits", 3)
-        if cv_inner_folds is None:
-            cv_inner_folds = config.get("cv_inner_folds", 5)
+        if cv_inner_folds_splits is None:
+            cv_inner_folds_splits = config.get("cv_inner_folds_splits", 5)
+        if cv_inner_folds_repeats is None:
+            cv_inner_folds_repeats = config.get("cv_inner_folds_repeats", 1)
     
     # Total outer folds = repeats * splits
     total_outer_folds = cv_outer_folds_repeats * cv_outer_folds_splits
+    total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
     
     return {
         "cv_outer_folds_repeats": cv_outer_folds_repeats,
         "cv_outer_folds_splits": cv_outer_folds_splits,
-        "cv_inner_folds": cv_inner_folds,
+        "cv_inner_folds_splits": cv_inner_folds_splits,
+        "cv_inner_folds_repeats": cv_inner_folds_repeats,
         "total_outer_folds": total_outer_folds,
-        "total_trainings_per_config": total_outer_folds * cv_inner_folds
+        "total_inner_folds": total_inner_folds,
+        "total_trainings_per_config": total_outer_folds * total_inner_folds
     }
 
 
@@ -560,10 +567,16 @@ def main():
         help="Number of splits per repetition for outer CV folds (default: from experimental_setting.yaml)"
     )
     parser.add_argument(
-        "--cv-inner-folds",
+        "--cv-inner-folds-splits",
         type=int,
         default=None,
-        help="Number of inner CV folds (default: from experimental_setting.yaml)"
+        help="Number of splits per repetition for inner CV folds (default: from experimental_setting.yaml)"
+    )
+    parser.add_argument(
+        "--cv-inner-folds-repeats",
+        type=int,
+        default=None,
+        help="Number of repetitions for inner CV folds (default: from experimental_setting.yaml)"
     )
     parser.add_argument(
         "--top-n",
@@ -587,15 +600,18 @@ def main():
         EXPERIMENTAL_SETTING,
         cv_outer_folds_repeats=args.cv_outer_folds_repeats,
         cv_outer_folds_splits=args.cv_outer_folds_splits,
-        cv_inner_folds=args.cv_inner_folds
+        cv_inner_folds_splits=getattr(args, 'cv_inner_folds_splits', None),
+        cv_inner_folds_repeats=getattr(args, 'cv_inner_folds_repeats', None)
     )
     total_outer_folds = cv_settings["total_outer_folds"]
-    cv_inner_folds = cv_settings["cv_inner_folds"]
+    total_inner_folds = cv_settings["total_inner_folds"]
+    cv_inner_folds_splits = cv_settings["cv_inner_folds_splits"]
+    cv_inner_folds_repeats = cv_settings["cv_inner_folds_repeats"]
     total_trainings = cv_settings["total_trainings_per_config"]
     
     print(f"CV settings: {cv_settings['cv_outer_folds_repeats']} repeats × {cv_settings['cv_outer_folds_splits']} splits = {total_outer_folds} outer folds")
-    print(f"CV inner folds: {cv_inner_folds}")
-    print(f"Total trainings per config: {total_outer_folds} outer × {cv_inner_folds} inner = {total_trainings}")
+    print(f"CV inner folds: {cv_inner_folds_repeats} repeats × {cv_inner_folds_splits} splits = {total_inner_folds} inner folds")
+    print(f"Total trainings per config: {total_outer_folds} outer × {total_inner_folds} inner = {total_trainings}")
     print("=" * 80)
     print()
     
@@ -640,7 +656,7 @@ def main():
     # Print top N most expensive
     top_n = args.top_n
     print(f"TOP {top_n} MOST EXPENSIVE CONFIGURATIONS (per config with CV):")
-    print(f"Note: Cost includes {total_outer_folds} outer folds × {cv_inner_folds} inner folds = {total_trainings} trainings per config")
+    print(f"Note: Cost includes {total_outer_folds} outer folds × {total_inner_folds} inner folds = {total_trainings} trainings per config")
     print("-" * 120)
     print(f"{'Rank':<6} {'Dataset':<12} {'Model':<15} {'Voxel':<20} {'Spatial Size':<20} {'Samples':<8} {'Params (M)':<12} {'Cost/Config (GPU-h)':<20}")
     print("-" * 120)
@@ -672,7 +688,7 @@ def main():
         f.write("=" * 80 + "\n\n")
         f.write(f"Epochs per training: {EPOCHS}\n")
         f.write(f"CV settings: {cv_settings['cv_outer_folds_repeats']} repeats × {cv_settings['cv_outer_folds_splits']} splits = {total_outer_folds} outer folds\n")
-        f.write(f"CV inner folds: {cv_inner_folds}\n")
+        f.write(f"CV inner folds: {cv_inner_folds_repeats} repeats × {cv_inner_folds_splits} splits = {total_inner_folds} inner folds\n")
         f.write(f"Total trainings per config: {total_trainings}\n")
         f.write(f"Total combinations: {len(results)}\n")
         f.write(f"Valid: {len(valid_results)}\n")

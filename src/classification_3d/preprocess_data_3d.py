@@ -797,7 +797,8 @@ def get_kfold_dataloaders(
     dataset_name,
     data,
     labels,
-    cv_inner_folds,
+    cv_inner_folds_splits,
+    cv_inner_folds_repeats,
     batch_size,
     num_workers,
     fold_idx,
@@ -818,10 +819,11 @@ def get_kfold_dataloaders(
         dataset_name (str): Name of the dataset (e.g., 'lipo', 'desmoid', 'gist')
         data (list): Combined training and validation data
         labels (numpy.ndarray): Combined training and validation labels
-        cv_inner_folds (int): Number of folds for cross-validation
+        cv_inner_folds_splits (int): Number of splits per repetition for inner folds
+        cv_inner_folds_repeats (int): Number of repetitions for repeated stratified K-fold (default: 1, which is equivalent to StratifiedKFold)
         batch_size (int): Batch size for data loaders
         num_workers (int): Number of workers for data loading
-        fold_idx (int): Current fold index
+        fold_idx (int): Current fold index (0-based, total folds = repeats * splits)
         voxel_size (tuple): Voxel size for the dataset
         normalization_stats (dict, optional): Pre-computed normalization statistics
         augmentation_type (str): Type of augmentation to use
@@ -830,6 +832,7 @@ def get_kfold_dataloaders(
         fold_directory (str, optional): Directory path for saving normalization stats
         no_validation (bool): If True, does not split train data in to train/val splits for validation
         is_medmnist (bool): If True, the dataset is a MedMNIST dataset
+        
     Returns:
         tuple: (train_loader, val_loader) for the current fold
     """
@@ -843,8 +846,10 @@ def get_kfold_dataloaders(
         train_data = train_data_images
         valid_data = []  # Empty validation set
     else:
-        # Create k-fold splitter
-        kfold = StratifiedKFold(n_splits=cv_inner_folds, shuffle=True, random_state=seed)
+        # Create repeated k-fold splitter
+        # If repeats=1, this is equivalent to StratifiedKFold (backward compatible)
+        # Note: cv_inner_folds parameter is kept for backward compatibility but represents cv_inner_folds_splits
+        kfold = RepeatedStratifiedKFold(n_repeats=cv_inner_folds_repeats, n_splits=cv_inner_folds_splits, random_state=seed)
 
         # Get indices for current fold
         indices = np.arange(len(data))

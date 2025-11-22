@@ -553,8 +553,13 @@ def evaluate_config_on_test_set(
         folds_probabilities = []
         ground_truth_targets = None  # Ground truth test labels are identical across folds, so we only need to store them once
 
+        # Calculate total inner folds (repeats * splits)
+        cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+        cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+        total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+        
         # Evaluate each fold's model on the complete test set
-        for fold in range(experimental_setting.cv_inner_folds):
+        for fold in range(total_inner_folds):
             # Load normalization stats from the inner fold's normalization_stats.txt file
             normalization_stats = load_normalization_stats_from_fold(pipeline_directory, fold)
             print(f"Normalization stats: {normalization_stats}")
@@ -579,7 +584,7 @@ def evaluate_config_on_test_set(
             # EVALUATE THE FOLD ON THE TEST SET
             # ------------------------------------------------------------------------------------------------
             # Evaluate the fold on the test set
-            print(f"\n=== Evaluating Fold {fold + 1}/{experimental_setting.cv_inner_folds} on Test Set ===")
+            print(f"\n=== Evaluating Fold {fold + 1}/{total_inner_folds} on Test Set ===")
             fold_probabilities, fold_targets = evaluate_fold(
                 fold, test_loader, model, experimental_setting, hyperparameters, pipeline_directory
             )

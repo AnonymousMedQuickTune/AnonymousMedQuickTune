@@ -145,8 +145,10 @@ def run_3d_pipeline(
 
     print(f"\nModel initialized: {model_type}\n")
 
-    # Get k-fold parameter from experimental_setting or default to 5
-    cv_inner_folds = experimental_setting.cv_inner_folds if hasattr(experimental_setting, "cv_inner_folds") else 5
+    # Calculate total number of inner folds (repeats * splits)
+    cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
+    cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
+    total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
 
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
 
@@ -159,11 +161,11 @@ def run_3d_pipeline(
     # It automatically extracts the outer fold number and base directory from the pipeline path
     inner_fold_logger = InnerFoldProgressLogger(pipeline_directory)
     
-    # Run k-fold cross validation
+    # Run k-fold cross validation (using RepeatedStratifiedKFold if repeats > 1)
     try:
-        for fold in range(cv_inner_folds):
+        for fold in range(total_inner_folds):
             print(f"{'-' * 50}")
-            print(f"Training Inner Cross-Validation Fold {fold + 1}/{cv_inner_folds}")
+            print(f"Training Inner Cross-Validation Fold {fold + 1}/{total_inner_folds} (Repeat {fold // cv_inner_folds_splits + 1}/{cv_inner_folds_repeats}, Split {fold % cv_inner_folds_splits + 1}/{cv_inner_folds_splits})")
             print(f"{'-' * 50}\n")
             
             # Log start of inner fold training
@@ -172,7 +174,7 @@ def run_3d_pipeline(
                 inner_fold=fold + 1,        # Convert to 1-based indexing (Python uses 0-based, we need 1-based)
                 status="in_progress",       # Mark as currently running
                 epoch=0,                    # Starting at epoch 0
-                total_inner_folds=cv_inner_folds   # Total number of inner folds for progress calculation
+                total_inner_folds=total_inner_folds   # Total number of inner folds for progress calculation
             )
 
             # Create fold-specific directory
@@ -191,7 +193,8 @@ def run_3d_pipeline(
                 dataset_name=experimental_setting.data.dataset,
                 data=dataset["train_val_images"],
                 labels=dataset["train_val_labels"],
-                cv_inner_folds=cv_inner_folds,
+                cv_inner_folds_splits=cv_inner_folds_splits,
+                cv_inner_folds_repeats=cv_inner_folds_repeats,
                 batch_size=hyperparameters.get(
                     "batch_size",
                     getattr(experimental_setting.training, "batch_size", 1)
@@ -339,7 +342,7 @@ def run_3d_pipeline(
                         inner_fold=fold + 1,
                         status="in_progress",           # Still running
                         epoch=training_epochs + 1,      # Current epoch (1-based for display)
-                        total_inner_folds=cv_inner_folds       # Total for progress calculation
+                        total_inner_folds=total_inner_folds       # Total for progress calculation
                     )
 
                 # Training phase
@@ -610,7 +613,7 @@ def run_3d_pipeline(
                 inner_fold_logger.update_inner_fold_progress(
                     inner_fold=fold + 1,
                     status="completed",         # Mark as finished
-                    total_inner_folds=cv_inner_folds   # Total for progress calculation
+                    total_inner_folds=total_inner_folds   # Total for progress calculation
                 )
         
             print("\nTraining completed!\n")
