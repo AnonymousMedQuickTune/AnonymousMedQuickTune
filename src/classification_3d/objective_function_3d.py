@@ -296,6 +296,7 @@ def run_3d_pipeline(
             # Initialize early stopping variables
             best_metric = float('-inf')  # Track best validation metric (higher is better)
             best_loss = float('inf')  # Track best validation loss (lower is better)
+            best_val_metrics = None  # Store all metrics from the best model (for consistency with test evaluation)
             patience_counter = 0
             patience = experimental_setting.training.patience
             early_stopping_enabled = experimental_setting.training.early_stopping
@@ -439,6 +440,7 @@ def run_3d_pipeline(
                         current_loss = val_metrics["loss"]
                         if current_loss < best_loss:
                             best_loss = current_loss
+                            best_val_metrics = val_metrics.copy()  # Store all metrics from best model
                             patience_counter = 0
                             improved = True
                             # Save best model checkpoint
@@ -461,6 +463,7 @@ def run_3d_pipeline(
                         current_metric = val_metrics[experimental_setting.metric]
                         if current_metric > best_metric:
                             best_metric = current_metric
+                            best_val_metrics = val_metrics.copy()  # Store all metrics from best model
                             patience_counter = 0
                             improved = True
                             # Save best model checkpoint
@@ -586,17 +589,32 @@ def run_3d_pipeline(
                 adjust_learning_rate(scheduler)
 
             # Store final metrics for all folds (after training is completed, whether by early stopping or normal completion)
+            # IMPORTANT: For consistency with test evaluation, use metrics from best model if early stopping is enabled
+            # Otherwise, use metrics from the last epoch
             if val_metrics is not None:
                 # Use validation metrics if available
-                all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"] * 100)
+                if early_stopping_enabled and best_val_metrics is not None:
+                    # Use metrics from best model (consistent with test evaluation which loads best_model_checkpoint.pth)
+                    final_val_metrics = best_val_metrics
+                    print(f"Using metrics from best model (for consistency with test evaluation)")
+                elif early_stopping_enabled and best_val_metrics is None:
+                    # Edge case: Early stopping enabled but no improvement was ever recorded
+                    # This should not happen in normal circumstances, but use last epoch metrics as fallback
+                    print(f"Warning: Early stopping enabled but best_val_metrics is None. Using last epoch metrics.")
+                    final_val_metrics = val_metrics
+                else:
+                    # Use metrics from last epoch (no early stopping)
+                    final_val_metrics = val_metrics
+                
+                all_folds_final_metrics["accuracy"].append(final_val_metrics["accuracy"] * 100)
                 all_folds_final_metrics["precision"].append(
-                    np.mean(val_metrics["precision"]) * 100
+                    np.mean(final_val_metrics["precision"]) * 100
                 )
                 all_folds_final_metrics["recall"].append(
-                    np.mean(val_metrics["recall"]) * 100
+                    np.mean(final_val_metrics["recall"]) * 100
                 )
-                all_folds_final_metrics["f1"].append(np.mean(val_metrics["f1"]) * 100)
-                all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
+                all_folds_final_metrics["f1"].append(np.mean(final_val_metrics["f1"]) * 100)
+                all_folds_final_metrics["auc"].append(np.mean(final_val_metrics["auc"]) * 100)
             else:
                 # Use training metrics when no validation is available
                 all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"] * 100)
