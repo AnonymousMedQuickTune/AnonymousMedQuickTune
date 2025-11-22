@@ -641,6 +641,27 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
     # > For MedMNIST: Always CT-like (always needs normalization)
     is_mri = normalization_stats is None
     if not is_mri:
+        # CRITICAL FIX: Clip intensities to percentiles BEFORE normalization
+        # This ensures consistency between training (where stats were calculated from clipped data)
+        # and validation/test (where we apply the same clipping before normalization)
+        percentiles = normalization_stats.get("percentiles")
+        if percentiles is not None:
+            lower_perc = float(percentiles[0]) if isinstance(percentiles, (list, np.ndarray)) else float(percentiles)
+            upper_perc = float(percentiles[1]) if isinstance(percentiles, (list, np.ndarray)) and len(percentiles) > 1 else float(percentiles)
+            
+            # Clip intensities to the same percentiles used during training
+            def clip_intensities(img):
+                if isinstance(img, torch.Tensor):
+                    return torch.clamp(img, min=lower_perc, max=upper_perc)
+                else:
+                    return np.clip(img, lower_perc, upper_perc)
+            
+            transforms.append(
+                Lambdad(keys="image", func=clip_intensities)
+            )
+            print(f"Applying intensity clipping to [{lower_perc:.2f}, {upper_perc:.2f}] before normalization")
+        
+        # Apply Z-score normalization after clipping
         transforms.append(
             NormalizeIntensityd(keys="image", subtrahend=normalization_stats["mean"][0], divisor=normalization_stats["std"][0])
         )
@@ -847,11 +868,18 @@ def get_kfold_dataloaders(
             # The training data is dependent on the cross-validation fold.
             # Works for both WORC (file paths) and MedMNIST (numpy arrays)
             stats = calculate_normalization_stats(train_data)  
-            normalization_stats = {"mean": stats["mean"], "std": stats["std"]}
+            normalization_stats = {
+                "mean": stats["mean"], 
+                "std": stats["std"],
+                "percentiles": stats.get("percentiles", None)  # Include percentiles for clipping
+            }
             stats_source = "Calculated from training data"
         else:
             # Normalization stats provided by NePS (AutoNorm)
+            # For AutoNorm, we don't have percentiles, so we'll use None (no clipping)
             print(f"Normalization stats provided by NePS (AutoNorm): {normalization_stats}")
+            if "percentiles" not in normalization_stats:
+                normalization_stats["percentiles"] = None
             stats_source = "AutoNorm (NePS)"
         
         # Save normalization stats to a file in the directory of the inner CV fold
@@ -865,6 +893,14 @@ def get_kfold_dataloaders(
                 std_val = float(normalization_stats['std'][0]) if isinstance(normalization_stats['std'], (list, np.ndarray)) else float(normalization_stats['std'])
                 f.write(f"Mean: [{mean_val}]\n")
                 f.write(f"Std:  [{std_val}]\n")
+                # Save percentiles if available
+                if normalization_stats.get("percentiles") is not None:
+                    percentiles = normalization_stats["percentiles"]
+                    lower_perc = float(percentiles[0]) if isinstance(percentiles, (list, np.ndarray)) else float(percentiles)
+                    upper_perc = float(percentiles[1]) if isinstance(percentiles, (list, np.ndarray)) and len(percentiles) > 1 else float(percentiles)
+                    f.write(f"Percentiles (for clipping): [{lower_perc}, {upper_perc}]\n")
+                else:
+                    f.write(f"Percentiles (for clipping): None (no clipping)\n")
                 f.write(f"\nSource: {stats_source}\n")
             print(f"Normalization stats saved to: {normalization_stats_file}")
     elif dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets

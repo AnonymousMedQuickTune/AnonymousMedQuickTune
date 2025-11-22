@@ -101,6 +101,12 @@ def calculate_normalization_stats(train_data, is_rgb=False):
     std_value = float(np.std(clipped_intensities))
     
     print(f"CT normalization stats: mean={mean_value:.6f}, std={std_value:.6f}\n")
+    print(f"CT percentile clipping: [{lower_percentile:.2f}, {upper_percentile:.2f}]\n")
     
     # Return in the expected format (list format for compatibility)
-    return {"mean": [mean_value], "std": [std_value]}
+    # Include percentiles so they can be applied to validation and test data
+    return {
+        "mean": [mean_value], 
+        "std": [std_value],
+        "percentiles": [lower_percentile, upper_percentile]  # [lower, upper] percentiles for clipping
+    }

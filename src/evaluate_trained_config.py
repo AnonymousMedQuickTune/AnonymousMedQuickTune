@@ -45,6 +45,9 @@ def load_normalization_stats_from_fold(pipeline_directory, fold_idx):
         mean_match = re.search(r"Mean:\s*\[([^\]]+)\]", content)
         std_match = re.search(r"Std:\s*\[([^\]]+)\]", content)
         
+        # Parse percentiles if available (format: "Percentiles (for clipping): [lower, upper]" or "Percentiles (for clipping): None")
+        percentiles_match = re.search(r"Percentiles \(for clipping\):\s*(?:\[([^\]]+)\]|None)", content)
+        
         if mean_match and std_match:
             # Extract the numeric values and convert to float
             mean_value = float(mean_match.group(1))
@@ -54,6 +57,21 @@ def load_normalization_stats_from_fold(pipeline_directory, fold_idx):
                 "mean": [mean_value],
                 "std": [std_value]
             }
+            
+            # Parse percentiles if available
+            if percentiles_match:
+                if percentiles_match.group(1) is None:
+                    # No percentiles (e.g., from AutoNorm) - matched "None"
+                    normalization_stats["percentiles"] = None
+                else:
+                    # Parse percentile values: "[lower, upper]" format
+                    perc_str = percentiles_match.group(1)
+                    perc_values = [float(x.strip()) for x in perc_str.split(",")]
+                    normalization_stats["percentiles"] = perc_values
+                    print(f"Loaded percentiles for clipping: [{perc_values[0]:.2f}, {perc_values[1]:.2f}]")
+            else:
+                # No percentiles line found (backward compatibility with old files)
+                normalization_stats["percentiles"] = None
             
             print(f"\nLoaded normalization stats for fold {fold_idx}: mean={mean_value:.6e}, std={std_value:.6e}")
             return normalization_stats
