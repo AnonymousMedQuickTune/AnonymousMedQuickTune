@@ -851,11 +851,48 @@ def get_kfold_dataloaders(
         # Note: cv_inner_folds parameter is kept for backward compatibility but represents cv_inner_folds_splits
         kfold = RepeatedStratifiedKFold(n_repeats=cv_inner_folds_repeats, n_splits=cv_inner_folds_splits, random_state=seed)
 
-        # Get indices for current fold
+        # Generate all splits and save them for later use (e.g., ensemble validation evaluation)
+        # This ensures that the same splits are used during training and evaluation
         indices = np.arange(len(data))
-        for i, (train_idx, val_idx) in enumerate(kfold.split(indices, labels)):
-            if i == fold_idx:
-                break
+        total_folds = cv_inner_folds_repeats * cv_inner_folds_splits
+        
+        # Check if splits file already exists (to avoid regenerating for each fold)
+        if fold_directory is not None:
+            # Get pipeline directory (parent of fold directory)
+            pipeline_directory = os.path.dirname(fold_directory)
+            splits_file = os.path.join(pipeline_directory, "inner_cv_splits.pkl")
+            
+            if not os.path.exists(splits_file):
+                # Generate all splits
+                all_splits = []
+                for train_idx, val_idx in kfold.split(indices, labels):
+                    all_splits.append((train_idx, val_idx))
+                
+                # Save splits to file
+                splits_data = {
+                    "splits": all_splits,
+                    "n_repeats": cv_inner_folds_repeats,
+                    "n_splits": cv_inner_folds_splits,
+                    "seed": seed,
+                    "total_samples": len(data),
+                    "total_folds": total_folds
+                }
+                with open(splits_file, "wb") as f:
+                    pickle.dump(splits_data, f)
+                print(f"Inner CV splits saved to: {splits_file}")
+            else:
+                # Load existing splits
+                with open(splits_file, "rb") as f:
+                    splits_data = pickle.load(f)
+                all_splits = splits_data["splits"]
+        else:
+            # If no fold_directory provided, generate splits on the fly (backward compatibility)
+            all_splits = []
+            for train_idx, val_idx in kfold.split(indices, labels):
+                all_splits.append((train_idx, val_idx))
+
+        # Get indices for current fold
+        train_idx, val_idx = all_splits[fold_idx]
         
         # Combine images and labels into a list of dictionaries
         # For MedMNIST, data contains numpy arrays; for WORC, data contains file paths

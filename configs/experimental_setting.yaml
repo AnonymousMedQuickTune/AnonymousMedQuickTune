@@ -18,6 +18,15 @@ cv_outer_folds_splits: 3    # Number of splits per repetition for outer folds fo
 cv_outer_folds_repeats: 5   # Number of repetitions for repeated stratified K-fold for outer folds for cross-validation: train_val/test splits (set to 1 for standard StratifiedKFold behavior)
 cv_inner_folds_splits: 5           # Number of splits per repetition for inner folds for cross-validation: train/val splits
 cv_inner_folds_repeats: 1   # Number of repetitions for repeated stratified K-fold for inner folds for cross-validation: train/val splits (set to 1 for standard StratifiedKFold behavior)
+validation_evaluation: mean  # Options: 'mean' (average of per-fold metrics) or 'ensemble' (ensemble predictions, only works with cv_inner_folds_repeats > 1)
+                              # Note: With early_stopping=True, early stopping decisions are ALWAYS based on per-fold metrics/loss
+                              #       (both use_loss_threshold=True and use_loss_threshold=False use per-fold decisions).
+                              #       Final ensemble evaluation uses best_model_checkpoint.pth from each fold.
+                              #       This works for all scenarios but creates a slight inconsistency:
+                              #       - early_stopping=False: Uses model_latest_checkpoint.pth (end-of-training models)
+                              #       - early_stopping=True + use_loss_threshold=True: Uses best_model_checkpoint.pth (best loss per fold)
+                              #       - early_stopping=True + use_loss_threshold=False: Uses best_model_checkpoint.pth (best metric per fold)
+                              #       For true ensemble-based early stopping, ensemble evaluation would need to run every epoch (very expensive!)
 
 #------------------------------------------------------------------------------
 # Training Configuration

@@ -31,6 +31,7 @@ from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.utils.experiment_status_logger import InnerFoldProgressLogger
 
 from src.classification_3d.utils.dataset_info import extract_spatial_size
+from src.evaluate_trained_config import evaluate_config_on_validation_set_ensemble
 
 def run_3d_pipeline(
     pipeline_directory,
@@ -680,6 +681,66 @@ def run_3d_pipeline(
     
     # Close TensorBoard writer
     writer.close()
+
+    # --------------------------------------------------------------------------------------------
+
+    # VALIDATION EVALUATION: Choose between ensemble and mean based on configuration
+    # --------------------------------------------------------------------------------------------
+    # Note on early stopping compatibility:
+    # - early_stopping=False: Uses model_latest_checkpoint.pth (end-of-training models)
+    # - early_stopping=True + use_loss_threshold=True: Uses best_model_checkpoint.pth (best loss per fold)
+    # - early_stopping=True + use_loss_threshold=False: Uses best_model_checkpoint.pth (best metric per fold)
+    # 
+    # Important: Early stopping decisions are ALWAYS based on per-fold metrics/loss, not ensemble metrics.
+    # This applies to BOTH use_loss_threshold=True (per-fold loss) and use_loss_threshold=False (per-fold metric).
+    # The ensemble evaluation uses the best checkpoints from each fold (determined by per-fold early stopping).
+    # This works correctly but creates a slight inconsistency: early stopping uses per-fold metrics/loss,
+    # while final evaluation uses ensemble metrics. For true ensemble-based early stopping,
+    # ensemble evaluation would need to run every epoch (very expensive!).
+    # --------------------------------------------------------------------------------------------
+    validation_evaluation = getattr(experimental_setting, "validation_evaluation", "mean")
+    use_ensemble_validation = (
+        validation_evaluation == "ensemble" and 
+        cv_inner_folds_repeats > 1
+    )
+    
+    if use_ensemble_validation:
+        print(f"\n{'='*80}")
+        print(f"USING ENSEMBLE VALIDATION EVALUATION")
+        print(f"validation_evaluation={validation_evaluation}, cv_inner_folds_repeats={cv_inner_folds_repeats}")
+        print(f"{'='*80}\n")
+        
+        # Calculate ensemble validation metrics
+        # This uses best_model_checkpoint.pth (if early_stopping=True) or model_latest_checkpoint.pth (if early_stopping=False)
+        # from each fold, as determined by evaluate_fold() in evaluate_trained_config.py
+        ensemble_val_metrics = evaluate_config_on_validation_set_ensemble(
+            pipeline_directory=pipeline_directory,
+            experimental_setting=experimental_setting,
+            dataset=dataset,
+            spatial_size=spatial_size,
+            num_classes=num_classes,
+            hyperparameters=hyperparameters,
+            cv_inner_folds_splits=cv_inner_folds_splits,
+            cv_inner_folds_repeats=cv_inner_folds_repeats,
+            total_inner_folds=total_inner_folds,
+            seed=experimental_setting.seed,
+            framework="neps"
+        )
+        
+        # Update all_folds_final_metrics with ensemble validation metrics
+        all_folds_final_metrics["accuracy"] = [ensemble_val_metrics["accuracy"]]
+        all_folds_final_metrics["precision"] = [ensemble_val_metrics["precision"]]
+        all_folds_final_metrics["recall"] = [ensemble_val_metrics["recall"]]
+        all_folds_final_metrics["f1"] = [ensemble_val_metrics["f1"]]
+        all_folds_final_metrics["auc"] = [ensemble_val_metrics["auc"]]
+        
+        print(f"\nEnsemble validation metrics stored in all_folds_final_metrics")
+    else:
+        print(f"\n{'='*80}")
+        print(f"USING MEAN VALIDATION EVALUATION")
+        print(f"validation_evaluation={validation_evaluation}, cv_inner_folds_repeats={cv_inner_folds_repeats}")
+        print(f"(Using average of per-fold validation metrics)")
+        print(f"{'='*80}\n")
 
     # --------------------------------------------------------------------------------------------
 

@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import re
 import json
+import pickle
 from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
@@ -16,6 +17,7 @@ from src.classification_3d.utils.dataset_info import extract_spatial_size
 from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
+from sklearn.model_selection import RepeatedStratifiedKFold
 from monai.data import Dataset
 
 def load_normalization_stats_from_fold(pipeline_directory, fold_idx):
@@ -425,6 +427,257 @@ def evaluate_fold(fold, test_loader, model, experimental_setting, hyperparameter
             fold_targets.extend(targets.cpu().numpy())
     
     return fold_probabilities, fold_targets
+
+# TODO @Diane: double-check this function
+def evaluate_config_on_validation_set_ensemble(
+    pipeline_directory,
+    experimental_setting,
+    dataset,
+    spatial_size,
+    num_classes,
+    hyperparameters,
+    cv_inner_folds_splits,
+    cv_inner_folds_repeats,
+    total_inner_folds,
+    seed,
+    framework="neps"
+):
+    """
+    Evaluate a trained configuration on the validation set using ensemble predictions.
+    
+    This function implements cross-validation ensemble learning for validation data where:
+    1. For each sample, only models that did NOT train on that sample are used
+    2. Softmax probabilities are averaged across these models (not hard predictions!)
+    3. Final predictions are derived from averaged probabilities
+    4. Comprehensive metrics are calculated
+    
+    This is methodologically correct: each model only evaluates samples it hasn't seen during training.
+    
+    Args:
+        pipeline_directory (str): Directory containing the trained model checkpoints
+        experimental_setting (DictConfig): Hydra configuration object with experiment settings
+        dataset (dict): Dictionary containing train_val_images and train_val_labels (already selected based on voxel_calculation)
+        spatial_size (tuple): Spatial size tuple for model initialization (already calculated)
+        num_classes (int): Number of classes in the classification task
+        hyperparameters (dict): Hyperparameters used for training the model
+        cv_inner_folds_splits (int): Number of splits per repetition
+        cv_inner_folds_repeats (int): Number of repetitions
+        total_inner_folds (int): Total number of folds (repeats * splits)
+        seed (int): Random seed used for generating splits
+        framework (str): Framework being used ("neps" or "quicktune")
+    
+    Returns:
+        dict: Comprehensive validation ensemble metrics dictionary containing:
+            - accuracy: Overall classification accuracy
+            - auc: AUC score
+            - precision: Precision (macro-averaged)
+            - recall: Recall (macro-averaged)
+            - f1: F1-score (macro-averaged)
+    """
+    print(f"\n{'='*80}")
+    print(f"EVALUATING CONFIG ON VALIDATION SET (ENSEMBLE)")
+    print(f"{'='*80}\n")
+    
+    # Set seed for reproducibility
+    set_seed(experimental_setting.seed)
+    
+    # Load validation data (train_val_images and train_val_labels)
+    if experimental_setting.data.dimensionality.lower() != "3d":
+        raise NotImplementedError("2D evaluation is not supported for validation ensemble yet.")
+    
+    # MODEL INITIALIZATION
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    if framework == "quicktune":
+        model_type = hyperparameters["model"]
+    elif framework == "neps":
+        model_type = experimental_setting.model.type
+    else:
+        raise ValueError(f"Unsupported framework: {framework}")
+    
+    # Initialize model and move it to the appropriate device
+    model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
+    model = get_3d_model(
+        model_config=model_config,
+        hyperparameters=hyperparameters,
+        developer_mode=experimental_setting.developer_mode,
+        spatial_size=spatial_size,
+        is_medmnist=dataset.get("is_medmnist", False)
+    ).to(device)
+    
+    # STEP 1: Load fold splits that were saved during training
+    print("Loading fold splits from training...")
+    train_val_images = dataset["train_val_images"]
+    train_val_labels = np.array(dataset["train_val_labels"])
+    
+    # Load splits from file (saved during training in get_kfold_dataloaders)
+    splits_file = os.path.join(pipeline_directory, "inner_cv_splits.pkl")
+    
+    if not os.path.exists(splits_file):
+        raise FileNotFoundError(
+            f"Inner CV splits file not found at {splits_file}. "
+            "This file should be created during training. Please ensure training has completed at least one fold."
+        )
+    
+    with open(splits_file, "rb") as f:
+        splits_data = pickle.load(f)
+    
+    all_splits = splits_data["splits"]
+    print(f"Loaded {len(all_splits)} fold splits from training")
+    print(f"Split parameters: n_repeats={splits_data['n_repeats']}, n_splits={splits_data['n_splits']}, seed={splits_data['seed']}")
+    
+    # Verify that the number of samples matches
+    if splits_data["total_samples"] != len(train_val_images):
+        raise ValueError(
+            f"Mismatch in number of samples: splits file has {splits_data['total_samples']} samples, "
+            f"but dataset has {len(train_val_images)} samples. This might indicate a different dataset or data preprocessing."
+        )
+    
+    # Store which samples are in which validation sets
+    sample_to_val_folds = {}  # sample_idx -> list of fold indices where this sample is in validation set
+    sample_to_train_folds = {}  # sample_idx -> list of fold indices where this sample is in training set
+    
+    for fold_idx, (train_idx, val_idx) in enumerate(all_splits):
+        # Mark which samples are in validation set for this fold
+        for val_sample_idx in val_idx:
+            if val_sample_idx not in sample_to_val_folds:
+                sample_to_val_folds[val_sample_idx] = []
+            sample_to_val_folds[val_sample_idx].append(fold_idx)
+        
+        # Mark which samples are in training set for this fold
+        for train_sample_idx in train_idx:
+            if train_sample_idx not in sample_to_train_folds:
+                sample_to_train_folds[train_sample_idx] = []
+            sample_to_train_folds[train_sample_idx].append(fold_idx)
+    
+    print(f"Samples in validation sets: {len(sample_to_val_folds)}")
+    
+    # STEP 2: Evaluate each fold's model on samples it didn't train on
+    # For each sample, collect probabilities from models that didn't train on it
+    all_sample_probabilities = {}  # sample_idx -> list of probability arrays from different models
+    all_sample_targets = {}  # sample_idx -> target label
+    
+    # Prepare data for evaluation
+    val_data = [{"index": idx, "image": img, "label": label} 
+                for idx, (img, label) in enumerate(zip(train_val_images, train_val_labels))]
+    
+    for fold in range(total_inner_folds):
+        print(f"\n=== Evaluating Fold {fold + 1}/{total_inner_folds} ===")
+        
+        # Load normalization stats from this fold
+        normalization_stats = load_normalization_stats_from_fold(pipeline_directory, fold)
+        if normalization_stats is None:
+            print(f"Warning: Normalization stats not found for fold {fold}, skipping...")
+            continue
+        
+        # Create dataset with transforms
+        val_dataset = Dataset(
+            val_data, 
+            transform=DataTransform(
+                normalization_stats, 
+                developer_mode=experimental_setting.developer_mode, 
+                spatial_size=spatial_size, 
+                is_training=False, 
+                is_medmnist=dataset.get("is_medmnist", False), 
+                augmentation_type=experimental_setting.data.augmentation_type
+            )
+        )
+        
+        # Create data loader
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=hyperparameters.get(
+                "batch_size",
+                getattr(experimental_setting.training, "batch_size", 1)
+            ),
+            shuffle=False,
+            num_workers=experimental_setting.data.num_workers,
+        )
+        
+        # Evaluate this fold's model
+        fold_probabilities, fold_targets = evaluate_fold(
+            fold, val_loader, model, experimental_setting, hyperparameters, pipeline_directory
+        )
+        
+        if fold_probabilities is None or fold_targets is None:
+            print(f"Warning: Could not evaluate fold {fold}, skipping...")
+            continue
+        
+        # For each sample, if this model didn't train on it, add its probabilities
+        for sample_idx, (prob, target) in enumerate(zip(fold_probabilities, fold_targets)):
+            # Check if this model trained on this sample
+            if sample_idx in sample_to_train_folds and fold in sample_to_train_folds[sample_idx]:
+                # This model trained on this sample, skip it
+                continue
+            
+            # This model didn't train on this sample, use its prediction
+            if sample_idx not in all_sample_probabilities:
+                all_sample_probabilities[sample_idx] = []
+                all_sample_targets[sample_idx] = target
+            
+            all_sample_probabilities[sample_idx].append(prob)
+    
+    # STEP 3: Average probabilities for each sample and calculate metrics
+    print(f"\n=== Calculating Ensemble Metrics ===")
+    print(f"Total samples with predictions: {len(all_sample_probabilities)}")
+    print(f"Total samples in dataset: {len(train_val_images)}")
+    
+    # Check if we have predictions for all samples
+    samples_without_predictions = set(range(len(train_val_images))) - set(all_sample_probabilities.keys())
+    if samples_without_predictions:
+        print(f"Warning: {len(samples_without_predictions)} samples have no predictions (not in any validation set)")
+    
+    # Collect ensemble probabilities and targets
+    ensemble_probabilities = []
+    ensemble_targets = []
+    
+    for sample_idx in sorted(all_sample_probabilities.keys()):
+        sample_probs = all_sample_probabilities[sample_idx]
+        if len(sample_probs) == 0:
+            print(f"Warning: Sample {sample_idx} has empty probability list, skipping...")
+            continue
+        
+        # Average probabilities across models that didn't train on this sample
+        # Convert list of arrays to numpy array first, then average over models (axis=0)
+        # sample_probs is a list of arrays, each with shape (num_classes,)
+        # After stacking: shape (num_models, num_classes)
+        # After mean(axis=0): shape (num_classes,)
+        avg_probs = np.mean(np.array(sample_probs), axis=0)
+        ensemble_probabilities.append(avg_probs)
+        ensemble_targets.append(all_sample_targets[sample_idx])
+    
+    if len(ensemble_probabilities) == 0:
+        raise ValueError("No valid ensemble predictions found. All samples were skipped or had empty probability lists.")
+    
+    ensemble_probabilities = np.array(ensemble_probabilities)
+    ensemble_targets = np.array(ensemble_targets)
+    
+    print(f"Ensemble predictions shape: {ensemble_probabilities.shape}")
+    print(f"Number of models per sample: {[len(all_sample_probabilities[idx]) for idx in sorted(all_sample_probabilities.keys())[:5]]}...")
+    
+    # Calculate metrics
+    ensemble_metrics = calculate_metrics_from_probabilities(
+        ensemble_probabilities, ensemble_targets, num_classes
+    )
+    
+    # Convert to format expected by objective_function_3d
+    result = {
+        "accuracy": ensemble_metrics["accuracy"],
+        "auc": ensemble_metrics["auc_macro"],  # Use macro-averaged AUC
+        "precision": ensemble_metrics["precision_macro"],
+        "recall": ensemble_metrics["recall_macro"],
+        "f1": ensemble_metrics["f1_macro"],
+    }
+    
+    print(f"\n=== Validation Ensemble Results ===")
+    print(f"Accuracy: {result['accuracy']:.2f}%")
+    print(f"AUC: {result['auc']:.2f}%")
+    print(f"Precision: {result['precision']:.2f}%")
+    print(f"Recall: {result['recall']:.2f}%")
+    print(f"F1: {result['f1']:.2f}%")
+    print(f"{'='*80}\n")
+    
+    return result
 
 def evaluate_config_on_test_set(
     pipeline_directory,
