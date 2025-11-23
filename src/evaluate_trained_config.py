@@ -551,6 +551,7 @@ def evaluate_config_on_validation_set_ensemble(
             sample_to_train_folds[train_sample_idx].append(fold_idx)
     
     print(f"Samples in validation sets: {len(sample_to_val_folds)}")
+    print(f"Samples in training sets: {len(sample_to_train_folds)}")
     
     # STEP 2: Evaluate each fold's model on samples it didn't train on
     # For each sample, collect probabilities from models that didn't train on it
@@ -566,9 +567,20 @@ def evaluate_config_on_validation_set_ensemble(
         
         # Load normalization stats from this fold
         normalization_stats = load_normalization_stats_from_fold(pipeline_directory, fold)
+        
+        # For MRI datasets (lipo, desmoid, liver), normalization_stats is None because
+        # normalization is done per image/patient in preprocessing. This is expected.
+        # For CT datasets, normalization_stats should be available from the saved file.
+        dataset_name = experimental_setting.data.dataset.lower()
+        is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver"]
+        
         if normalization_stats is None:
-            print(f"Warning: Normalization stats not found for fold {fold}, skipping...")
-            continue
+            if is_mri_dataset:
+                print(f"Note: No normalization stats file found for fold {fold} (expected for MRI datasets)")
+                # normalization_stats remains None, which is correct for MRI datasets
+            else:
+                print(f"Warning: Normalization stats not found for fold {fold} (CT dataset), skipping...")
+                continue
         
         # Create dataset with transforms
         val_dataset = Dataset(
@@ -604,8 +616,18 @@ def evaluate_config_on_validation_set_ensemble(
             continue
         
         # For each sample, if this model didn't train on it, add its probabilities
+        # CRITICAL: sample_idx here is the position in val_data (0, 1, 2, ...), which corresponds
+        # to the index in train_val_images. This matches the indices used in sample_to_train_folds
+        # which are also based on the position in train_val_images.
         for sample_idx, (prob, target) in enumerate(zip(fold_probabilities, fold_targets)):
+            # Verify: sample_idx should be in range [0, len(train_val_images))
+            if sample_idx >= len(train_val_images):
+                print(f"Warning: sample_idx {sample_idx} >= len(train_val_images) {len(train_val_images)}, skipping...")
+                continue
+            
             # Check if this model trained on this sample
+            # IMPORTANT: A sample can be in BOTH train and val sets across different folds
+            # We need to check if this specific fold trained on this sample
             if sample_idx in sample_to_train_folds and fold in sample_to_train_folds[sample_idx]:
                 # This model trained on this sample, skip it
                 continue
@@ -653,7 +675,30 @@ def evaluate_config_on_validation_set_ensemble(
     ensemble_targets = np.array(ensemble_targets)
     
     print(f"Ensemble predictions shape: {ensemble_probabilities.shape}")
-    print(f"Number of models per sample: {[len(all_sample_probabilities[idx]) for idx in sorted(all_sample_probabilities.keys())[:5]]}...")
+    print(f"Number of models per sample (first 10): {[len(all_sample_probabilities[idx]) for idx in sorted(all_sample_probabilities.keys())[:10]]}")
+    
+    # Debug: Check distribution of number of models per sample
+    models_per_sample = [len(all_sample_probabilities[idx]) for idx in all_sample_probabilities.keys()]
+    print(f"Models per sample stats: min={min(models_per_sample)}, max={max(models_per_sample)}, mean={np.mean(models_per_sample):.2f}")
+    
+    # Debug: Check if samples in validation sets have correct number of models
+    # For RepeatedStratifiedKFold with n_repeats=R, n_splits=K:
+    # - Each sample is in exactly R validation sets (once per repeat)
+    # - Each sample is in (K-1)*R training sets
+    # - Each sample should be evaluated by R models (those folds where it's in validation set, 
+    #   which are the folds that didn't train on it)
+    expected_models_per_sample = cv_inner_folds_repeats
+    print(f"Expected models per sample: {expected_models_per_sample} (splits={cv_inner_folds_splits}, repeats={cv_inner_folds_repeats}, total_folds={total_inner_folds})")
+    
+    # Debug: Verify for a few samples
+    print(f"\n=== Debug: Sample-to-Fold Mapping (first 5 samples) ===")
+    for sample_idx in range(min(5, len(train_val_images))):
+        val_folds = sample_to_val_folds.get(sample_idx, [])
+        train_folds = sample_to_train_folds.get(sample_idx, [])
+        models_used = len(all_sample_probabilities.get(sample_idx, []))
+        print(f"Sample {sample_idx}: in val_folds={val_folds} ({len(val_folds)}), in train_folds={train_folds} ({len(train_folds)}), models_used={models_used}, expected={expected_models_per_sample}")
+        if models_used != expected_models_per_sample:
+            print(f"  ⚠️  WARNING: Sample {sample_idx} has {models_used} models, expected {expected_models_per_sample}")
     
     # Calculate metrics
     ensemble_metrics = calculate_metrics_from_probabilities(
@@ -815,7 +860,20 @@ def evaluate_config_on_test_set(
         for fold in range(total_inner_folds):
             # Load normalization stats from the inner fold's normalization_stats.txt file
             normalization_stats = load_normalization_stats_from_fold(pipeline_directory, fold)
-            print(f"Normalization stats: {normalization_stats}")
+            
+            # For MRI datasets (lipo, desmoid, liver), normalization_stats is None because
+            # normalization is done per image/patient in preprocessing. This is expected.
+            dataset_name = experimental_setting.data.dataset.lower()
+            is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver"]
+            
+            if normalization_stats is None:
+                if is_mri_dataset:
+                    print(f"Note: No normalization stats file found for fold {fold} (expected for MRI datasets)")
+                else:
+                    print(f"Warning: Normalization stats not found for fold {fold} (CT dataset), skipping...")
+                    continue
+            else:
+                print(f"Normalization stats: {normalization_stats}")
 
             # Create test dataset with transforms (no augmentation for evaluation)
             test_dataset = Dataset(
