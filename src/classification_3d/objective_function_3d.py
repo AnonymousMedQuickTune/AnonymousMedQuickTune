@@ -68,10 +68,22 @@ def run_3d_pipeline(
                 - all_folds_final_metrics (dict): Dictionary containing the mean value for each
                   metric across all folds
     """
-    # Set seed for pipeline reproducibility
-    set_seed(
-        experimental_setting.seed
-    )  # For more details on the experimental_setting: pls see configs/main_experiment.yaml
+    # Extract CV fold from pipeline directory path to use fold-specific seed
+    # This ensures inner CV splits are consistent for the same outer fold across different experiments
+    pipeline_dir_str = str(pipeline_directory)
+    cv_outer_fold = 0  # Default to 0 if not found in path
+    if "cv_outer_fold_" in pipeline_dir_str:
+        try:
+            cv_outer_fold = int(pipeline_dir_str.split("cv_outer_fold_")[-1].split("/")[0])
+        except (ValueError, IndexError):
+            cv_outer_fold = 0
+    
+    # Calculate fold-specific seed (same as in run_pipeline)
+    # This ensures reproducibility: same outer fold = same seed = same inner CV splits
+    fold_specific_seed = experimental_setting.seed + cv_outer_fold
+    
+    # Set seed for pipeline reproducibility (fold-specific)
+    set_seed(fold_specific_seed)
 
     # Set device (GPU/CPU) for training
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -132,20 +144,6 @@ def run_3d_pipeline(
         is_medmnist=dataset.get("is_medmnist", False)
     )
 
-    # Initialize model and move it to the appropriate device
-    # Use the model type determined above (either from QuickTune or NePS)
-    model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
-    model = get_3d_model(
-        model_config=model_config,
-        hyperparameters=hyperparameters,
-        developer_mode=experimental_setting.developer_mode,
-        spatial_size=spatial_size,
-        is_medmnist=dataset.get("is_medmnist", False),
-        run_mode=experimental_setting.run_mode
-    ).to(device)
-
-    print(f"\nModel initialized: {model_type}\n")
-
     # Calculate total number of inner folds (repeats * splits)
     cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
     cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
@@ -161,6 +159,9 @@ def run_3d_pipeline(
     # This logger tracks progress of individual inner folds within each outer fold
     # It automatically extracts the outer fold number and base directory from the pipeline path
     inner_fold_logger = InnerFoldProgressLogger(pipeline_directory)
+    
+    # Prepare model config (will be reused for each fold)
+    model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
     
     # Run k-fold cross validation (using RepeatedStratifiedKFold if repeats > 1)
     try:
@@ -178,6 +179,13 @@ def run_3d_pipeline(
                 total_inner_folds=total_inner_folds   # Total number of inner folds for progress calculation
             )
 
+            # CRITICAL: Set seed before each inner fold to ensure reproducibility
+            # Use a combination of outer fold and inner fold to create a unique but deterministic seed
+            # This ensures: same outer fold + same inner fold = same seed = same model init + same training
+            inner_fold_seed = fold_specific_seed + fold
+            set_seed(inner_fold_seed)
+            print(f"Setting inner fold seed: {inner_fold_seed} (base: {experimental_setting.seed}, outer_fold: {cv_outer_fold}, inner_fold: {fold})")
+
             # Create fold-specific directory
             fold_directory = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
             os.makedirs(fold_directory, exist_ok=True)
@@ -186,11 +194,23 @@ def run_3d_pipeline(
             logging_dir = os.path.join(fold_directory, "logging")
             log_files = initialize_logging_files(logging_dir)
 
-            # ... Training ...
+            # Initialize model for this fold (CRITICAL: after setting seed to ensure deterministic initialization)
+            # The model must be re-initialized for each fold to ensure consistent weight initialization
+            model = get_3d_model(
+                model_config=model_config,
+                hyperparameters=hyperparameters,
+                developer_mode=experimental_setting.developer_mode,
+                spatial_size=spatial_size,
+                is_medmnist=dataset.get("is_medmnist", False),
+                run_mode=experimental_setting.run_mode
+            ).to(device)
+            print(f"\nModel initialized for inner fold {fold + 1}: {model_type}\n")
 
             # Get data loaders for this fold
+            # Use fold_specific_seed (not inner_fold_seed) for CV splits to ensure same splits across experiments
+            # The inner_fold_seed is only for model initialization and training determinism
             train_loader, val_loader = get_kfold_dataloaders(
-                seed=experimental_setting.seed,
+                seed=fold_specific_seed,
                 dataset_name=experimental_setting.data.dataset,
                 data=dataset["train_val_images"],
                 labels=dataset["train_val_labels"],

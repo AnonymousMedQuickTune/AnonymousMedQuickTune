@@ -1,4 +1,5 @@
 import os
+import random
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, RepeatedStratifiedKFold
@@ -20,6 +21,8 @@ from monai.transforms import (
     RandGridDistortiond,
     ResizeWithPadOrCropd,
     EnsureTyped,
+    Transform,
+    Randomizable,
 )
 from monai.utils import InterpolateMode
 from monai.data import Dataset
@@ -40,7 +43,9 @@ from src.classification_3d.utils.preprocessing_utils import (
     resize_worcdatabase_images,
     resize_depth_dimension
 )
+from src.utils.common_utils import get_deterministic_cv_splits_path, get_deterministic_inner_cv_splits_path, set_seed
 import datetime
+import hashlib
 
 def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task):
     """
@@ -457,10 +462,18 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         raise NotImplementedError("Smart preprocessing must be applied to use this function for WORC datasets.")
 
     # STEP 1: Check if CV splits already exist
-    cv_splits_dir = os.path.join(experiment_base_dir, "cv_splits")
-    splits_file = os.path.join(cv_splits_dir, f"cv_splits_base_seed_{seed}_repeats_{cv_outer_folds_repeats}_splits_{cv_outer_folds_splits}.pkl")
+    # Use deterministic path that is independent of experiment name
+    cv_splits_dir, splits_file = get_deterministic_cv_splits_path(
+        data_path=data_path,
+        dataset_name=dataset_name,
+        seed=seed,
+        cv_folds_repeats=cv_outer_folds_repeats,
+        cv_folds_splits=cv_outer_folds_splits,
+        split_type="outer"
+    )
     cv_splits = None
     print(f"\nCV splits:\n----------")
+    print(f"> Using deterministic CV splits path (independent of experiment name): {splits_file}")
 
     if os.path.exists(splits_file):
         print(f"> Loading existing CV splits from: {splits_file}")
@@ -471,6 +484,8 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         print(f"> No existing CV splits found. Generating new ones...")
         
         # STEP 2: Generate CV splits using RepeatedStratifiedKFold
+        # Set seed before generating splits to ensure reproducibility
+        set_seed(seed)
         rskf = RepeatedStratifiedKFold(
             n_splits=cv_outer_folds_splits, 
             n_repeats=cv_outer_folds_repeats, 
@@ -564,10 +579,17 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         "is_medmnist": is_medmnist,  # Flag to indicate if this is a MedMNIST dataset
     }
     
-def apply_gamma_correction(img):
-    """Apply random gamma correction to an image."""
-    # Sample gamma value once per image
-    gamma = np.random.uniform(0.7, 1.4)
+def apply_gamma_correction(img, gamma=None):
+    """Apply random gamma correction to an image.
+    
+    Args:
+        img: Image tensor or array
+        gamma: Optional gamma value. If None, samples from [0.7, 1.4] using np.random
+    """
+    # Sample gamma value once per image if not provided
+    # NOTE: This uses the global numpy random state, which should be set before calling
+    if gamma is None:
+        gamma = np.random.uniform(0.7, 1.4)
                 
     # Handle both torch.Tensor and numpy arrays
     if isinstance(img, torch.Tensor):
@@ -789,6 +811,8 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
     # Use dtype=torch.float32 to ensure compatibility with model weights (which are float32)
     transforms.append(EnsureTyped(keys="image", dtype=torch.float32))
     
+    # Return standard Compose - the DeterministicDataset wrapper will handle seed setting
+    # before each __getitem__ call, ensuring all random decisions are deterministic
     return Compose(transforms)
 
 
@@ -856,40 +880,69 @@ def get_kfold_dataloaders(
         indices = np.arange(len(data))
         total_folds = cv_inner_folds_repeats * cv_inner_folds_splits
         
-        # Check if splits file already exists (to avoid regenerating for each fold)
-        if fold_directory is not None:
-            # Get pipeline directory (parent of fold directory)
-            pipeline_directory = os.path.dirname(fold_directory)
-            splits_file = os.path.join(pipeline_directory, "inner_cv_splits.pkl")
-            
-            if not os.path.exists(splits_file):
-                # Generate all splits
-                all_splits = []
-                for train_idx, val_idx in kfold.split(indices, labels):
-                    all_splits.append((train_idx, val_idx))
-                
-                # Save splits to file
-                splits_data = {
-                    "splits": all_splits,
-                    "n_repeats": cv_inner_folds_repeats,
-                    "n_splits": cv_inner_folds_splits,
-                    "seed": seed,
-                    "total_samples": len(data),
-                    "total_folds": total_folds
-                }
-                with open(splits_file, "wb") as f:
-                    pickle.dump(splits_data, f)
-                print(f"Inner CV splits saved to: {splits_file}")
-            else:
-                # Load existing splits
-                with open(splits_file, "rb") as f:
-                    splits_data = pickle.load(f)
-                all_splits = splits_data["splits"]
+        # Create a deterministic hash of the data identifiers for consistent inner CV splits
+        # For WORC datasets: hash sorted file paths; for MedMNIST: hash data length and labels
+        if is_medmnist:
+            # For MedMNIST, create hash from data length and labels (deterministic)
+            # Use length and sorted label values to create a unique identifier
+            labels_str = "_".join(map(str, sorted(np.unique(labels))))
+            data_hash_input = f"{len(data)}_{labels_str}_{np.sum(labels)}"
         else:
-            # If no fold_directory provided, generate splits on the fly (backward compatibility)
+            # For WORC datasets, create hash from sorted file paths (strings)
+            # data is a list of file paths (strings)
+            data_paths = [str(img) for img in data]
+            data_hash_input = "_".join(sorted(data_paths))
+        
+        data_hash = hashlib.md5(data_hash_input.encode('utf-8')).hexdigest()[:16]
+        
+        # Use deterministic path that is independent of experiment name
+        # Get data_path from fold_directory if available, otherwise use default
+        if fold_directory is not None:
+            # Try to extract data_path from experiment structure, fallback to "datasets"
+            # Experiment structure: experiments/.../NePS_output/.../configs/config_X/cv_inner_fold_Y
+            # We need to go up and find the datasets directory
+            # For now, use a relative path approach - store in datasets/cache/cv_splits/
+            data_path_for_splits = "datasets"  # Default fallback
+        else:
+            data_path_for_splits = "datasets"
+        
+        splits_dir, splits_file = get_deterministic_inner_cv_splits_path(
+            data_path=data_path_for_splits,
+            dataset_name=dataset_name,
+            seed=seed,
+            cv_inner_folds_repeats=cv_inner_folds_repeats,
+            cv_inner_folds_splits=cv_inner_folds_splits,
+            data_hash=data_hash
+        )
+        
+        if not os.path.exists(splits_file):
+            # Set seed before generating splits to ensure reproducibility
+            set_seed(seed)
+            # Generate all splits
             all_splits = []
             for train_idx, val_idx in kfold.split(indices, labels):
                 all_splits.append((train_idx, val_idx))
+            
+            # Save splits to file
+            splits_data = {
+                "splits": all_splits,
+                "n_repeats": cv_inner_folds_repeats,
+                "n_splits": cv_inner_folds_splits,
+                "seed": seed,
+                "total_samples": len(data),
+                "total_folds": total_folds,
+                "data_hash": data_hash
+            }
+            os.makedirs(splits_dir, exist_ok=True)
+            with open(splits_file, "wb") as f:
+                pickle.dump(splits_data, f)
+            print(f"Inner CV splits saved to: {splits_file}")
+        else:
+            # Load existing splits
+            with open(splits_file, "rb") as f:
+                splits_data = pickle.load(f)
+            all_splits = splits_data["splits"]
+            print(f"Loading existing inner CV splits from: {splits_file}")
 
         # Get indices for current fold
         train_idx, val_idx = all_splits[fold_idx]
@@ -958,8 +1011,74 @@ def get_kfold_dataloaders(
     else:
         raise ValueError(f"Invalid augmentation type: {augmentation_type}")
 
-    # Create training dataset
-    train_dataset = Dataset(train_data, transform=DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True, is_medmnist=is_medmnist, augmentation_type=augmentation_type))
+    # CRITICAL: Set seed before creating transforms to ensure MONAI random transforms are deterministic
+    # MONAI's random transforms use numpy's random state, so we need to set it before transform creation
+    set_seed(seed)
+    
+    # Create transforms
+    train_transform = DataTransform(normalization_stats, developer_mode, spatial_size=spatial_size, is_training=True, is_medmnist=is_medmnist, augmentation_type=augmentation_type)
+    
+    # CRITICAL: Wrap dataset to ensure deterministic augmentation by setting seed before each __getitem__ call
+    # This ensures that even if the global random state changes, each sample gets the same augmentation
+    # The key insight: we need to use the ORIGINAL sample index (before shuffling) to determine the seed
+    # This way, the same sample always gets the same augmentation, regardless of DataLoader shuffling
+    class DeterministicDataset(Dataset):
+        """Wrapper around MONAI Dataset that sets seed before each __getitem__ call for deterministic augmentation."""
+        def __init__(self, data, transform, seed):
+            self.data = data
+            self.transform = transform
+            self.seed = seed
+            # Create a mapping from data items to their original indices
+            # This allows us to use the original index for seed calculation even after shuffling
+            if isinstance(data, list):
+                # For list data, we can track original indices
+                self._data_list = data
+                self._use_original_idx = True
+            else:
+                # For Dataset objects, we can't easily track original indices
+                # In this case, we'll use the current idx (which should be stable if no shuffling happens before transform)
+                self._data_list = None
+                self._use_original_idx = False
+        
+        def __len__(self):
+            return len(self.data)
+        
+        def __getitem__(self, idx):
+            # Get the data item (which is a dict with 'index', 'image', 'label')
+            item = self.data[idx]
+            
+            # CRITICAL: Use the original sample index (from the data dict) to set seed
+            # This ensures that the same sample always gets the same augmentation, even after DataLoader shuffling
+            # The 'index' field contains the original position in the dataset
+            original_idx = item.get('index', idx)  # Fallback to idx if 'index' not present
+            
+            # Set seed based on original sample index
+            # This ensures: same sample (same original_idx) = same seed = same augmentation
+            # CRITICAL: Use a hash-based seed to ensure reproducibility even if indices overlap
+            # We combine the base seed with the original index to create a unique seed per sample
+            sample_seed = self.seed + original_idx
+            set_seed(sample_seed)
+            
+            # CRITICAL: Also set seed for MONAI's Randomizable transforms
+            # MONAI's random transforms use their own random state, which needs to be set explicitly
+            if self.transform is not None and hasattr(self.transform, 'transforms'):
+                for transform in self.transform.transforms:
+                    if isinstance(transform, Randomizable):
+                        # Set the random state for each randomizable transform
+                        transform.set_random_state(seed=sample_seed)
+            
+            # Apply transform with deterministic seed
+            # MONAI's Compose executes transforms sequentially, and each random transform uses the global random state
+            # By setting the seed here, we ensure all random decisions in the transform chain are deterministic
+            if self.transform is not None:
+                result = self.transform(item)
+            else:
+                result = item
+            
+            return result
+    
+    # Create training dataset with deterministic wrapper
+    train_dataset = DeterministicDataset(train_data, train_transform, seed)
 
     # Create validation dataset only if validation data exists
     if valid_data:
@@ -967,22 +1086,40 @@ def get_kfold_dataloaders(
     else:
         val_dataset = None
 
-    # Create data loaders
+    # CRITICAL: Create deterministic generators for DataLoader to ensure reproducibility
+    # The generator ensures that shuffling is deterministic across different runs
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    
+    # Worker init function to ensure each worker has a deterministic seed
+    # This is critical when num_workers > 0
+    def worker_init_fn(worker_id):
+        # Set seed for each worker based on the base seed and worker ID
+        # This ensures reproducibility even with multiple workers
+        worker_seed = seed + worker_id
+        np.random.seed(worker_seed)
+        torch.manual_seed(worker_seed)
+        random.seed(worker_seed)
+    
+    # Create data loaders with deterministic generators
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
+        generator=generator,  # Deterministic shuffling
+        worker_init_fn=worker_init_fn if num_workers > 0 else None,  # Deterministic workers
     )
 
     if val_dataset is not None:
         val_loader = DataLoader(
             val_dataset,
             batch_size=batch_size,
-            shuffle=False,
+            shuffle=False,  # No shuffling for validation
             num_workers=num_workers,
             pin_memory=True,
+            worker_init_fn=worker_init_fn if num_workers > 0 else None,  # Deterministic workers
         )
     else:
         # Create empty validation loader when no validation data

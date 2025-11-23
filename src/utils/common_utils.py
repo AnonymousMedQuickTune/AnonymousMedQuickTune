@@ -1,5 +1,6 @@
 import os
 import random
+import hashlib
 
 import neps
 import numpy as np
@@ -38,6 +39,74 @@ def get_cache_file_path(data_path, dataset_name, dimensionality, cv_outer_fold, 
         raise ValueError(f"Unsupported dimensionality: {dimensionality}")
     
     return cache_file
+
+
+def get_deterministic_cv_splits_path(data_path, dataset_name, seed, cv_folds_repeats, cv_folds_splits, split_type="outer"):
+    """
+    Generate a deterministic path for CV splits that is independent of experiment name.
+    Uses MD5 hash of dataset name, seed, and CV parameters to ensure reproducibility.
+    
+    Args:
+        data_path (str): Base path to datasets directory
+        dataset_name (str): Name of the dataset
+        seed (int): Random seed used for CV splits
+        cv_folds_repeats (int): Number of repeats for repeated stratified K-fold
+        cv_folds_splits (int): Number of splits per repeat
+        split_type (str): Type of split - "outer" or "inner" (default: "outer")
+        
+    Returns:
+        tuple: (splits_directory, splits_file_path) as strings
+    """
+    # Create a deterministic hash from parameters that define the CV splits
+    # This ensures the same splits are used regardless of experiment name
+    hash_input = f"{dataset_name}_{seed}_{cv_folds_repeats}_{cv_folds_splits}_{split_type}"
+    hash_value = hashlib.md5(hash_input.encode('utf-8')).hexdigest()[:16]
+    
+    # Store splits in datasets/cache/cv_splits/ to be independent of experiment directories
+    splits_dir = os.path.join(data_path, "cache", "cv_splits")
+    splits_file = os.path.join(
+        splits_dir,
+        f"cv_splits_{split_type}_{dataset_name}_seed{seed}_r{cv_folds_repeats}_s{cv_folds_splits}_{hash_value}.pkl"
+    )
+    
+    return splits_dir, splits_file
+
+
+def get_deterministic_inner_cv_splits_path(data_path, dataset_name, seed, cv_inner_folds_repeats, cv_inner_folds_splits, data_hash=None):
+    """
+    Generate a deterministic path for inner CV splits based on the train_val data.
+    Uses a hash of the data identifiers to ensure splits are consistent for the same data.
+    
+    Args:
+        data_path (str): Base path to datasets directory
+        dataset_name (str): Name of the dataset
+        seed (int): Random seed used for CV splits
+        cv_inner_folds_repeats (int): Number of repeats for repeated stratified K-fold
+        cv_inner_folds_splits (int): Number of splits per repeat
+        data_hash (str, optional): Hash of the data identifiers (e.g., sorted file paths).
+                                   If None, will use a hash based on dataset and seed.
+        
+    Returns:
+        tuple: (splits_directory, splits_file_path) as strings
+    """
+    if data_hash is None:
+        # Fallback: use dataset name and seed if data hash is not provided
+        # This is less ideal but ensures determinism
+        hash_input = f"{dataset_name}_{seed}_{cv_inner_folds_repeats}_{cv_inner_folds_splits}_inner"
+    else:
+        # Use hash of data identifiers to ensure splits are consistent for the same data
+        hash_input = f"{dataset_name}_{seed}_{cv_inner_folds_repeats}_{cv_inner_folds_splits}_{data_hash}_inner"
+    
+    hash_value = hashlib.md5(hash_input.encode('utf-8')).hexdigest()[:16]
+    
+    # Store splits in datasets/cache/cv_splits/ to be independent of experiment directories
+    splits_dir = os.path.join(data_path, "cache", "cv_splits")
+    splits_file = os.path.join(
+        splits_dir,
+        f"cv_splits_inner_{dataset_name}_seed{seed}_r{cv_inner_folds_repeats}_s{cv_inner_folds_splits}_{hash_value}.pkl"
+    )
+    
+    return splits_dir, splits_file
 
     
 def yaml_to_neps_pipeline_space(yaml_path):
@@ -121,6 +190,12 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)  # multi-GPU
     torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior
     torch.backends.cudnn.benchmark = False  # Disable benchmark mode
+    # Use deterministic algorithms where available (PyTorch 1.8+)
+    try:
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    except AttributeError:
+        # Fallback for older PyTorch versions
+        pass
     os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
 
 def cleanup_training_artifacts(pipeline_directory, total_inner_folds):
