@@ -506,7 +506,7 @@ def run_3d_pipeline(
                 if training_epochs == epochs - 1:
                     if val_metrics is not None:
                         # Use validation metrics if available
-                        all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"])
+                        all_folds_final_metrics["accuracy"].append(val_metrics["accuracy"] * 100)
                         all_folds_final_metrics["precision"].append(
                             np.mean(val_metrics["precision"]) * 100
                         )
@@ -517,7 +517,7 @@ def run_3d_pipeline(
                         all_folds_final_metrics["auc"].append(np.mean(val_metrics["auc"]) * 100)
                     else:
                         # Use training metrics when no validation is available
-                        all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"])
+                        all_folds_final_metrics["accuracy"].append(train_metrics["accuracy"] * 100)
                         all_folds_final_metrics["precision"].append(
                             np.mean(train_metrics["precision"]) * 100
                         )
