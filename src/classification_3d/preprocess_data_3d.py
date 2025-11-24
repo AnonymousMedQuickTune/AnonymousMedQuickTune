@@ -944,6 +944,18 @@ def get_kfold_dataloaders(
             all_splits = splits_data["splits"]
             print(f"Loading existing inner CV splits from: {splits_file}")
 
+        # Also save a copy to pipeline_directory for ensemble validation evaluation
+        # Derive pipeline_directory from fold_directory (fold_directory is pipeline_directory/cv_inner_fold_{fold})
+        if fold_directory is not None:
+            pipeline_directory = os.path.dirname(fold_directory)
+            pipeline_splits_file = os.path.join(pipeline_directory, "inner_cv_splits.pkl")
+            # Only save on first fold (fold_idx == 0) to avoid redundant writes
+            if fold_idx == 0:
+                os.makedirs(pipeline_directory, exist_ok=True)
+                with open(pipeline_splits_file, "wb") as f:
+                    pickle.dump(splits_data, f)
+                print(f"Saved copy of inner CV splits to pipeline directory: {pipeline_splits_file}")
+
         # Get indices for current fold
         train_idx, val_idx = all_splits[fold_idx]
         
