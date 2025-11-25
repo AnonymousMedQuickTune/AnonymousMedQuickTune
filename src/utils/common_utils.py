@@ -1,6 +1,7 @@
 import os
 import random
 import hashlib
+import warnings
 
 import neps
 import numpy as np
@@ -190,6 +191,18 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)  # multi-GPU
     torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior
     torch.backends.cudnn.benchmark = False  # Disable benchmark mode
+    
+    # Filter warnings for non-deterministic 3D pooling operations
+    # These operations (avg_pool3d_backward, max_pool3d_with_indices_backward) don't have
+    # deterministic CUDA implementations yet, but this doesn't significantly affect reproducibility
+    # since most other operations are deterministic. The warnings are noisy but harmless.
+    warnings.filterwarnings(
+        "ignore",
+        message=".*does not have a deterministic implementation.*",
+        category=UserWarning,
+        module="torch.autograd.graph"
+    )
+    
     # Use deterministic algorithms where available (PyTorch 1.8+)
     try:
         torch.use_deterministic_algorithms(True, warn_only=True)
