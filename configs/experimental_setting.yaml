@@ -59,7 +59,10 @@ qt:
 #------------------------------------------------------------------------------
 pipeline_space: configs/pipeline_spaces/pipeline_space_without_user_priors.yaml
 combine_model_and_training_space: true  # Whether to combine the model and training space into a single search space
-max_evaluations: 10       # Maximum number of configurations to evaluate
+max_evaluations: 50       # Maximum number of configurations to evaluate
+cost_to_spend: 85800  # Time budget in seconds for NePS optimization per outer fold
+                   # Example for 24h GPU limit with 10min buffer: 24*60*60 - 10*60 = 85800 seconds
+                   # This leaves buffer for test evaluation, data loading, and overhead
 metric: auc                # Metric to optimize: 'auc' (default), 'f1', 'accuracy', 'precision', or 'recall'
 searcher: random_search       # Options: 'default', 'bayesian_optimization', 'random_search', 'hyperband', 'priorband', 'mobster', 'asha', 'regularized_evolution'
 

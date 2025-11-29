@@ -581,9 +581,10 @@ def main(experimental_setting: DictConfig) -> None:
             ),
             optimizer=optimizer,  # HPO algorithm
             root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
-            max_evaluations_total=experimental_setting.max_evaluations,
+            # max_evaluations_total=experimental_setting.max_evaluations,
             ignore_errors=True,
-            # max_cost_total=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
+            cost_to_spend=experimental_setting.cost_to_spend
+            # max_cost_total=60,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
             # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
             # We can think about some estimation like: max_cost_total = max_evaluations_total * max_epochs * max_cost_per_epoch
             # TODO @Diane: Define and test max_cost_total

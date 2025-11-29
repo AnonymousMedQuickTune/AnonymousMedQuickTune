@@ -149,6 +149,13 @@ def run_3d_pipeline(
     cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1
     total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
 
+    # Calculate available time per inner fold
+    # Formula: cost_to_spend / (max_evaluations * total_inner_folds)
+    # This distributes the total time budget across all inner folds of all configs
+    time_per_inner_fold = experimental_setting.cost_to_spend / (experimental_setting.max_evaluations * total_inner_folds)
+    print(f"\nTime budget per inner fold: {time_per_inner_fold:.2f}s (cost_to_spend={experimental_setting.cost_to_spend}s, max_evaluations={experimental_setting.max_evaluations}, total_inner_folds={total_inner_folds})\n")
+
+
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
 
     # Initialize TensorBoard writer
@@ -164,6 +171,8 @@ def run_3d_pipeline(
     model_config = {"type": model_type, "task": experimental_setting.model.task, "num_classes": num_classes}
     
     # Run k-fold cross validation (using RepeatedStratifiedKFold if repeats > 1)
+    # Initialize total_cost to accumulate time across all epochs and folds
+    total_cost = 0.0
     try:
         for fold in range(total_inner_folds):
             print(f"{'-' * 50}")
@@ -205,6 +214,9 @@ def run_3d_pipeline(
                 run_mode=experimental_setting.run_mode
             ).to(device)
             print(f"\nModel initialized for inner fold {fold + 1}: {model_type}\n")
+
+            # Store start time for this inner fold (for time limit tracking)
+            inner_fold_start_time = time.time()
 
             # Get data loaders for this fold
             # Use fold_specific_seed (not inner_fold_seed) for CV splits to ensure same splits across experiments
@@ -420,7 +432,9 @@ def run_3d_pipeline(
 
                 # Calculate total epoch time
                 epoch_time = time.time() - epoch_start_time
-
+                
+                # Accumulate epoch time to total_cost
+                total_cost += epoch_time
 
                 # Log all metrics and information at the end of the epoch
                 log_timing(log_files["timing"], training_epochs, train_time, eval_time, epoch_time)
@@ -607,8 +621,19 @@ def run_3d_pipeline(
 
                 # Apply learning rate scheduler after training
                 adjust_learning_rate(scheduler)
+                
+                # Check time limit for this inner fold after completing epoch
+                elapsed_time_this_fold = time.time() - inner_fold_start_time
+                if elapsed_time_this_fold >= time_per_inner_fold:
+                    print(f"\n{'='*80}")
+                    print(f"TIME LIMIT REACHED for inner fold {fold + 1}: Stopping training early after epoch {training_epochs + 1}")
+                    print(f"Elapsed time for this fold: {elapsed_time_this_fold:.2f}s, Limit: {time_per_inner_fold:.2f}s")
+                    print(f"Completed {training_epochs + 1} epochs out of {epochs} planned epochs")
+                    print(f"{'='*80}\n")
+                    # Break out of training loop for this fold
+                    break
 
-            # Store final metrics for all folds (after training is completed, whether by early stopping or normal completion)
+            # Store final metrics for all folds (after training is completed, whether by early stopping, time limit, or normal completion)
             # IMPORTANT: For consistency with test evaluation, use metrics from best model if early stopping is enabled
             # Otherwise, use metrics from the last epoch
             if val_metrics is not None:
@@ -796,7 +821,8 @@ def run_3d_pipeline(
     # Add cost calculation (optional, currently unused feature in this project)
     # If we want to stop a NePS run after a certain total max_cost_toal is reached, we can define
     # the cost of one config evaluation, e.g. the time it takes to run a k-fold cv on one experimental_setting.
-    cost = epoch_time
+    # total_cost accumulates the time across all epochs and all folds
+    cost = total_cost
 
     return {
         "objective_to_minimize": neps_loss,  # Required by NePS
