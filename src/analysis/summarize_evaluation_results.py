@@ -118,6 +118,63 @@ def load_test_results(experiment_path: str, seed: str = "42") -> Dict[str, List[
     return all_metrics
 
 
+def load_validation_results(experiment_path: str, seed: str = "42") -> Dict[str, List[float]]:
+    """
+    Load validation evaluation results from all cv_outer_fold directories.
+    Uses the best config per fold as determined by NePS.
+    
+    Args:
+        experiment_path: Path to the experiment directory
+        seed: Seed directory name (default: "42")
+    
+    Returns:
+        Dictionary with metric names as keys and lists of values across folds
+    """
+    neps_output_path = Path(experiment_path) / f"seed_{seed}" / "NePS_output"
+    
+    if not neps_output_path.exists():
+        raise FileNotFoundError(f"NePS output directory not found: {neps_output_path}")
+    
+    # Find all cv_outer_fold directories
+    cv_fold_dirs = sorted([d for d in neps_output_path.iterdir() 
+                          if d.is_dir() and d.name.startswith("cv_outer_fold_")])
+    
+    if not cv_fold_dirs:
+        raise FileNotFoundError(f"No cv_outer_fold directories found in {neps_output_path}")
+    
+    # Load validation results from each fold
+    all_metrics = {}
+    
+    for fold_dir in cv_fold_dirs:
+        # Get the best config ID for this fold
+        best_config_id = get_best_config_id(fold_dir)
+        config_name = f"config_{best_config_id}"
+        
+        results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
+        
+        if not results_file.exists():
+            print(f"Warning: Results file not found: {results_file}")
+            continue
+        
+        with open(results_file, 'r') as f:
+            fold_results = json.load(f)
+        
+        # Extract validation metrics
+        validation_metrics = fold_results.get("validation", {})
+        
+        if not validation_metrics:
+            print(f"Warning: No validation metrics found in {results_file}")
+            continue
+        
+        # Flatten validation metrics
+        for metric_name, value in validation_metrics.items():
+            if metric_name not in all_metrics:
+                all_metrics[metric_name] = []
+            all_metrics[metric_name].append(value)
+    
+    return all_metrics
+
+
 def load_predictions_for_outer_ensemble(experiment_path: str, seed: str = "42") -> Dict[str, Any]:
     """
     Load raw predictions from all cv_outer_fold directories for outer fold ensemble.
@@ -322,10 +379,11 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
     print(f"Summarizing experiment: {experiment_path}")
     
     # Load all metrics across folds (individual fold approach)
-    all_metrics = load_test_results(experiment_path, seed)
+    all_test_metrics = load_test_results(experiment_path, seed)
+    all_validation_metrics = load_validation_results(experiment_path, seed)
     
-    if not all_metrics:
-        return "No metrics found!"
+    if not all_test_metrics:
+        return "No test metrics found!"
     
     # Calculate statistics for each metric
     summary_lines = []
@@ -333,21 +391,41 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
     summary_lines.append(f"TEST RESULTS SUMMARY")
     summary_lines.append(f"Experiment: {Path(experiment_path).name}")
     summary_lines.append(f"Seed: {seed}")
-    summary_lines.append(f"Number of CV folds: {len(list(all_metrics.values())[0])}")
+    summary_lines.append(f"Number of CV folds: {len(list(all_test_metrics.values())[0])}")
     summary_lines.append("=" * 80)
     summary_lines.append("")
 
-
-    # Individual fold results
+    # Validation results (if available)
     # ------------------------------------------------------------------------------------------------
-    summary_lines.append("INDIVIDUAL OUTERFOLD RESULTS:")
+    if all_validation_metrics:
+        summary_lines.append("VALIDATION RESULTS:")
+        summary_lines.append("-" * 60)
+        
+        # Group validation metrics
+        validation_main_metrics = []
+        for metric_name in sorted(all_validation_metrics.keys()):
+            validation_main_metrics.append(metric_name)
+        
+        # Main validation metrics
+        summary_lines.append("MAIN METRICS:")
+        summary_lines.append("-" * 40)
+        for metric_name in validation_main_metrics:
+            stats = calculate_statistics(all_validation_metrics[metric_name])
+            summary_lines.append(format_statistics(stats, metric_name))
+        
+        summary_lines.append("")
+        summary_lines.append("")
+
+    # Individual fold results (TEST)
+    # ------------------------------------------------------------------------------------------------
+    summary_lines.append("INDIVIDUAL OUTERFOLD RESULTS (TEST):")
     summary_lines.append("-" * 60)
     
     # Group metrics by category
     main_metrics = []
     per_class_metrics = {}
     
-    for metric_name in sorted(all_metrics.keys()):
+    for metric_name in sorted(all_test_metrics.keys()):
         if metric_name.startswith("per_class_"):
             parts = metric_name.split("_")
             class_metric = f"{parts[2]}_{parts[3]}"  # e.g., "precision_class_0"
@@ -361,7 +439,7 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
     summary_lines.append("MAIN METRICS:")
     summary_lines.append("-" * 40)
     for metric_name in main_metrics:
-        stats = calculate_statistics(all_metrics[metric_name])
+        stats = calculate_statistics(all_test_metrics[metric_name])
         summary_lines.append(format_statistics(stats, metric_name))
     
     summary_lines.append("")
@@ -372,11 +450,11 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
         summary_lines.append("-" * 40)
         for class_metric, metric_names in per_class_metrics.items():
             summary_lines.append(f"\n{class_metric.replace('_', ' ').title()}:")
-            for metric_name in metric_names:
-                stats = calculate_statistics(all_metrics[metric_name])
-                class_name = metric_name.split("_")[-1]  # e.g., "class_0" -> "0"
-                display_name = f"  Class {class_name}"
-                summary_lines.append(format_statistics(stats, display_name))
+        for metric_name in metric_names:
+            stats = calculate_statistics(all_test_metrics[metric_name])
+            class_name = metric_name.split("_")[-1]  # e.g., "class_0" -> "0"
+            display_name = f"  Class {class_name}"
+            summary_lines.append(format_statistics(stats, display_name))
     
     summary_lines.append("")
 
@@ -407,9 +485,9 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
 
     key_metrics = ["accuracy", "auc_macro", "auc_micro", "f1_macro", "f1_micro"]
     for metric in key_metrics:
-        if metric in all_metrics and metric in ensemble_metrics:
+        if metric in all_test_metrics and metric in ensemble_metrics:
             ensemble_value = ensemble_metrics[metric]
-            individual_mean = statistics.mean(all_metrics[metric])
+            individual_mean = statistics.mean(all_test_metrics[metric])
             improvement = ensemble_value - individual_mean
             summary_lines.append(f"{metric:20s}: Ensemble={ensemble_value:6.2f}, Individual={individual_mean:6.2f}, Δ={improvement:+6.2f}")
     
