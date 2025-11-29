@@ -7,6 +7,8 @@ Uses separate files for NePS and evaluation status to prevent data loss.
 import json
 import os
 import re
+import fcntl
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -451,8 +453,16 @@ class ExperimentStatusLogger:
     
     def set_total_outer_folds(self, total: int):
         """Set the total number of outer folds for the experiment."""
-        if self.main_status['started'] is None:
+        # Reload status from file to get the latest version (important for parallel execution)
+        # This ensures we don't overwrite a 'started' time that was set by another process
+        existing_status = self._load_main_status()
+        
+        # Only set started time if it doesn't exist in the file
+        if existing_status['started'] is None:
             self.main_status['started'] = datetime.now().isoformat()
+        else:
+            # Preserve the existing started time from file
+            self.main_status['started'] = existing_status['started']
         
         self.main_status['total_outer_folds'] = total
         self._save_main_status()
@@ -509,17 +519,88 @@ class ExperimentStatusLogger:
         self._save_evaluation_status()
     
     def _save_main_status(self):
-        """Save main status to file."""
+        """Save main status to file with file locking for parallel execution safety."""
         self.main_status['last_updated'] = datetime.now().isoformat()
         
-        # Format the status as a readable text file
-        if self.experiment_type == "quicktune":
-            status_text = self._format_quicktune_status_text()
-        else:  # neps
-            status_text = self._format_neps_status_text()
+        # Use file locking to prevent race conditions in parallel execution
+        max_retries = 10
+        retry_delay = 0.1  # 100ms
         
-        with open(self.main_status_file, 'w') as f:
-            f.write(status_text)
+        for attempt in range(max_retries):
+            try:
+                # Open file in r+ mode (read+write) to preserve existing content
+                # Create file if it doesn't exist
+                if not self.main_status_file.exists():
+                    self.main_status_file.touch()
+                
+                with open(self.main_status_file, 'r+') as f:
+                    # Try to acquire exclusive lock (non-blocking)
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    
+                    # Read existing content to preserve 'started' time
+                    existing_content = f.read()
+                    if existing_content:
+                        try:
+                            if self.experiment_type == "quicktune":
+                                existing_status = self._parse_quicktune_status(existing_content)
+                            else:
+                                existing_status = self._parse_neps_status(existing_content)
+                            
+                            # Preserve started time if it exists in file
+                            if existing_status.get('started') is not None:
+                                self.main_status['started'] = existing_status['started']
+                        except Exception:
+                            # If parsing fails, continue with current status
+                            pass
+                    
+                    # Format the status as a readable text file
+                    if self.experiment_type == "quicktune":
+                        status_text = self._format_quicktune_status_text()
+                    else:  # neps
+                        status_text = self._format_neps_status_text()
+                    
+                    # Write the updated status
+                    f.seek(0)
+                    f.truncate()
+                    f.write(status_text)
+                    f.flush()
+                    os.fsync(f.fileno())  # Force write to disk
+                    
+                    # Release lock
+                    fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                    
+                    break  # Success, exit retry loop
+            except (IOError, OSError) as e:
+                # Lock is held by another process, wait and retry
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                else:
+                    # Last attempt failed, write without lock (better than failing completely)
+                    # But still try to preserve started time
+                    if self.main_status_file.exists():
+                        try:
+                            with open(self.main_status_file, 'r') as existing_f:
+                                existing_content = existing_f.read()
+                                if existing_content:
+                                    if self.experiment_type == "quicktune":
+                                        existing_status = self._parse_quicktune_status(existing_content)
+                                    else:
+                                        existing_status = self._parse_neps_status(existing_content)
+                                    if existing_status.get('started') is not None:
+                                        self.main_status['started'] = existing_status['started']
+                        except Exception:
+                            pass
+                    
+                    # Format and write
+                    if self.experiment_type == "quicktune":
+                        status_text = self._format_quicktune_status_text()
+                    else:  # neps
+                        status_text = self._format_neps_status_text()
+                    
+                    with open(self.main_status_file, 'w') as f:
+                        f.write(status_text)
+                    print(f"Warning: Could not acquire file lock for {self.main_status_file}, wrote without lock")
     
     def _save_neps_status(self):
         """Save NePS status to file. (Backward compatibility method)"""
@@ -738,8 +819,12 @@ class InnerFoldProgressLogger:
         if self.outer_fold not in self.outer_fold_status:
             self.outer_fold_status[self.outer_fold] = {
                 'inner_folds_status': {},
-                'total_inner_folds': total_inner_folds or 0
+                'total_inner_folds': total_inner_folds or 0,
+                'started': None,  # Will be set on first update
+                'finished': None  # Will be set when all inner folds are completed
             }
+            # Set started time when outer fold is first initialized
+            self.outer_fold_status[self.outer_fold]['started'] = datetime.now().isoformat()
         
         self.outer_fold_status[self.outer_fold]['inner_folds_status'][inner_fold] = {
             'status': status,
@@ -750,18 +835,59 @@ class InnerFoldProgressLogger:
         if total_inner_folds is not None:
             self.outer_fold_status[self.outer_fold]['total_inner_folds'] = total_inner_folds
         
+        # Check if all inner folds are completed to set finished time
+        fold_info = self.outer_fold_status[self.outer_fold]
+        total_inner = fold_info['total_inner_folds']
+        completed_inner = sum(1 for inner_info in fold_info['inner_folds_status'].values() 
+                            if inner_info['status'] == 'completed')
+        
+        if total_inner > 0 and completed_inner == total_inner and fold_info['finished'] is None:
+            fold_info['finished'] = datetime.now().isoformat()
+        
         self._save_outer_fold_status()
     
     def _save_outer_fold_status(self):
         """
         Save the current status of the outer fold to a human-readable text file.
         Creates files like: outerfold_1_status.txt, outerfold_2_status.txt, etc.
+        Preserves started time from file if it exists (for parallel execution safety).
         """
         if self.outer_fold not in self.outer_fold_status:
             return  # Nothing to save if no status exists
         
         fold_info = self.outer_fold_status[self.outer_fold]
         outer_fold_file = self.status_dir / f"outerfold_{self.outer_fold}_status.txt"
+        
+        # Try to load existing started time from file (for parallel execution safety)
+        started_time = fold_info.get('started')
+        finished_time = fold_info.get('finished')
+        
+        if outer_fold_file.exists():
+            try:
+                with open(outer_fold_file, 'r') as f:
+                    content = f.read()
+                    # Parse existing started time from file
+                    for line in content.split('\n'):
+                        if line.startswith('Started:'):
+                            existing_started = line.split(':', 1)[1].strip()
+                            if existing_started and existing_started != 'Not started':
+                                started_time = existing_started
+                                fold_info['started'] = started_time  # Update in memory too
+                            break
+                        elif line.startswith('Finished:'):
+                            existing_finished = line.split(':', 1)[1].strip()
+                            if existing_finished and existing_finished != 'Not finished':
+                                finished_time = existing_finished
+                                fold_info['finished'] = finished_time  # Update in memory too
+                            break
+            except Exception:
+                # If we can't read the file, use the in-memory value
+                pass
+        
+        # Use current time if started_time is still None
+        if started_time is None:
+            started_time = datetime.now().isoformat()
+            fold_info['started'] = started_time
         
         # Build the status file content
         lines = []
@@ -770,7 +896,9 @@ class InnerFoldProgressLogger:
         lines.append("=" * 60)
         lines.append(f"Config: {self.config_num}")
         lines.append(f"Outer Fold: {self.outer_fold}")
-        lines.append(f"Started: {datetime.now().isoformat()}")
+        lines.append(f"Started: {started_time}")
+        if finished_time:
+            lines.append(f"Finished: {finished_time}")
         lines.append(f"Last Updated: {datetime.now().isoformat()}")
         lines.append("")
         
