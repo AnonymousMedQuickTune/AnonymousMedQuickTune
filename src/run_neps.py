@@ -240,7 +240,7 @@ def main(experimental_setting: DictConfig) -> None:
     if experimental_setting.developer_mode:
         print(f"\n\nDeveloper mode is enabled!\n\n")
         if experimental_setting.run_mode != "Baseline":
-            experimental_setting.max_evaluations = 4
+            experimental_setting.max_evaluations = 2
             experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
         experimental_setting.training.number_of_epochs = 2
         # Set number of inner CV folds for developer mode: #repeats * #splits per repeat = #total inner folds
@@ -625,9 +625,30 @@ def main(experimental_setting: DictConfig) -> None:
         # Update CSV in the main NePS output directory (not per outer fold)
         update_cost_csv_from_neps_output(experimental_setting.neps_directory)
         
+        # Generate performance over time plot (wall-clock time instead of configs)
+        # This needs to be called after update_cost_csv_from_neps_output to ensure CSV files are up to date
+        try:
+            # Extract experiment directory from neps_directory
+            # neps_directory is like: experiments/NePS/liver/test_neps_49/seed_42/NePS_output
+            # Experiment directory is: experiments/NePS/liver/test_neps_49
+            neps_dir_path = Path(experimental_setting.neps_directory)
+            experiment_dir = neps_dir_path.parent.parent  # Go up from NePS_output/seed_42 to experiment directory
+            
+            if experiment_dir.exists():
+                from src.analysis.plot_results_over_time import create_performance_over_time_plot
+                create_performance_over_time_plot(
+                    experiment_dir=experiment_dir,
+                    cost_to_spend=experimental_setting.cost_to_spend,
+                    output_path=None  # Will save to seed directory
+                )
+                print(f"Performance over time plot generated successfully!\n")
+        except Exception as e:
+            print(f"Warning: Could not generate performance over time plot: {e}")
+            print("Continuing with pipeline execution...\n")
+        
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_neps_progress(
-            outer_fold=cv_outer_fold + 1,                                   # Convert to 1-based indexing
+            outer_fold=cv_outer_fold + 1,             # Convert to 1-based indexing
             inner_folds_completed=total_inner_folds,  # All inner folds are done
             total_inner_folds=total_inner_folds       # Total inner folds for this outer fold
         )

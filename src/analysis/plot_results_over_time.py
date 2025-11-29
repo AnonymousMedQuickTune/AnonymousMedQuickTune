@@ -793,6 +793,324 @@ def create_plots(
     plt.close()
 
 
+def create_performance_over_time_plot(
+    experiment_dir: Path,
+    cost_to_spend: float,
+    output_path: Path = None
+):
+    """
+    Create plots for validation and test performance over time (wall-clock time).
+    
+    This function reads costs from costs_in_min.csv or costs_in_hours.csv and
+    performances from incumbent_performances.csv to create plots showing
+    performance over wall-clock time instead of number of configs.
+    
+    Args:
+        experiment_dir: Path to experiment directory (e.g., experiments/NePS/lipo/test_plotting_script)
+        cost_to_spend: Total time budget in seconds (from experimental_setting.cost_to_spend)
+        output_path: Optional path to save the plot. If None, saves to seed directory.
+    """
+    # Find seed directory
+    seed_dirs = sorted([d for d in experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
+    if not seed_dirs:
+        print(f"Warning: No seed directories found in {experiment_dir}")
+        return
+    
+    seed_dir = seed_dirs[0]
+    neps_output_dir = seed_dir / "NePS_output"
+    
+    if not neps_output_dir.exists():
+        print(f"Warning: NePS_output directory not found: {neps_output_dir}")
+        return
+    
+    # Determine time unit based on cost_to_spend
+    if cost_to_spend >= 60 and cost_to_spend < 3600:
+        time_unit = "min"
+        time_unit_label = "Time (minutes)"
+        costs_csv_path = neps_output_dir / "costs_in_min.csv"
+    elif cost_to_spend >= 3600:
+        time_unit = "hours"
+        time_unit_label = "Time (hours)"
+        costs_csv_path = neps_output_dir / "costs_in_hours.csv"
+    else:
+        # Default to seconds if cost_to_spend < 60
+        time_unit = "sec"
+        time_unit_label = "Time (seconds)"
+        costs_csv_path = neps_output_dir / "costs_in_sec.csv"
+    
+    # Read costs CSV
+    if not costs_csv_path.exists():
+        print(f"Warning: Cost CSV file not found: {costs_csv_path}")
+        return
+    
+    costs_df = pd.read_csv(costs_csv_path)
+    
+    # Read incumbent performances CSV
+    performances_csv_path = neps_output_dir / "incumbent_performances.csv"
+    if not performances_csv_path.exists():
+        print(f"Warning: Incumbent performances CSV file not found: {performances_csv_path}")
+        return
+    
+    performances_df = pd.read_csv(performances_csv_path)
+    
+    # Collect data per config (not per fold)
+    # Structure: config_num -> {"max_time": max_time_across_folds, "val_perfs": [...], "test_perfs": [...]}
+    config_data = {}  # config_num -> {"max_time": float, "val_perfs": [float, ...], "test_perfs": [float, ...]}
+    
+    # Get all fold numbers from costs CSV
+    all_folds = sorted(costs_df["outer_fold"].unique())
+    
+    # First pass: Calculate cumulative times per fold and collect config data
+    fold_cumulative_times = {}  # fold_num -> {config_num: cumulative_time}
+    
+    for fold_num in all_folds:
+        fold_costs = costs_df[costs_df["outer_fold"] == fold_num].sort_values("config")
+        cumulative_time = 0.0
+        
+        for _, cost_row in fold_costs.iterrows():
+            config_num = int(cost_row["config"])
+            evaluation_duration = cost_row["evaluation_duration"]
+            
+            # Add evaluation duration to cumulative time
+            cumulative_time += evaluation_duration
+            
+            if fold_num not in fold_cumulative_times:
+                fold_cumulative_times[fold_num] = {}
+            fold_cumulative_times[fold_num][config_num] = cumulative_time
+    
+    # Get all config numbers
+    all_configs = set()
+    for fold_times in fold_cumulative_times.values():
+        all_configs.update(fold_times.keys())
+    all_configs = sorted(all_configs)
+    
+    # Second pass: For each config, collect max time and performances across all folds
+    for config_num in all_configs:
+        config_times = []
+        config_val_perfs = []
+        config_test_perfs = []
+        
+        for fold_num in all_folds:
+            # Get cumulative time for this config in this fold
+            if fold_num in fold_cumulative_times and config_num in fold_cumulative_times[fold_num]:
+                config_time = fold_cumulative_times[fold_num][config_num]
+                config_times.append(config_time)
+            
+            # Get performance for this config in this fold
+            perf_row = performances_df[performances_df["config"] == config_num]
+            if not perf_row.empty:
+                val_col = f"validation_fold_{fold_num}"
+                test_col = f"test_fold_{fold_num}"
+                
+                if val_col in perf_row.columns:
+                    val_perf = perf_row[val_col].iloc[0]
+                    if pd.notna(val_perf) and val_perf != "":
+                        config_val_perfs.append(float(val_perf))
+                
+                if test_col in perf_row.columns:
+                    test_perf = perf_row[test_col].iloc[0]
+                    if pd.notna(test_perf) and test_perf != "":
+                        config_test_perfs.append(float(test_perf))
+        
+        # Use max time across all folds for this config
+        max_time = max(config_times) if config_times else 0.0
+        
+        config_data[config_num] = {
+            "max_time": max_time,
+            "val_perfs": config_val_perfs,
+            "test_perfs": config_test_perfs
+        }
+    
+    # Sort by config number and extract data for plotting
+    sorted_configs = sorted(config_data.keys())
+    time_points = [config_data[config_num]["max_time"] for config_num in sorted_configs]
+    val_means = []
+    val_stds = []
+    test_means = []
+    test_stds = []
+    
+    for config_num in sorted_configs:
+        val_perfs = config_data[config_num]["val_perfs"]
+        test_perfs = config_data[config_num]["test_perfs"]
+        
+        if val_perfs:
+            val_means.append(np.mean(val_perfs))
+            val_stds.append(np.std(val_perfs) if len(val_perfs) > 1 else 0.0)
+        else:
+            val_means.append(0.0)
+            val_stds.append(0.0)
+        
+        if test_perfs:
+            test_means.append(np.mean(test_perfs))
+            test_stds.append(np.std(test_perfs) if len(test_perfs) > 1 else 0.0)
+        else:
+            test_means.append(0.0)
+            test_stds.append(0.0)
+    
+    # Create plots
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
+    
+    validation_color = "blue"
+    test_color = "green"
+    
+    # Calculate y-axis range
+    all_y_values = []
+    if val_means:
+        all_y_values.extend([m + s for m, s in zip(val_means, val_stds)])
+        all_y_values.extend([m - s for m, s in zip(val_means, val_stds)])
+    if test_means:
+        all_y_values.extend([m + s for m, s in zip(test_means, test_stds)])
+        all_y_values.extend([m - s for m, s in zip(test_means, test_stds)])
+    
+    if all_y_values:
+        y_min = min(all_y_values)
+        y_max = max(all_y_values)
+        y_range = y_max - y_min
+        y_padding = y_range * 0.1
+        y_lim_min = max(0, y_min - y_padding) if y_min < 50 else 50
+        y_lim_max = 100
+    else:
+        y_lim_min = 50
+        y_lim_max = 100
+    
+    # Plot validation performance
+    if time_points and val_means:
+        ax1.plot(time_points, val_means, marker="o", linewidth=2, markersize=8, 
+                label="Validation (Mean with std)", color=validation_color, linestyle="--")
+        ax1.fill_between(
+            time_points,
+            np.array(val_means) - np.array(val_stds),
+            np.array(val_means) + np.array(val_stds),
+            alpha=0.2,
+            color=validation_color
+        )
+        ax1.set_xlabel(time_unit_label, fontsize=12)
+        ax1.set_ylabel("Validation AUC", fontsize=12)
+        ax1.set_title("Validation Performance Over Time", fontsize=14, fontweight="bold")
+        ax1.legend(fontsize=10, loc='lower right')
+        ax1.grid(True, alpha=0.3)
+        ax1.set_xlim(left=0)
+        if time_unit == "hours":
+            ax1.set_xlim(left=0, right=24)
+            ax1.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax1.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    else:
+        ax1.text(0.5, 0.5, "No validation data available", 
+                ha="center", va="center", transform=ax1.transAxes)
+        ax1.set_title("Validation Performance Over Time", fontsize=14, fontweight="bold")
+        if time_unit == "hours":
+            ax1.set_xlim(left=0, right=24)
+            ax1.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax1.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Plot test performance
+    if time_points and test_means:
+        ax2.plot(time_points, test_means, marker="s", linewidth=2, markersize=8, 
+                label="Test (Mean with std)", color=test_color, linestyle="-")
+        ax2.fill_between(
+            time_points,
+            np.array(test_means) - np.array(test_stds),
+            np.array(test_means) + np.array(test_stds),
+            alpha=0.2,
+            color=test_color
+        )
+        ax2.set_xlabel(time_unit_label, fontsize=12)
+        ax2.set_ylabel("Test AUC", fontsize=12)
+        ax2.set_title("Test Performance Over Time", fontsize=14, fontweight="bold")
+        ax2.legend(fontsize=10, loc='lower right')
+        ax2.grid(True, alpha=0.3)
+        ax2.set_xlim(left=0)
+        if time_unit == "hours":
+            ax2.set_xlim(left=0, right=24)
+            ax2.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    else:
+        ax2.text(0.5, 0.5, "No test data available", 
+                ha="center", va="center", transform=ax2.transAxes)
+        ax2.set_title("Test Performance Over Time", fontsize=14, fontweight="bold")
+        if time_unit == "hours":
+            ax2.set_xlim(left=0, right=24)
+            ax2.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Plot both together
+    if (time_points and val_means) or (time_points and test_means):
+        if time_points and val_means:
+            ax3.plot(time_points, val_means, marker="o", linewidth=2, markersize=8, 
+                    label="Validation", color=validation_color, linestyle="--")
+            ax3.fill_between(
+                time_points,
+                np.array(val_means) - np.array(val_stds),
+                np.array(val_means) + np.array(val_stds),
+                alpha=0.15,
+                color=validation_color
+            )
+        
+        if time_points and test_means:
+            ax3.plot(time_points, test_means, marker="s", linewidth=2, markersize=8, 
+                    label="Test", color=test_color, linestyle="-")
+            ax3.fill_between(
+                time_points,
+                np.array(test_means) - np.array(test_stds),
+                np.array(test_means) + np.array(test_stds),
+                alpha=0.15,
+                color=test_color
+            )
+        
+        ax3.set_xlabel(time_unit_label, fontsize=12)
+        ax3.set_ylabel("AUC", fontsize=12)
+        ax3.set_title("Validation & Test Performance Over Time", fontsize=14, fontweight="bold")
+        ax3.legend(fontsize=9, loc='lower right')
+        ax3.grid(True, alpha=0.3)
+        ax3.set_xlim(left=0)
+        if time_unit == "hours":
+            ax3.set_xlim(left=0, right=24)
+            ax3.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax3.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    else:
+        ax3.text(0.5, 0.5, "No data available", 
+                ha="center", va="center", transform=ax3.transAxes)
+        ax3.set_title("Validation & Test Performance Over Time", fontsize=14, fontweight="bold")
+        if time_unit == "hours":
+            ax3.set_xlim(left=0, right=24)
+            ax3.set_xticks(range(25))  # 0, 1, 2, ..., 24
+        ax3.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Add experiment name as suptitle
+    experiment_name = get_experiment_name_with_prefix(experiment_dir)
+    fig.suptitle(f"Performance Over Time: {experiment_name}", fontsize=16, fontweight="bold", y=1.02)
+    
+    # Determine output path
+    if output_path is None:
+        output_path = seed_dir / "performance_over_time.png"
+    else:
+        output_path = Path(output_path)
+    
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Apply tight layout
+    plt.tight_layout()
+    
+    # Re-apply y-axis limits after tight_layout
+    for ax in [ax1, ax2, ax3]:
+        ax.set_autoscale_on(False)
+        ax.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"\nPlot saved to: {output_path}")
+    
+    # Also save as PDF
+    pdf_path = output_path.with_suffix(".pdf")
+    for ax in [ax1, ax2, ax3]:
+        ax.set_autoscale_on(False)
+        ax.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    plt.savefig(pdf_path, bbox_inches="tight")
+    print(f"Plot saved to: {pdf_path}")
+    
+    plt.close()
+
+
 def main():
     """Main function to run the plotting script."""
     parser = argparse.ArgumentParser(

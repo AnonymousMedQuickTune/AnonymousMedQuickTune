@@ -195,6 +195,9 @@ def run_3d_pipeline(
             set_seed(inner_fold_seed)
             print(f"Setting inner fold seed: {inner_fold_seed} (base: {experimental_setting.seed}, outer_fold: {cv_outer_fold}, inner_fold: {fold})")
 
+            # Store start time for this inner fold (for time limit tracking)
+            inner_fold_start_time = time.time()
+
             # Create fold-specific directory
             fold_directory = os.path.join(pipeline_directory, f"cv_inner_fold_{fold}")
             os.makedirs(fold_directory, exist_ok=True)
@@ -214,10 +217,7 @@ def run_3d_pipeline(
                 run_mode=experimental_setting.run_mode
             ).to(device)
             print(f"\nModel initialized for inner fold {fold + 1}: {model_type}\n")
-
-            # Store start time for this inner fold (for time limit tracking)
-            inner_fold_start_time = time.time()
-
+            
             # Get data loaders for this fold
             # Use fold_specific_seed (not inner_fold_seed) for CV splits to ensure same splits across experiments
             # The inner_fold_seed is only for model initialization and training determinism
