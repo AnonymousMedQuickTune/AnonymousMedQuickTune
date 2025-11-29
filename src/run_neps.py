@@ -384,9 +384,32 @@ def main(experimental_setting: DictConfig) -> None:
     # - empty outer_folds_progress dictionary
     status_logger._save_main_status()
     
-    print(f"\n=== Starting Cross-Validation with {cv_outer_folds} outer folds ===\n")
+    # Check if running in array job mode (e.g., SLURM array job)
+    # If SLURM_ARRAY_TASK_ID is set, only process the corresponding outer fold
+    array_task_id_env = os.environ.get('SLURM_ARRAY_TASK_ID')
+    array_task_id = None  # Initialize to None for later check
+    if array_task_id_env is not None:
+        try:
+            array_task_id = int(array_task_id_env)
+            if array_task_id < 0 or array_task_id >= cv_outer_folds:
+                raise ValueError(f"SLURM_ARRAY_TASK_ID ({array_task_id}) is out of range for {cv_outer_folds} outer folds")
+            # Process only the outer fold corresponding to this array job
+            outer_folds_to_process = [array_task_id]
+            print(f"\n=== Running in Array Job Mode ===")
+            print(f"SLURM_ARRAY_TASK_ID: {array_task_id}")
+            print(f"Processing only outer fold {array_task_id} (0-based index)")
+            print(f"=== Starting Cross-Validation for outer fold {array_task_id} ===\n")
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Invalid SLURM_ARRAY_TASK_ID '{array_task_id_env}': {e}")
+            print(f"Falling back to processing all {cv_outer_folds} outer folds sequentially")
+            array_task_id = None  # Reset to None on error
+            outer_folds_to_process = list(range(cv_outer_folds))
+    else:
+        # Normal mode: process all outer folds sequentially
+        outer_folds_to_process = list(range(cv_outer_folds))
+        print(f"\n=== Starting Cross-Validation with {cv_outer_folds} outer folds ===\n")
     
-    for cv_outer_fold in range(cv_outer_folds):        
+    for cv_outer_fold in outer_folds_to_process:        
         # Set a different seed for each outer fold to ensure different NePS configurations are sampled
         # This prevents identical hyperparameter configurations across different outer folds
         fold_specific_seed = experimental_setting.seed + cv_outer_fold
@@ -659,13 +682,22 @@ def main(experimental_setting: DictConfig) -> None:
         # Save updated status for webapp
         status_logger._save_main_status()
     
-    print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
-    
-    # This sets the 'finished' timestamp in neps_status.txt and the webapp will display "Completed" status.
-    status_logger.mark_neps_finished()
-    
-    # Save cross-validation summary to text file
-    save_cv_summary(experimental_setting, cv_outer_folds)
+    # Only mark as finished and generate summary if all outer folds are processed
+    # In array job mode, each job only processes one outer fold, so we don't mark as finished here
+    if array_task_id is None:
+        # Normal mode: all outer folds processed in this run
+        print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
+        
+        # This sets the 'finished' timestamp in neps_status.txt and the webapp will display "Completed" status.
+        status_logger.mark_neps_finished()
+        
+        # Save cross-validation summary to text file
+        save_cv_summary(experimental_setting, cv_outer_folds)
+    else:
+        # Array job mode: only one outer fold processed
+        print(f"\n=== Outer fold {array_task_id} completed! ===\n")
+        print(f"Note: Running in array job mode. Other outer folds are processed by other array jobs.")
+        print(f"Summary will be generated after all array jobs complete.\n")
 
     # Automatically summarize evaluation results including outer fold ensemble
     print(f"\n{'='*100}")
