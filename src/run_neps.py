@@ -128,12 +128,26 @@ def run_pipeline(
         cv_outer_fold=cv_outer_fold
     )
 
-    # Persist only the test metrics as a JSON artifact; do not modify pipeline_result or report.yaml
+    # Persist test metrics and validation metrics as a JSON artifact; do not modify pipeline_result or report.yaml
     if test_metrics is not None:
+        # Extract validation metrics from pipeline_result
+        validation_metrics = None
+        if "extra" in pipeline_result and "all_folds_final_metrics" in pipeline_result["extra"]:
+            validation_metrics = pipeline_result["extra"]["all_folds_final_metrics"]
+        
+        # Combine test and validation metrics
+        # Keep backward compatibility: test_metrics already has "ensemble" and "per_fold" structure
+        evaluation_results = test_metrics.copy()  # Start with test metrics structure
+        
+        # Add validation metrics if available
+        if validation_metrics is not None:
+            evaluation_results["validation"] = validation_metrics
+            print(f"Validation metrics included: {validation_metrics}")
+        
         test_metrics_file = os.path.join(pipeline_directory, "test_evaluation_results.json")
         with open(test_metrics_file, "w", encoding="utf-8") as f:
-            json.dump(test_metrics, f, indent=4)
-        print(f"Test evaluation completed and saved to: {test_metrics_file}")
+            json.dump(evaluation_results, f, indent=4)
+        print(f"Test and validation evaluation completed and saved to: {test_metrics_file}")
     else:
         print(f"Warning: Test evaluation failed or no valid checkpoints found!")
     
