@@ -175,15 +175,34 @@ def collect_performances(experiment_dir: Path) -> Tuple[Dict[int, List[float]], 
                 config_num = extract_config_number(config_dir.name)
                 
                 # Load validation performance
+                # Try report.yaml first (created by NePS after run_pipeline returns)
+                # If not available, try pipeline_result.json (created during run_pipeline)
+                val_perf = None
                 report_path = config_dir / "report.yaml"
                 if report_path.exists():
                     try:
                         val_perf = load_validation_performance(report_path)
                         # Debug: Print loaded validation performance
-                        print(f"    Config {config_num}: Validation performance = {val_perf:.2f}")
-                        validation_performances_per_fold[fold_counter].append((config_num, val_perf))
+                        print(f"    Config {config_num}: Validation performance = {val_perf:.2f} (from report.yaml)")
                     except Exception as e:
                         print(f"Warning: Could not load validation performance from {report_path}: {e}")
+                
+                # Fallback: Try pipeline_result.json if report.yaml doesn't exist or failed
+                if val_perf is None:
+                    pipeline_result_path = config_dir / "pipeline_result.json"
+                    if pipeline_result_path.exists():
+                        try:
+                            with open(pipeline_result_path, "r", encoding="utf-8") as f:
+                                pipeline_result = json.load(f)
+                            objective = pipeline_result.get("objective_to_minimize", None)
+                            if objective is not None:
+                                val_perf = abs(objective)
+                                print(f"    Config {config_num}: Validation performance = {val_perf:.2f} (from pipeline_result.json)")
+                        except Exception as e:
+                            print(f"Warning: Could not load validation performance from {pipeline_result_path}: {e}")
+                
+                if val_perf is not None:
+                    validation_performances_per_fold[fold_counter].append((config_num, val_perf))
                 
                 # Load test performance
                 test_results_path = config_dir / "test_evaluation_results.json"
@@ -248,7 +267,109 @@ def collect_performances(experiment_dir: Path) -> Tuple[Dict[int, List[float]], 
     for config_num in sorted(validation_performances.keys()):
         print(f"  Config {config_num}: {validation_performances[config_num]}")
     
+    # Save performances to CSV file
+    save_performances_to_csv(experiment_dir, validation_performances, test_performances)
+    
     return validation_performances, test_performances
+
+
+def save_performances_to_csv(
+    experiment_dir: Path,
+    validation_performances: Dict[int, List[float]],
+    test_performances: Dict[int, List[float]]
+) -> None:
+    """
+    Save validation and test performances to a CSV file.
+    
+    The CSV file contains:
+    - config: Config number
+    - validation_fold_0, validation_fold_1, ...: Validation incumbent performances per fold
+    - test_fold_0, test_fold_1, ...: Test performances (of config with best validation) per fold
+    - validation_mean, validation_std: Mean and std across folds
+    - test_mean, test_std: Mean and std across folds
+    
+    Args:
+        experiment_dir: Path to experiment directory
+        validation_performances: Dict mapping config_number -> list of validation incumbent performances across folds
+        test_performances: Dict mapping config_number -> list of test performances across folds
+    """
+    # Find seed directory to determine output path
+    seed_dirs = sorted([d for d in experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
+    if not seed_dirs:
+        print("Warning: No seed directories found, cannot save performances.csv")
+        return
+    
+    # Use first seed directory (or iterate through all if needed)
+    seed_dir = seed_dirs[0]
+    neps_output_dir = seed_dir / "NePS_output"
+    
+    if not neps_output_dir.exists():
+        print(f"Warning: NePS_output directory not found: {neps_output_dir}")
+        return
+    
+    # Path to performances.csv in NePS output directory
+    performances_csv_path = neps_output_dir / "performances.csv"
+    
+    # Collect all data for CSV
+    csv_rows = []
+    
+    # Get all config numbers
+    all_configs = sorted(set(list(validation_performances.keys()) + list(test_performances.keys())))
+    
+    # Get maximum number of folds (for proper alignment)
+    max_folds = 0
+    for config_num in all_configs:
+        val_folds = len(validation_performances.get(config_num, []))
+        test_folds = len(test_performances.get(config_num, []))
+        max_folds = max(max_folds, val_folds, test_folds)
+    
+    # Create CSV header
+    header = ["config"]
+    for fold_idx in range(max_folds):
+        header.append(f"validation_fold_{fold_idx}")
+    for fold_idx in range(max_folds):
+        header.append(f"test_fold_{fold_idx}")
+    header.extend(["validation_mean", "validation_std", "test_mean", "test_std"])
+    
+    csv_rows.append(header)
+    
+    # Data rows
+    for config_num in all_configs:
+        row = [config_num]
+        
+        # Validation performances for this config
+        val_perfs = validation_performances.get(config_num, [])
+        for fold_idx in range(max_folds):
+            if fold_idx < len(val_perfs):
+                row.append(val_perfs[fold_idx])
+            else:
+                row.append("")  # Empty if no data for this fold
+        
+        # Test performances for this config
+        test_perfs = test_performances.get(config_num, [])
+        for fold_idx in range(max_folds):
+            if fold_idx < len(test_perfs):
+                row.append(test_perfs[fold_idx])
+            else:
+                row.append("")  # Empty if no data for this fold
+        
+        # Calculate mean and std
+        val_mean = np.mean(val_perfs) if val_perfs else ""
+        val_std = np.std(val_perfs) if val_perfs and len(val_perfs) > 1 else (0.0 if val_perfs else "")
+        test_mean = np.mean(test_perfs) if test_perfs else ""
+        test_std = np.std(test_perfs) if test_perfs and len(test_perfs) > 1 else (0.0 if test_perfs else "")
+        
+        row.extend([val_mean, val_std, test_mean, test_std])
+        
+        csv_rows.append(row)
+    
+    # Write CSV file
+    import csv as csv_module
+    with open(performances_csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv_module.writer(f)
+        writer.writerows(csv_rows)
+    
+    print(f"\nSaved performances to: {performances_csv_path}")
 
 
 def calculate_mean_std(performances: Dict[int, List[float]]) -> Tuple[List[int], List[float], List[float]]:
