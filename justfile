@@ -100,7 +100,8 @@ run-3d-neps-local DATASET MODEL EXPERIMENT_NAME:
     seed=42 \
     model.type={{MODEL}} \
     data.dimensionality=3d \
-    developer_mode=true
+    developer_mode=true \
+    cost_to_spend=60
 
 # Run a baseline HPO experiment with fixed hyperparames on the local machine for a 3D dataset
 run-3d-baseline-local DATASET MODEL EXPERIMENT_NAME:
