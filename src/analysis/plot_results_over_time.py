@@ -198,41 +198,55 @@ def collect_performances(experiment_dir: Path) -> Tuple[Dict[int, List[float]], 
             
             fold_counter += 1
     
-    # Calculate incumbent performances for each fold
+    # Calculate incumbent performances for each fold independently
     validation_performances: Dict[int, List[float]] = {}
     test_performances: Dict[int, List[float]] = {}
     
-    # Process validation performances
-    for fold_idx, config_perfs in validation_performances_per_fold.items():
-        if not config_perfs:
+    # Process each fold independently
+    for fold_idx in sorted(validation_performances_per_fold.keys()):
+        val_perfs = validation_performances_per_fold.get(fold_idx, [])
+        test_perfs = test_performances_per_fold.get(fold_idx, [])
+        
+        if not val_perfs:
+            print(f"Warning: No validation performances for fold {fold_idx}, skipping...")
             continue
         
-        # Sort by config number
-        config_perfs_sorted = sorted(config_perfs, key=lambda x: x[0])
+        # Sort by config number for this fold
+        val_perfs_sorted = sorted(val_perfs, key=lambda x: x[0])
+        test_perfs_dict = dict(test_perfs) if test_perfs else {}
         
-        # Calculate incumbent (best so far) for each config
-        best_so_far = float('-inf')
-        for config_num, perf in config_perfs_sorted:
-            best_so_far = max(best_so_far, perf)  # For AUC, higher is better
+        print(f"Processing fold {fold_idx}: {len(val_perfs_sorted)} configs")
+        
+        # Calculate validation incumbent for this fold (best validation so far)
+        best_val_so_far = float('-inf')
+        for config_num, val_perf in val_perfs_sorted:
+            best_val_so_far = max(best_val_so_far, val_perf)  # For AUC, higher is better
             if config_num not in validation_performances:
                 validation_performances[config_num] = []
-            validation_performances[config_num].append(best_so_far)
+            validation_performances[config_num].append(best_val_so_far)
+            print(f"  Fold {fold_idx}, Config {config_num}: Val={val_perf:.2f}, Incumbent={best_val_so_far:.2f}")
+        
+        # For test performances: use test performance of config with best validation so far (for this fold)
+        best_val_so_far = float('-inf')
+        best_val_config = None
+        
+        for config_num, val_perf in val_perfs_sorted:
+            # Update best validation performance (incumbent) for this fold
+            if val_perf > best_val_so_far:
+                best_val_so_far = val_perf
+                best_val_config = config_num
+            
+            # Use test performance of the config with best validation performance so far (in this fold)
+            if best_val_config is not None and best_val_config in test_perfs_dict:
+                test_perf_to_use = test_perfs_dict[best_val_config]
+                if config_num not in test_performances:
+                    test_performances[config_num] = []
+                test_performances[config_num].append(test_perf_to_use)
     
-    # Process test performances
-    for fold_idx, config_perfs in test_performances_per_fold.items():
-        if not config_perfs:
-            continue
-        
-        # Sort by config number
-        config_perfs_sorted = sorted(config_perfs, key=lambda x: x[0])
-        
-        # Calculate incumbent (best so far) for each config
-        best_so_far = float('-inf')
-        for config_num, perf in config_perfs_sorted:
-            best_so_far = max(best_so_far, perf)  # For AUC, higher is better
-            if config_num not in test_performances:
-                test_performances[config_num] = []
-            test_performances[config_num].append(best_so_far)
+    # Debug: Print collected performances
+    print("\nCollected validation performances:")
+    for config_num in sorted(validation_performances.keys()):
+        print(f"  Config {config_num}: {validation_performances[config_num]}")
     
     return validation_performances, test_performances
 
