@@ -4,10 +4,12 @@ import pickle
 from pathlib import Path
 import warnings
 import tempfile
+import csv
 
 import hydra
 import json
 import yaml
+import numpy as np
 from neps import run
 from omegaconf import DictConfig, OmegaConf
 
@@ -21,7 +23,8 @@ from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
                                     yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
-from src.utils.logging_utils import save_cv_summary
+from src.utils.logging_utils import (save_cv_summary, update_performances_csv_from_neps_output,
+                                     update_cost_csv_from_neps_output)
 from src.evaluate_trained_config import evaluate_config_on_test_set
 from src.analysis.summarize_evaluation_results import summarize_experiment
 
@@ -151,6 +154,19 @@ def run_pipeline(
     else:
         print(f"Warning: Test evaluation failed or no valid checkpoints found!")
     
+    # Update incumbent_performances.csv after test evaluation completes
+    # Extract NePS output directory from pipeline directory
+    pipeline_dir_path = Path(pipeline_directory)
+    if "NePS_output" in str(pipeline_dir_path):
+        # Find NePS_output directory by going up the path
+        current_path = pipeline_dir_path
+        while current_path.name != "NePS_output" and current_path.parent != current_path:
+            current_path = current_path.parent
+        if current_path.name == "NePS_output":
+            # Get outer fold directory (parent of configs)
+            outer_fold_dir = pipeline_dir_path.parent.parent  # .../cv_outer_fold_X
+            update_performances_csv_from_neps_output(str(outer_fold_dir), cv_outer_fold)
+    
     # Delete model checkpoints to save disk space  # TODO @Diane: Keep incumbent model checkpoint?
     # NOTE: After test evaluation, model checkpoints are no longer needed
     # Calculate total inner folds (repeats * splits)
@@ -224,7 +240,7 @@ def main(experimental_setting: DictConfig) -> None:
     if experimental_setting.developer_mode:
         print(f"\n\nDeveloper mode is enabled!\n\n")
         if experimental_setting.run_mode != "Baseline":
-            experimental_setting.max_evaluations = 2
+            experimental_setting.max_evaluations = 4
             experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
         experimental_setting.training.number_of_epochs = 2
         # Set number of inner CV folds for developer mode: #repeats * #splits per repeat = #total inner folds
@@ -603,6 +619,11 @@ def main(experimental_setting: DictConfig) -> None:
             # We can think about some estimation like: max_cost_total = max_evaluations_total * max_epochs * max_cost_per_epoch
             # TODO @Diane: Define and test max_cost_total
         )
+        
+        # Update cost.csv after NePS run completes for this outer fold
+        # NePS creates report.yaml files after each config evaluation
+        # Update CSV in the main NePS output directory (not per outer fold)
+        update_cost_csv_from_neps_output(experimental_setting.neps_directory)
         
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_neps_progress(

@@ -1,5 +1,8 @@
 import os
+import csv
 import datetime
+import json
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -487,3 +490,321 @@ def save_cv_summary(experimental_setting, cv_outer_folds):
     
     print(f"\nCross-validation summary saved to: {summary_file}")
     return summary_file
+
+
+def update_performances_csv_from_neps_output(neps_output_dir: str, cv_outer_fold: int) -> None:
+    """
+    Update incumbent_performances.csv file with validation and test performances from all configs.
+    
+    This function scans all config directories in the current outer fold, reads their
+    report.yaml and test_evaluation_results.json files, calculates incumbent performances,
+    and creates/updates an incumbent_performances.csv file.
+    
+    Args:
+        neps_output_dir: Path to the NePS output directory for one outer fold (e.g., .../NePS_output/cv_outer_fold_0)
+        cv_outer_fold: Current outer fold number
+    """
+    neps_output_path = Path(neps_output_dir)
+    if not neps_output_path.exists():
+        return
+    
+    # Path to incumbent_performances.csv in main NePS output directory (parent of outer fold)
+    main_neps_output = neps_output_path.parent if "cv_outer_fold_" in str(neps_output_path) else neps_output_path
+    performances_csv_path = main_neps_output / "incumbent_performances.csv"
+    
+    # Collect all performance data from all outer folds
+    all_fold_data = {}  # outer_fold -> {config_num -> {"validation": val, "test": test}}
+    
+    # Find all outer fold directories
+    outer_fold_dirs = sorted(
+        [d for d in main_neps_output.iterdir() 
+         if d.is_dir() and d.name.startswith("cv_outer_fold_")],
+        key=lambda x: int(x.name.split("_")[-1])
+    )
+    
+    for outer_fold_dir in outer_fold_dirs:
+        fold_num = int(outer_fold_dir.name.split("_")[-1])
+        configs_dir = outer_fold_dir / "configs"
+        
+        if not configs_dir.exists():
+            continue
+        
+        config_dirs = sorted(
+            [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith("config_")],
+            key=lambda x: int(x.name.split("_")[-1])
+        )
+        
+        all_fold_data[fold_num] = {}
+        
+        for config_dir in config_dirs:
+            config_num = int(config_dir.name.split("_")[-1])
+            
+            # Read validation performance from report.yaml
+            report_path = config_dir / "report.yaml"
+            validation_perf = None
+            if report_path.exists():
+                try:
+                    with open(report_path, "r", encoding="utf-8") as f:
+                        report = yaml.safe_load(f)
+                    objective = report.get("objective_to_minimize", None)
+                    if objective is not None:
+                        validation_perf = abs(objective)  # Remove negative sign
+                except Exception:
+                    pass
+            
+            # Read test performance from test_evaluation_results.json
+            test_results_path = config_dir / "test_evaluation_results.json"
+            test_perf = None
+            if test_results_path.exists():
+                try:
+                    with open(test_results_path, "r", encoding="utf-8") as f:
+                        test_results = json.load(f)
+                    ensemble = test_results.get("ensemble", {})
+                    test_perf = ensemble.get("auc_macro", None)
+                except Exception:
+                    pass
+            
+            if validation_perf is not None or test_perf is not None:
+                all_fold_data[fold_num][config_num] = {
+                    "validation": validation_perf,
+                    "test": test_perf
+                }
+    
+    # Calculate incumbent performances for each fold
+    # Structure: fold -> config -> {"validation_incumbent": val, "test": test}
+    incumbent_data = {}
+    
+    for fold_num in sorted(all_fold_data.keys()):
+        fold_configs = all_fold_data[fold_num]
+        if not fold_configs:
+            continue
+        
+        incumbent_data[fold_num] = {}
+        best_val_so_far = float('-inf')
+        best_val_config = None
+        
+        for config_num in sorted(fold_configs.keys()):
+            config_data = fold_configs[config_num]
+            val_perf = config_data.get("validation")
+            test_perf = config_data.get("test")
+            
+            # Update validation incumbent
+            if val_perf is not None:
+                if val_perf > best_val_so_far:
+                    best_val_so_far = val_perf
+                    best_val_config = config_num
+            
+            # Store incumbent validation and test (of best validation config)
+            # Note: best_val_so_far should never be -inf at this point if we have configs
+            incumbent_data[fold_num][config_num] = {
+                "validation_incumbent": best_val_so_far if best_val_so_far != float('-inf') else None,
+                "test": fold_configs[best_val_config].get("test") if best_val_config is not None and best_val_config in fold_configs else test_perf
+            }
+    
+    # Write CSV file
+    if not incumbent_data:
+        return
+    
+    # Get all config numbers across all folds and find maximum
+    all_configs = set()
+    for fold_data in incumbent_data.values():
+        all_configs.update(fold_data.keys())
+    max_config = max(all_configs) if all_configs else 0
+    all_configs = sorted(range(1, max_config + 1))  # Include all configs from 1 to max_config
+    
+    # Fill missing configs with last incumbent value for each fold
+    for fold_num in sorted(incumbent_data.keys()):
+        fold_incumbents = incumbent_data[fold_num]
+        if not fold_incumbents:
+            continue
+        
+        # Find the last config that exists in this fold and get its incumbent values
+        # We need to find the last config that has valid (non-None) values
+        last_val_incumbent = None
+        last_test = None
+        
+        # Iterate through configs in reverse order to find the last valid values
+        for config_num in sorted(fold_incumbents.keys(), reverse=True):
+            config_data = fold_incumbents[config_num]
+            if last_val_incumbent is None and config_data["validation_incumbent"] is not None:
+                last_val_incumbent = config_data["validation_incumbent"]
+            if last_test is None and config_data["test"] is not None:
+                last_test = config_data["test"]
+            # If we found both, we can break early
+            if last_val_incumbent is not None and last_test is not None:
+                break
+        
+        # Fill missing configs with last incumbent values
+        for config_num in all_configs:
+            if config_num not in fold_incumbents:
+                # Use last incumbent values for missing configs
+                # Only fill if we have valid values
+                if last_val_incumbent is not None or last_test is not None:
+                    incumbent_data[fold_num][config_num] = {
+                        "validation_incumbent": last_val_incumbent,
+                        "test": last_test
+                    }
+    
+    # Get all fold numbers
+    all_folds = sorted(incumbent_data.keys())
+    max_folds = len(all_folds)
+    
+    # Create CSV rows
+    csv_rows = []
+    
+    # Header
+    header = ["config"]
+    for fold_idx in range(max_folds):
+        header.append(f"validation_fold_{fold_idx}")
+    for fold_idx in range(max_folds):
+        header.append(f"test_fold_{fold_idx}")
+    header.extend(["validation_mean", "validation_std", "test_mean", "test_std"])
+    csv_rows.append(header)
+    
+    # Data rows
+    for config_num in all_configs:
+        row = [config_num]
+        
+        # Validation incumbent performances per fold
+        val_perfs = []
+        for fold_num in all_folds:
+            if config_num in incumbent_data[fold_num]:
+                val_inc = incumbent_data[fold_num][config_num]["validation_incumbent"]
+                row.append(val_inc if val_inc is not None else "")
+                if val_inc is not None:
+                    val_perfs.append(val_inc)
+            else:
+                row.append("")
+        
+        # Test performances per fold
+        test_perfs = []
+        for fold_num in all_folds:
+            if config_num in incumbent_data[fold_num]:
+                test_val = incumbent_data[fold_num][config_num]["test"]
+                row.append(test_val if test_val is not None else "")
+                if test_val is not None:
+                    test_perfs.append(test_val)
+            else:
+                row.append("")
+        
+        # Calculate mean and std
+        val_mean = np.mean(val_perfs) if val_perfs else ""
+        val_std = np.std(val_perfs) if val_perfs and len(val_perfs) > 1 else (0.0 if val_perfs else "")
+        test_mean = np.mean(test_perfs) if test_perfs else ""
+        test_std = np.std(test_perfs) if test_perfs and len(test_perfs) > 1 else (0.0 if test_perfs else "")
+        
+        row.extend([val_mean, val_std, test_mean, test_std])
+        csv_rows.append(row)
+    
+    # Write CSV file
+    with open(performances_csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerows(csv_rows)
+    
+    print(f"Updated incumbent_performances.csv: {performances_csv_path}")
+
+
+def update_cost_csv_from_neps_output(neps_output_dir: str) -> None:
+    """
+    Update cost CSV files with cost and evaluation_duration from all report.yaml files.
+    
+    This function scans all outer fold directories in the NePS output directory, reads all
+    report.yaml files from all configs, and creates/updates three CSV files with cost
+    and evaluation_duration data across all outer folds:
+    - costs_in_sec.csv: values in seconds
+    - costs_in_min.csv: values in minutes
+    - costs_in_hours.csv: values in hours
+    
+    Args:
+        neps_output_dir: Path to the main NePS output directory (e.g., .../NePS_output)
+    """
+    neps_output_path = Path(neps_output_dir)
+    if not neps_output_path.exists():
+        print(f"Warning: NePS output directory not found: {neps_output_path}")
+        return
+    
+    # Find all outer fold directories
+    outer_fold_dirs = sorted(
+        [d for d in neps_output_path.iterdir() 
+         if d.is_dir() and d.name.startswith("cv_outer_fold_")],
+        key=lambda x: int(x.name.split("_")[-1])
+    )
+    
+    if not outer_fold_dirs:
+        print(f"Warning: No outer fold directories found in {neps_output_path}")
+        return
+    
+    # Collect all cost data from all outer folds
+    cost_data = []
+    for outer_fold_dir in outer_fold_dirs:
+        # Extract outer fold number
+        cv_outer_fold = int(outer_fold_dir.name.split("_")[-1])
+        
+        # Find all config directories in this outer fold
+        configs_dir = outer_fold_dir / "configs"
+        if not configs_dir.exists():
+            continue
+        
+        config_dirs = sorted(
+            [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith("config_")],
+            key=lambda x: int(x.name.split("_")[-1])
+        )
+        
+        for config_dir in config_dirs:
+            config_number = int(config_dir.name.split("_")[-1])
+            report_path = config_dir / "report.yaml"
+            
+            if not report_path.exists():
+                continue
+            
+            try:
+                with open(report_path, "r", encoding="utf-8") as f:
+                    report = yaml.safe_load(f)
+                
+                cost = report.get("cost", None)
+                evaluation_duration = report.get("evaluation_duration", None)
+                
+                if cost is None or evaluation_duration is None:
+                    continue
+                
+                cost_data.append({
+                    "outer_fold": cv_outer_fold,
+                    "config": config_number,
+                    "cost": cost,
+                    "evaluation_duration": evaluation_duration
+                })
+                
+            except Exception as e:
+                print(f"Warning: Could not read {report_path}: {e}")
+                continue
+    
+    # Write/overwrite CSV files with all collected data (in seconds, minutes, and hours)
+    if cost_data:
+        # Sort by outer_fold first, then by config number
+        cost_data.sort(key=lambda x: (x["outer_fold"], x["config"]))
+        
+        # Define CSV file paths
+        csv_files = {
+            "costs_in_sec.csv": 1.0,      # No conversion (already in seconds)
+            "costs_in_min.csv": 1.0 / 60.0,  # Convert to minutes
+            "costs_in_hours.csv": 1.0 / 3600.0  # Convert to hours
+        }
+        
+        for csv_filename, conversion_factor in csv_files.items():
+            csv_path = neps_output_path / csv_filename
+            
+            with open(csv_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                
+                # Write header
+                writer.writerow(["outer_fold", "config", "cost", "evaluation_duration"])
+                
+                # Write data rows with converted values
+                for row in cost_data:
+                    cost_converted = row["cost"] * conversion_factor
+                    duration_converted = row["evaluation_duration"] * conversion_factor
+                    writer.writerow([row["outer_fold"], row["config"], cost_converted, duration_converted])
+            
+            print(f"Updated {csv_filename} with {len(cost_data)} config(s) across {len(outer_fold_dirs)} outer fold(s): {csv_path}")
+    else:
+        print(f"Warning: No cost data found to write to CSV files")

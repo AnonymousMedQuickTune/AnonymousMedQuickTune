@@ -262,6 +262,63 @@ def collect_performances(experiment_dir: Path) -> Tuple[Dict[int, List[float]], 
                     test_performances[config_num] = []
                 test_performances[config_num].append(test_perf_to_use)
     
+    # Fill missing configs with last incumbent value for each fold
+    # Find maximum config number across all folds
+    max_config = 0
+    if validation_performances:
+        max_config = max(max_config, max(validation_performances.keys()))
+    if test_performances:
+        max_config = max(max_config, max(test_performances.keys()))
+    
+    # For each fold, fill missing configs with last incumbent value
+    num_folds = len(validation_performances_per_fold)
+    for fold_idx in range(num_folds):
+        # Find the last config that exists in this fold and its values
+        # We need to find the last config that has data for this specific fold
+        last_val_incumbent = None
+        last_test_value = None
+        
+        # Find last config with data in this fold (iterate in reverse to get the last one)
+        for config_num in sorted(validation_performances.keys(), reverse=True):
+            if config_num in validation_performances and fold_idx < len(validation_performances[config_num]):
+                val_value = validation_performances[config_num][fold_idx]
+                if val_value is not None:
+                    last_val_incumbent = val_value
+                    break
+        
+        for config_num in sorted(test_performances.keys(), reverse=True):
+            if config_num in test_performances and fold_idx < len(test_performances[config_num]):
+                test_value = test_performances[config_num][fold_idx]
+                if test_value is not None:
+                    last_test_value = test_value
+                    break
+        
+        # Fill missing configs with last incumbent values
+        for config_num in range(1, max_config + 1):
+            # Fill validation performances
+            if config_num not in validation_performances:
+                validation_performances[config_num] = [None] * num_folds
+            # Ensure list is long enough
+            while len(validation_performances[config_num]) < num_folds:
+                validation_performances[config_num].append(None)
+            
+            # If this config is missing in this fold, use last incumbent value
+            if validation_performances[config_num][fold_idx] is None:
+                if last_val_incumbent is not None:
+                    validation_performances[config_num][fold_idx] = last_val_incumbent
+            
+            # Fill test performances
+            if config_num not in test_performances:
+                test_performances[config_num] = [None] * num_folds
+            # Ensure list is long enough
+            while len(test_performances[config_num]) < num_folds:
+                test_performances[config_num].append(None)
+            
+            # If this config is missing in this fold, use last test value
+            if test_performances[config_num][fold_idx] is None:
+                if last_test_value is not None:
+                    test_performances[config_num][fold_idx] = last_test_value
+    
     # Debug: Print collected performances
     print("\nCollected validation performances:")
     for config_num in sorted(validation_performances.keys()):
@@ -296,7 +353,7 @@ def save_performances_to_csv(
     # Find seed directory to determine output path
     seed_dirs = sorted([d for d in experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
     if not seed_dirs:
-        print("Warning: No seed directories found, cannot save performances.csv")
+        print("Warning: No seed directories found, cannot save incumbent_performances.csv")
         return
     
     # Use first seed directory (or iterate through all if needed)
@@ -307,8 +364,8 @@ def save_performances_to_csv(
         print(f"Warning: NePS_output directory not found: {neps_output_dir}")
         return
     
-    # Path to performances.csv in NePS output directory
-    performances_csv_path = neps_output_dir / "performances.csv"
+    # Path to incumbent_performances.csv in NePS output directory
+    performances_csv_path = neps_output_dir / "incumbent_performances.csv"
     
     # Collect all data for CSV
     csv_rows = []
@@ -369,7 +426,7 @@ def save_performances_to_csv(
         writer = csv_module.writer(f)
         writer.writerows(csv_rows)
     
-    print(f"\nSaved performances to: {performances_csv_path}")
+    print(f"\nSaved incumbent performances to: {performances_csv_path}")
 
 
 def calculate_mean_std(performances: Dict[int, List[float]]) -> Tuple[List[int], List[float], List[float]]:
