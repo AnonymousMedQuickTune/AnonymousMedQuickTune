@@ -759,10 +759,10 @@ def create_plots(
         first_experiment_dir = experiment_dirs[0]
         seed_dirs = sorted([d for d in first_experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
         if seed_dirs:
-            output_path = seed_dirs[0] / "performance_over_time.png"
+            output_path = seed_dirs[0] / "performance_over_configs.png"
         else:
             # Fallback to experiment directory if no seed directory found
-            output_path = first_experiment_dir / "performance_over_time.png"
+            output_path = first_experiment_dir / "performance_over_configs.png"
     else:
         output_path = Path(output_path)
     
