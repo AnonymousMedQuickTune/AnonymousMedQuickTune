@@ -236,11 +236,11 @@ def main(experimental_setting: DictConfig) -> None:
     # this again as a safety check
     set_reproducibility_env_vars()
     
-    # Print reproducibility info for debugging (helps identify differences between environments)
-    print_reproducibility_info()
-    
-    # Set seed for NePS reproducibility (this also sets PYTHONHASHSEED)
+    # Set seed for NePS reproducibility (this also sets PYTHONHASHSEED and deterministic flags)
     set_seed(experimental_setting.seed)
+    
+    # Print reproducibility info for debugging AFTER setting seed (helps identify differences between environments)
+    print_reproducibility_info()
 
     if experimental_setting.run_mode == "Baseline":
         print(f"\n\nBaseline run!\n\n")

@@ -482,8 +482,12 @@ def evaluate_config_on_validation_set_ensemble(
     # This ensures reproducibility even if this function is called directly
     set_reproducibility_env_vars()
     
-    # Set seed for reproducibility (this also sets PYTHONHASHSEED)
+    # Set seed for reproducibility (this also sets PYTHONHASHSEED and deterministic flags)
     set_seed(experimental_setting.seed)
+    
+    # Print reproducibility info for debugging AFTER setting seed (helps identify differences between environments)
+    # Note: This is only printed once per function call, not for every fold
+    print_reproducibility_info()
     
     # Load validation data (train_val_images and train_val_labels)
     if experimental_setting.data.dimensionality.lower() != "3d":
@@ -775,8 +779,12 @@ def evaluate_config_on_test_set(
     # This ensures reproducibility even if this function is called directly
     set_reproducibility_env_vars()
     
-    # Set seed for reproducibility (this also sets PYTHONHASHSEED)
+    # Set seed for reproducibility (this also sets PYTHONHASHSEED and deterministic flags)
     set_seed(experimental_setting.seed)
+    
+    # Print reproducibility info for debugging AFTER setting seed (helps identify differences between environments)
+    # Note: This is only printed once per function call, not for every fold
+    print_reproducibility_info()
 
     # TEST DATA LOADING
     # ------------------------------------------------------------------------------------------------
