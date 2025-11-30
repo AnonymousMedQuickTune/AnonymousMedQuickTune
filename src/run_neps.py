@@ -620,8 +620,10 @@ def main(experimental_setting: DictConfig) -> None:
             use_multifidelity = True
         else:
             raise ValueError(f"Unsupported searcher: {experimental_setting.searcher}. Must be one of: 'random_search', 'priorband', or 'ifbo'. Please integrate your searcher in the code.")
-            
-        run(
+        
+        if experimental_setting.run_mode == "Baseline":
+            experimental_setting.max_evaluations = 1
+            run(
             pipeline_space=pipeline_space,  # Hyperparameter search space
             evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
                 pipeline_directory=pipeline_directory,
@@ -634,14 +636,29 @@ def main(experimental_setting: DictConfig) -> None:
             ),
             optimizer=optimizer,  # HPO algorithm
             root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
-            # max_evaluations_total=experimental_setting.max_evaluations,
+            max_evaluations_total=experimental_setting.max_evaluations,
             ignore_errors=True,
-            cost_to_spend=experimental_setting.cost_to_spend
-            # max_cost_total=60,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
-            # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
-            # We can think about some estimation like: max_cost_total = max_evaluations_total * max_epochs * max_cost_per_epoch
-            # TODO @Diane: Define and test max_cost_total
         )
+        else:
+            run(
+                pipeline_space=pipeline_space,  # Hyperparameter search space
+                evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
+                    pipeline_directory=pipeline_directory,
+                    previous_pipeline_directory=previous_pipeline_directory,
+                    experimental_setting=experimental_setting,
+                    dataset_dict=dataset_dict,
+                    num_classes=num_classes,
+                    use_multifidelity=use_multifidelity,
+                    **kwargs,
+                ),
+                optimizer=optimizer,  # HPO algorithm
+                root_directory=f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}",
+                # max_evaluations_total=experimental_setting.max_evaluations,
+                ignore_errors=True,
+                cost_to_spend=experimental_setting.cost_to_spend
+                # cost_to_spend=10,  # e.g., if one config evaluation carries a cost of 2, we can evaluate 5 configs
+                # NOTE: In objective_function_3d.py, cost is defined as the epoch time in seconds.
+            )
         
         # Update cost.csv after NePS run completes for this outer fold
         # NePS creates report.yaml files after each config evaluation
