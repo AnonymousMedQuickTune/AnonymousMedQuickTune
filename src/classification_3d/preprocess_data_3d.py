@@ -1108,10 +1108,11 @@ def get_kfold_dataloaders(
     def worker_init_fn(worker_id):
         # Set seed for each worker based on the base seed and worker ID
         # This ensures reproducibility even with multiple workers
+        # CRITICAL: Use set_seed() to ensure all deterministic flags are set
         worker_seed = seed + worker_id
-        np.random.seed(worker_seed)
-        torch.manual_seed(worker_seed)
-        random.seed(worker_seed)
+        # Import here to avoid circular imports
+        from src.utils.common_utils import set_seed
+        set_seed(worker_seed)
     
     # Create data loaders with deterministic generators
     train_loader = DataLoader(
