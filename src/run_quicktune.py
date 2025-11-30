@@ -20,7 +20,7 @@ from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_cv_splits
-from src.utils.common_utils import set_seed, set_reproducibility_env_vars
+from src.utils.common_utils import set_seed, set_reproducibility_env_vars, print_reproducibility_info
 from src.utils.quicktune_utils import (
     CustomQuickImageCLSTuner,
     CustomCostPredictor,
@@ -353,7 +353,12 @@ def main(experimental_setting: DictConfig) -> None:
     # CRITICAL: Set environment variables for reproducibility FIRST
     # This must be done before any CUDA operations (even if PyTorch is already imported)
     # These variables are essential for reproducibility across different hardware
+    # NOTE: These are already set in common_utils.py before PyTorch import, but we call
+    # this again as a safety check
     set_reproducibility_env_vars()
+    
+    # Print reproducibility info for debugging (helps identify differences between environments)
+    print_reproducibility_info()
     
     # Set seed for reproducibility (this also sets PYTHONHASHSEED)
     set_seed(experimental_setting.seed)

@@ -3,6 +3,16 @@ import random
 import hashlib
 import warnings
 
+# CRITICAL: Set environment variables BEFORE importing PyTorch
+# These must be set before CUDA is initialized (which happens on first torch import)
+# This is essential for reproducibility across different hardware
+if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+    os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+if "OMP_NUM_THREADS" not in os.environ:
+    os.environ["OMP_NUM_THREADS"] = "1"
+if "MKL_NUM_THREADS" not in os.environ:
+    os.environ["MKL_NUM_THREADS"] = "1"
+
 import neps
 import numpy as np
 import torch
@@ -178,9 +188,9 @@ def set_reproducibility_env_vars():
     """
     Set environment variables for reproducibility BEFORE any CUDA operations.
     
-    This function should be called as early as possible, ideally before importing
-    PyTorch or any CUDA-dependent libraries. However, it's safe to call it multiple
-    times, so it can also be called from set_seed() as a fallback.
+    NOTE: These variables are already set at module import time (at the top of this file)
+    before PyTorch is imported. This function is kept for backward compatibility and
+    as a safety check, but the variables should already be set.
     
     Critical variables:
     - CUBLAS_WORKSPACE_CONFIG: Required for deterministic cuBLAS operations
@@ -191,24 +201,12 @@ def set_reproducibility_env_vars():
     Returns:
         None
     """
-    # CUBLAS_WORKSPACE_CONFIG: Required for deterministic cuBLAS operations
-    # This MUST be set before CUDA is initialized (before first torch.cuda call)
-    # Format: ":4096:8" (memory limit:preference)
-    # ":4096:8" allows more workspace but may be slower
-    # ":16:8" uses less memory but may fail on some operations
+    # These are already set at module import time, but we set them again as a safety check
+    # (safe to set multiple times)
     if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
         os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-    
-    # PYTHONHASHSEED: Ensures deterministic hash-based operations
-    # This affects dict iteration order, set operations, etc.
-    # Note: This will be overridden by set_seed() with the actual seed value
-    
-    # OpenMP threads: Set to 1 for deterministic CPU operations
-    # This helps with reproducibility of NumPy operations
     if "OMP_NUM_THREADS" not in os.environ:
         os.environ["OMP_NUM_THREADS"] = "1"
-    
-    # MKL threads: Set to 1 for deterministic NumPy/BLAS operations
     if "MKL_NUM_THREADS" not in os.environ:
         os.environ["MKL_NUM_THREADS"] = "1"
 
@@ -276,6 +274,66 @@ def set_seed(seed):
     except AttributeError:
         # Fallback for older PyTorch versions (< 1.8)
         pass
+
+def print_reproducibility_info():
+    """
+    Print reproducibility-related information for debugging.
+    
+    This function helps identify differences between local and cluster environments
+    that might affect reproducibility.
+    
+    Returns:
+        None
+    """
+    print("\n" + "="*80)
+    print("REPRODUCIBILITY ENVIRONMENT INFO")
+    print("="*80)
+    
+    # Environment variables
+    print("\nEnvironment Variables:")
+    env_vars = [
+        "CUBLAS_WORKSPACE_CONFIG",
+        "PYTHONHASHSEED",
+        "OMP_NUM_THREADS",
+        "MKL_NUM_THREADS",
+        "CUDA_VISIBLE_DEVICES",
+    ]
+    for var in env_vars:
+        value = os.environ.get(var, "NOT SET")
+        print(f"  {var}: {value}")
+    
+    # PyTorch info
+    print("\nPyTorch Configuration:")
+    print(f"  PyTorch version: {torch.__version__}")
+    print(f"  CUDA available: {torch.cuda.is_available()}")
+    if torch.cuda.is_available():
+        print(f"  CUDA version: {torch.version.cuda}")
+        print(f"  cuDNN version: {torch.backends.cudnn.version()}")
+        print(f"  GPU: {torch.cuda.get_device_name(0)}")
+        print(f"  GPU count: {torch.cuda.device_count()}")
+    print(f"  cuDNN deterministic: {torch.backends.cudnn.deterministic}")
+    print(f"  cuDNN benchmark: {torch.backends.cudnn.benchmark}")
+    
+    # Check deterministic algorithms
+    try:
+        # This might not be available in older PyTorch versions
+        deterministic = torch.are_deterministic_algorithms_enabled()
+        print(f"  Deterministic algorithms enabled: {deterministic}")
+    except AttributeError:
+        print(f"  Deterministic algorithms: (not available in this PyTorch version)")
+    
+    # NumPy info
+    print("\nNumPy Configuration:")
+    print(f"  NumPy version: {np.__version__}")
+    
+    # Python info
+    import sys
+    print("\nPython Configuration:")
+    print(f"  Python version: {sys.version}")
+    print(f"  Platform: {sys.platform}")
+    
+    print("="*80 + "\n")
+
 
 def cleanup_training_artifacts(pipeline_directory, total_inner_folds):
     """
