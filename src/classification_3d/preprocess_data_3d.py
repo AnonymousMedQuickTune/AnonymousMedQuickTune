@@ -1069,14 +1069,25 @@ def get_kfold_dataloaders(
             # CRITICAL: Use a hash-based seed to ensure reproducibility even if indices overlap
             # We combine the base seed with the original index to create a unique seed per sample
             sample_seed = self.seed + original_idx
-            set_seed(sample_seed)
+            
+            # CRITICAL: Set seeds for all random number generators
+            # We need to set these BEFORE setting MONAI's random states to ensure consistency
+            # Use thread-local approach: set seeds but don't call full set_seed() to avoid
+            # modifying global deterministic flags (which should already be set)
+            random.seed(sample_seed)
+            np.random.seed(sample_seed)
+            torch.manual_seed(sample_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed(sample_seed)
             
             # CRITICAL: Also set seed for MONAI's Randomizable transforms
             # MONAI's random transforms use their own random state, which needs to be set explicitly
+            # This must be done AFTER setting the global seeds to ensure consistency
             if self.transform is not None and hasattr(self.transform, 'transforms'):
                 for transform in self.transform.transforms:
                     if isinstance(transform, Randomizable):
                         # Set the random state for each randomizable transform
+                        # This ensures each transform uses a deterministic random state
                         transform.set_random_state(seed=sample_seed)
             
             # Apply transform with deterministic seed
