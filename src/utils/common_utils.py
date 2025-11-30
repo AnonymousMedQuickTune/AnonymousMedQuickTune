@@ -174,23 +174,88 @@ def neps_space_to_dict(pipeline_space):
     return space_dict
 
 
+def set_reproducibility_env_vars():
+    """
+    Set environment variables for reproducibility BEFORE any CUDA operations.
+    
+    This function should be called as early as possible, ideally before importing
+    PyTorch or any CUDA-dependent libraries. However, it's safe to call it multiple
+    times, so it can also be called from set_seed() as a fallback.
+    
+    Critical variables:
+    - CUBLAS_WORKSPACE_CONFIG: Required for deterministic cuBLAS operations
+    - PYTHONHASHSEED: Ensures deterministic hash-based operations
+    - OMP_NUM_THREADS: Controls OpenMP thread count for deterministic CPU operations
+    - MKL_NUM_THREADS: Controls MKL thread count for deterministic NumPy/BLAS operations
+    
+    Returns:
+        None
+    """
+    # CUBLAS_WORKSPACE_CONFIG: Required for deterministic cuBLAS operations
+    # This MUST be set before CUDA is initialized (before first torch.cuda call)
+    # Format: ":4096:8" (memory limit:preference)
+    # ":4096:8" allows more workspace but may be slower
+    # ":16:8" uses less memory but may fail on some operations
+    if "CUBLAS_WORKSPACE_CONFIG" not in os.environ:
+        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
+    
+    # PYTHONHASHSEED: Ensures deterministic hash-based operations
+    # This affects dict iteration order, set operations, etc.
+    # Note: This will be overridden by set_seed() with the actual seed value
+    
+    # OpenMP threads: Set to 1 for deterministic CPU operations
+    # This helps with reproducibility of NumPy operations
+    if "OMP_NUM_THREADS" not in os.environ:
+        os.environ["OMP_NUM_THREADS"] = "1"
+    
+    # MKL threads: Set to 1 for deterministic NumPy/BLAS operations
+    if "MKL_NUM_THREADS" not in os.environ:
+        os.environ["MKL_NUM_THREADS"] = "1"
+
+
 def set_seed(seed):
     """
     Set random seeds for reproducibility across all libraries.
+    
+    This function sets seeds for all random number generators and configures
+    deterministic behavior for PyTorch, CUDA, NumPy, and Python. It also sets
+    critical environment variables for CUDA determinism that are essential for
+    reproducibility across different hardware (local vs. cluster).
 
     Args:
         seed (int): Random seed value
 
     Returns:
         None
+    
+    Note:
+        Some CUDA operations (e.g., 3D pooling backward) don't have deterministic
+        implementations yet. These will produce warnings but don't significantly
+        affect overall reproducibility.
+        
+        IMPORTANT: For best reproducibility, call set_reproducibility_env_vars()
+        BEFORE importing PyTorch. However, calling set_seed() early (e.g., at the
+        start of main()) is usually sufficient.
     """
+    # Set environment variables for reproducibility (safe to call multiple times)
+    set_reproducibility_env_vars()
+    
+    # PYTHONHASHSEED: Ensures deterministic hash-based operations (dict iteration order, etc.)
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    
+    # Set random seeds for all libraries
     random.seed(seed)  # Python's random
     np.random.seed(seed)  # NumPy
     torch.manual_seed(seed)  # PyTorch (CPU)
-    torch.cuda.manual_seed(seed)  # PyTorch (GPU)
-    torch.cuda.manual_seed_all(seed)  # multi-GPU
+    
+    # Set CUDA seeds (must be done after environment variables are set)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)  # PyTorch (GPU)
+        torch.cuda.manual_seed_all(seed)  # multi-GPU
+    
+    # Configure cuDNN for deterministic behavior
     torch.backends.cudnn.deterministic = True  # Ensure deterministic behavior
-    torch.backends.cudnn.benchmark = False  # Disable benchmark mode
+    torch.backends.cudnn.benchmark = False  # Disable benchmark mode (required for determinism)
     
     # Filter warnings for non-deterministic 3D pooling operations
     # These operations (avg_pool3d_backward, max_pool3d_with_indices_backward) don't have
@@ -204,12 +269,13 @@ def set_seed(seed):
     )
     
     # Use deterministic algorithms where available (PyTorch 1.8+)
+    # This enables deterministic algorithms for operations that support it
+    # warn_only=True allows non-deterministic operations to continue with a warning
     try:
         torch.use_deterministic_algorithms(True, warn_only=True)
     except AttributeError:
-        # Fallback for older PyTorch versions
+        # Fallback for older PyTorch versions (< 1.8)
         pass
-    os.environ["PYTHONHASHSEED"] = str(seed)  # Python hash seed
 
 def cleanup_training_artifacts(pipeline_directory, total_inner_folds):
     """

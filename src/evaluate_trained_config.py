@@ -14,7 +14,7 @@ from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 from src.classification_3d.preprocess_data_3d import DataTransform
 from src.classification_3d.utils.dataset_info import extract_spatial_size
-from src.utils.common_utils import set_seed, yaml_to_neps_pipeline_space
+from src.utils.common_utils import set_seed, set_reproducibility_env_vars, yaml_to_neps_pipeline_space
 from src.utils.model_lifecycle_utils import evaluate_model
 from sklearn.metrics import precision_recall_fscore_support, confusion_matrix, roc_auc_score
 from sklearn.model_selection import RepeatedStratifiedKFold
@@ -478,7 +478,11 @@ def evaluate_config_on_validation_set_ensemble(
     print(f"EVALUATING CONFIG ON VALIDATION SET (ENSEMBLE)")
     print(f"{'='*80}\n")
     
-    # Set seed for reproducibility
+    # CRITICAL: Set environment variables for reproducibility FIRST
+    # This ensures reproducibility even if this function is called directly
+    set_reproducibility_env_vars()
+    
+    # Set seed for reproducibility (this also sets PYTHONHASHSEED)
     set_seed(experimental_setting.seed)
     
     # Load validation data (train_val_images and train_val_labels)
@@ -767,7 +771,11 @@ def evaluate_config_on_test_set(
     print(f"EVALUATING CONFIG ON TEST SET (CV Fold {cv_outer_fold})")
     print(f"{'='*80}\n")
     
-    # Set seed for reproducibility
+    # CRITICAL: Set environment variables for reproducibility FIRST
+    # This ensures reproducibility even if this function is called directly
+    set_reproducibility_env_vars()
+    
+    # Set seed for reproducibility (this also sets PYTHONHASHSEED)
     set_seed(experimental_setting.seed)
 
     # TEST DATA LOADING

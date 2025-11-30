@@ -21,7 +21,7 @@ from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.objective_function_3d import run_3d_pipeline
 from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_cv_splits
 from src.utils.common_utils import (get_cache_file_path, neps_space_to_dict, set_seed,
-                                    yaml_to_neps_pipeline_space, cleanup_training_artifacts)
+                                    set_reproducibility_env_vars, yaml_to_neps_pipeline_space, cleanup_training_artifacts)
 from src.utils.experiment_status_logger import ExperimentStatusLogger
 from src.utils.logging_utils import (save_cv_summary, update_performances_csv_from_neps_output,
                                      update_cost_csv_from_neps_output)
@@ -228,7 +228,12 @@ def main(experimental_setting: DictConfig) -> None:
     Args:
         experimental_setting (DictConfig): Hydra configuration object
     """
-    # Set seed for NePS reproducibility
+    # CRITICAL: Set environment variables for reproducibility FIRST
+    # This must be done before any CUDA operations (even if PyTorch is already imported)
+    # These variables are essential for reproducibility across different hardware
+    set_reproducibility_env_vars()
+    
+    # Set seed for NePS reproducibility (this also sets PYTHONHASHSEED)
     set_seed(experimental_setting.seed)
 
     if experimental_setting.run_mode == "Baseline":
