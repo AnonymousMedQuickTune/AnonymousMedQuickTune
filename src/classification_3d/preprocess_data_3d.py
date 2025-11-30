@@ -588,7 +588,10 @@ def apply_gamma_correction(img, gamma=None):
     """
     # Sample gamma value once per image if not provided
     # NOTE: This uses the global numpy random state, which should be set before calling
+    # CRITICAL: The seed must be set in DeterministicDataset.__getitem__() before calling this function
     if gamma is None:
+        # Use np.random.uniform() which will use the seed set in __getitem__()
+        # This ensures deterministic gamma values for the same sample
         gamma = np.random.uniform(0.7, 1.4)
                 
     # Handle both torch.Tensor and numpy arrays
@@ -1093,8 +1096,20 @@ def get_kfold_dataloaders(
             # Apply transform with deterministic seed
             # MONAI's Compose executes transforms sequentially, and each random transform uses the global random state
             # By setting the seed here, we ensure all random decisions in the transform chain are deterministic
+            # CRITICAL: The seed must be set BEFORE calling self.transform() to ensure apply_gamma_correction
+            # (which uses np.random.uniform()) uses the correct seed
             if self.transform is not None:
-                result = self.transform(item)
+                # Create a local random state generator for this sample to ensure complete determinism
+                # This ensures that even if other operations modify the global random state,
+                # apply_gamma_correction will use the correct seed
+                rng_state = np.random.get_state()
+                try:
+                    # Set the seed again right before applying transforms to ensure consistency
+                    np.random.seed(sample_seed)
+                    result = self.transform(item)
+                finally:
+                    # Restore the previous random state (though we don't really need to since we set it per sample)
+                    np.random.set_state(rng_state)
             else:
                 result = item
             
