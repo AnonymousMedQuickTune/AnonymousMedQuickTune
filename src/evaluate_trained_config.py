@@ -603,6 +603,14 @@ def evaluate_config_on_validation_set_ensemble(
             )
         )
         
+        # Worker init function to ensure each worker has a deterministic seed
+        # This is critical when num_workers > 0 for reproducibility
+        def worker_init_fn(worker_id):
+            # Set seed for each worker based on the base seed and worker ID
+            # This ensures reproducibility even with multiple workers
+            worker_seed = experimental_setting.seed + worker_id
+            set_seed(worker_seed)
+
         # Create data loader
         val_loader = DataLoader(
             val_dataset,
@@ -612,6 +620,8 @@ def evaluate_config_on_validation_set_ensemble(
             ),
             shuffle=False,
             num_workers=experimental_setting.data.num_workers,
+            pin_memory=False,
+            worker_init_fn=worker_init_fn if experimental_setting.data.num_workers > 0 else None,  # Deterministic workers
         )
         
         # Evaluate this fold's model
@@ -897,6 +907,14 @@ def evaluate_config_on_test_set(
                 transform=DataTransform(normalization_stats, developer_mode=experimental_setting.developer_mode, spatial_size=spatial_size, is_training=False, is_medmnist=dataset.get("is_medmnist", False), augmentation_type=experimental_setting.data.augmentation_type)
             )
             
+            # Worker init function to ensure each worker has a deterministic seed
+            # This is critical when num_workers > 0 for reproducibility
+            def worker_init_fn(worker_id):
+                # Set seed for each worker based on the base seed and worker ID
+                # This ensures reproducibility even with multiple workers
+                worker_seed = experimental_setting.seed + worker_id
+                set_seed(worker_seed)
+
             # Create test loader
             test_loader = DataLoader(
                 test_dataset,
@@ -906,6 +924,8 @@ def evaluate_config_on_test_set(
                 ),
                 shuffle=False,
                 num_workers=experimental_setting.data.num_workers,
+                pin_memory=False,
+                worker_init_fn=worker_init_fn if experimental_setting.data.num_workers > 0 else None,  # Deterministic workers
             )
 
             # EVALUATE THE FOLD ON THE TEST SET
