@@ -1146,7 +1146,7 @@ def get_kfold_dataloaders(
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        pin_memory=True,
+        pin_memory=False,
         generator=generator,  # Deterministic shuffling
         worker_init_fn=worker_init_fn if num_workers > 0 else None,  # Deterministic workers
     )
@@ -1157,7 +1157,7 @@ def get_kfold_dataloaders(
             batch_size=batch_size,
             shuffle=False,  # No shuffling for validation
             num_workers=num_workers,
-            pin_memory=True,
+            pin_memory=False,
             worker_init_fn=worker_init_fn if num_workers > 0 else None,  # Deterministic workers
         )
     else:
