@@ -684,9 +684,9 @@ def run_3d_pipeline(
         
             print("\nTraining completed!\n")
 
-    except (ValueError, RuntimeError) as e:
+    except Exception as e:
         # Catch spatial dimension errors (e.g., InstanceNorm with 1x1x1, incompatible model/dataset combinations)
-        # Also catch RuntimeError (e.g., CUDA errors, OOM errors)
+        # Also catch RuntimeError / AcceleratorError (e.g., CUDA errors, OOM errors)
         error_msg = str(e)
         error_type = type(e).__name__
         
@@ -728,6 +728,36 @@ def run_3d_pipeline(
                     },
                     "error": "Incompatible model/dataset combination",
                     "error_details": error_msg
+                },
+            }
+        elif "CUDA error" in error_msg or "CUDNN_STATUS_EXECUTION_FAILED" in error_msg:
+            # Handle CUDA / accelerator errors gracefully and mark this config as invalid
+            print(f"\n{'='*80}", flush=True)
+            print(f"ERROR: AcceleratorError during training!", flush=True)
+            print(f"{'='*80}", flush=True)
+            print(f"Model: {model_type}", flush=True)
+            print(f"Dataset: {experimental_setting.data.dataset}", flush=True)
+            if 'spatial_size' in locals():
+                print(f"Spatial size: {spatial_size}", flush=True)
+            print(f"Error type: {error_type}", flush=True)
+            print(f"Error message: {error_msg}", flush=True)
+            print(f"{'='*80}\n", flush=True)
+
+            # Ensure all_folds_final_metrics is initialized
+            if 'all_folds_final_metrics' not in locals():
+                all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
+
+            # Return worst possible score to signal this configuration is invalid but keep NePS running
+            return {
+                "objective_to_minimize": 0.0,
+                "cost": 0.0,
+                "extra": {
+                    "selected_metric": 0.0,
+                    "all_folds_final_metrics": {
+                        metric: 0.0 for metric in all_folds_final_metrics.keys()
+                    },
+                    "error": "CUDA error during training",
+                    "error_details": error_msg,
                 },
             }
         else:
