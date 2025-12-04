@@ -19,6 +19,17 @@ import torch
 import yaml
 import shutil
 
+# CRITICAL: Set multiprocessing sharing strategy to avoid "too many open files" errors
+# This must be set before creating any DataLoaders with num_workers > 0
+# 'file_system' uses file descriptors instead of shared memory, which is more robust
+# for long-running processes and avoids file descriptor limits
+if hasattr(torch.multiprocessing, 'set_sharing_strategy'):
+    try:
+        torch.multiprocessing.set_sharing_strategy('file_system')
+    except RuntimeError:
+        # Sharing strategy can only be set once, so if it's already set, ignore the error
+        pass
+
 
 def get_cache_file_path(data_path, dataset_name, dimensionality, cv_outer_fold, voxel_calculation=None):
     """

@@ -199,8 +199,21 @@ def log_validation_images(writer, model, val_loader, device, fold, epoch):
     model.eval()
     with torch.no_grad():
         # Get a batch of images - use epoch to get different batches
+        # IMPORTANT: Don't convert DataLoader to list (causes "too many open files" error)
+        # Instead, iterate directly to the desired batch index
         batch_idx = epoch % len(val_loader)
-        batch = list(val_loader)[batch_idx]
+        batch = None
+        for i, b in enumerate(val_loader):
+            if i == batch_idx:
+                batch = b
+                break
+            # Clean up intermediate batches to avoid memory/file descriptor accumulation
+            del b
+        
+        if batch is None:
+            # Fallback: if batch_idx is out of range, use first batch
+            batch = next(iter(val_loader))
+        
         if isinstance(batch, dict):
             images = batch.get("image")
             labels = batch.get("label")
