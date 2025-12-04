@@ -629,8 +629,17 @@ def main(experimental_setting: DictConfig) -> None:
                 "surrogate_version": "0.0.1",   # Version of the surrogate model to use (default: "0.0.1")
             })
             use_multifidelity = True
+        elif experimental_setting.searcher in ["bo", "bayesian_optimization"]:
+            # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.bayesian_optimization
+            # Bayesian Optimization is a single-fidelity algorithm (not multifidelity)
+            optimizer = ("bayesian_optimization", {
+                "initial_design_size": "ndim",  # Number of configs to sample before starting optimization: int or "ndim" (default: "ndim")
+                "cost_aware": False,            # Whether to use cost-aware acquisition (default: False). Options: bool or "log"
+                "device": None,                 # Device to use for the GP model (default: None). Options: torch.device, str, or None
+            })
+            use_multifidelity = False
         else:
-            raise ValueError(f"Unsupported searcher: {experimental_setting.searcher}. Must be one of: 'random_search', 'priorband', or 'ifbo'. Please integrate your searcher in the code.")
+            raise ValueError(f"Unsupported searcher: {experimental_setting.searcher}. Must be one of: 'random_search', 'priorband', 'bo', or 'ifbo'. Please integrate your searcher in the code.")
         
         if experimental_setting.run_mode == "Baseline":
             experimental_setting.max_evaluations = 1

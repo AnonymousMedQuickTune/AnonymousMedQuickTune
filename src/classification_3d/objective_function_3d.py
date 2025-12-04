@@ -152,8 +152,10 @@ def run_3d_pipeline(
     # Calculate available time per inner fold
     # Formula: cost_to_spend / (max_evaluations * total_inner_folds)
     # This distributes the total time budget across all inner folds of all configs
-    time_per_inner_fold = experimental_setting.cost_to_spend / (experimental_setting.max_evaluations * total_inner_folds)
-    print(f"\nTime budget per inner fold: {time_per_inner_fold:.2f}s (cost_to_spend={experimental_setting.cost_to_spend}s, max_evaluations={experimental_setting.max_evaluations}, total_inner_folds={total_inner_folds})\n")
+    # time_per_inner_fold = experimental_setting.cost_to_spend / (experimental_setting.max_evaluations * total_inner_folds)
+    budget = 14400  # 4*60*60 > 4 hours budget per config
+    time_per_inner_fold = budget / total_inner_folds
+    print(f"\nTime budget per inner fold: {time_per_inner_fold:.2f}s ({time_per_inner_fold/3600:.2f}h)\n")  #  (cost_to_spend={experimental_setting.cost_to_spend}s, max_evaluations={experimental_setting.max_evaluations}, total_inner_folds={total_inner_folds})\n")
 
 
     all_folds_final_metrics = {"accuracy": [], "precision": [], "recall": [], "f1": [], "auc": []}
