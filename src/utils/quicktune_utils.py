@@ -100,15 +100,32 @@ def custom_extract_image_dataset_metafeat(
                 num_features = 224
                 num_channels = 3
             elif dataset_name == "lipo":
-                num_samples = 114  # Actual values from dataset statistics
+                dataset = "lipo"
                 num_classes = 2
-                num_features = 224  # Standard input size for medical images  # TODO @Diane: Update this
-                num_channels = 1  # Grayscale for medical images
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 32
+                modality = "MRI"
+                total_num_samples = 114
+            elif dataset_name == "liver":
+                dataset = "liver"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 32
+                modality = "MRI"
+                total_num_samples = 186
             elif dataset_name == "desmoid":
-                num_samples = 203  # Actual values from dataset statistics
+                dataset = "desmoid"
                 num_classes = 2
-                num_features = 224  # Standard input size for medical images  # TODO @Diane: Update this
-                num_channels = 1  # Grayscale for medical images
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 32
+                modality = "MRI"
+                total_num_samples = 203
             else:
                 raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}")
 
@@ -118,10 +135,14 @@ def custom_extract_image_dataset_metafeat(
     # Output as needed for QuickTune
     # TODO @Diane: for medical datasets might be good to add class distribution?: brain_tumor: {0: 98, 1: 155}
     metafeat = {
-        "num-samples": num_samples,
-        "num-classes": num_classes,
-        "num-features": num_features,
-        "num-channels": num_channels,
+        "dataset": dataset,
+        "num_classes": num_classes,
+        "input_channels": input_channels,
+        "input_size_h": input_size_h,
+        "input_size_w": input_size_w,
+        "input_size_d": input_size_d,
+        "modality": modality,
+        "total_num_samples": total_num_samples,
     }
 
     trial_info = {
