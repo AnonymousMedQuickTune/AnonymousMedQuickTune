@@ -34,6 +34,8 @@ from src.utils.quicktune_utils import (
 from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
 from src.evaluate_trained_config import evaluate_config_on_test_set
 from src.utils.common_utils import cleanup_training_artifacts
+from src.utils.logging_utils import save_cv_summary
+from src.analysis.summarize_evaluation_results import summarize_experiment
 
 # For debugging purposes:
 # from qtt.predictors import PerfPredictor, CostPredictor
@@ -274,6 +276,11 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                 f"Unsupported dimensionality: {dimensionality}. Must be either '2d' or '3d'"
             )
         
+        # Save pipeline_result to a file (similar to run_neps.py)
+        pipeline_result_file = pipeline_dir / "pipeline_result.json"
+        with open(pipeline_result_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=4)
+        
         # Inner fold progress is now logged within the pipeline functions
 
         # Evaluate the trained configuration on test set
@@ -292,17 +299,62 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             framework="quicktune"
         )
 
-        # Persist test metrics as a JSON artifact
+        # Persist test metrics and validation metrics as a JSON artifact; do not modify pipeline_result
         if test_metrics is not None:
+            # Extract validation metrics from pipeline_result
+            validation_metrics = None
+            if "extra" in result and "all_folds_final_metrics" in result["extra"]:
+                validation_metrics = result["extra"]["all_folds_final_metrics"]
+            
+            # Combine test and validation metrics
+            # Keep backward compatibility: test_metrics already has "ensemble" and "per_fold" structure
+            evaluation_results = test_metrics.copy()  # Start with test metrics structure
+            
+            # Add validation metrics if available
+            if validation_metrics is not None:
+                evaluation_results["validation"] = validation_metrics
+                print(f"Validation metrics included: {validation_metrics}")
+            
             test_metrics_file = pipeline_dir / "test_evaluation_results.json"
             with open(test_metrics_file, "w", encoding="utf-8") as f:
-                json.dump(test_metrics, f, indent=4)
-            print(f"Test evaluation completed and saved to: {test_metrics_file}")
+                json.dump(evaluation_results, f, indent=4)
+            print(f"Test and validation evaluation completed and saved to: {test_metrics_file}")
         else:
             print(f"Warning: Test evaluation failed or no valid checkpoints found!")
 
         # Delete model checkpoints to save disk space after test evaluation
         cleanup_training_artifacts(str(pipeline_dir), total_inner_folds)
+
+        # Automatically generate performance plots (similar to run_neps.py)
+        try:
+            # Extract experiment directory from pipeline_dir
+            # QuickTune experiments have structure: .../cv_outer_fold_X/config_Y/...
+            # Experiment directory: experiments/QuickTune/lipo/test_experiment
+            pipeline_dir_str = str(pipeline_dir)
+            if "/cv_outer_fold_" in pipeline_dir_str:
+                # Extract path up to cv_outer_fold, then go up to get experiment directory
+                experiment_dir_str = pipeline_dir_str.split("/cv_outer_fold_")[0]
+                experiment_dir = Path(experiment_dir_str)
+                
+                # Check if experiment directory exists and has the expected structure
+                if experiment_dir.exists() and any(experiment_dir.iterdir()):
+                    from src.analysis.plot_results_over_time import collect_performances, create_plots
+                    
+                    print(f"\n{'='*100}")
+                    print(f"GENERATING PERFORMANCE PLOTS")
+                    print(f"{'='*100}\n")
+                    
+                    # Collect performances and create plots (single experiment)
+                    validation_performances, test_performances = collect_performances(experiment_dir)
+                    all_validation_performances = [(experiment_dir.name, validation_performances)]
+                    all_test_performances = [(experiment_dir.name, test_performances)]
+                    create_plots([experiment_dir], all_validation_performances, all_test_performances)
+                    
+                    print(f"Performance plots generated successfully!\n")
+        except Exception as e:
+            # Don't fail the pipeline if plotting fails
+            print(f"Warning: Could not generate performance plots: {e}")
+            print("Continuing with pipeline execution...\n")
 
         # Extract metrics safely
         info_dict = result.get("extra", {})
@@ -452,6 +504,12 @@ def main(experimental_setting: DictConfig) -> None:
     print(f"\n=== Starting Cross-Validation with {cv_outer_folds} folds ===\n")
     
     for cv_outer_fold in range(cv_outer_folds):
+        # Set a different seed for each outer fold to ensure different configurations are sampled
+        # This prevents identical hyperparameter configurations across different outer folds
+        fold_specific_seed = experimental_setting.seed + cv_outer_fold
+        set_seed(fold_specific_seed)
+        print(f"\n=== Setting fold-specific seed {fold_specific_seed} for outer fold {cv_outer_fold} ===")
+        
         print(f"\n{'=' * 100}")
         print(f"Starting QuickTune optimization for CV fold {cv_outer_fold + 1}/{cv_outer_folds}")
         print(f"{'=' * 100}\n")
@@ -646,6 +704,32 @@ def main(experimental_setting: DictConfig) -> None:
     status_logger.mark_main_finished()
     
     print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
+    
+    # Save cross-validation summary to text file (similar to run_neps.py)
+    save_cv_summary(experimental_setting, cv_outer_folds)
+    
+    # Automatically summarize evaluation results including outer fold ensemble (similar to run_neps.py)
+    print(f"\n{'='*100}")
+    print(f"AUTOMATICALLY SUMMARIZING EVALUATION RESULTS")
+    print(f"{'='*100}\n")
+    
+    try:
+        # Generate summary with outer fold ensemble
+        # Remove seed_XX from experiment_base_dir to get the correct path
+        experiment_path = experimental_setting.experiment_base_dir.replace(f"/seed_{experimental_setting.seed}", "")
+        summary = summarize_experiment(experiment_path, str(experimental_setting.seed))
+        
+        # Save summary to file
+        summary_file = os.path.join(experimental_setting.experiment_base_dir, "evaluation_summary_across_outer_folds.txt")
+        with open(summary_file, 'w', encoding='utf-8') as f:
+            f.write(summary)
+        
+        print(f"\nEvaluation summary saved to: {summary_file}")
+        print("\n" + summary)
+        
+    except Exception as e:
+        print(f"Warning: Could not generate evaluation summary: {e}")
+        print("You can manually run: python src/analysis/summarize_evaluation_results.py <experiment_path>")
 
 
 if __name__ == "__main__":

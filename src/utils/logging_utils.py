@@ -448,7 +448,11 @@ def save_cv_summary(experimental_setting, cv_outer_folds):
         f.write(f"N Splits per Repeat: {experimental_setting.cv_outer_folds_splits}\n")
         f.write(f"Seed: {experimental_setting.seed}\n")
         f.write(f"Max Evaluations: {experimental_setting.max_evaluations}\n")
-        f.write(f"Optimizer: {experimental_setting.searcher}\n")
+        # Support both NePS and QuickTune
+        if hasattr(experimental_setting, "searcher"):
+            f.write(f"Optimizer: {experimental_setting.searcher}\n")
+        elif hasattr(experimental_setting, "qt"):
+            f.write(f"Optimizer: QuickTune\n")
         f.write(f"Developer Mode: {experimental_setting.developer_mode}\n")
         f.write(f"Number of Epochs: {experimental_setting.training.number_of_epochs}\n")
         f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
@@ -456,8 +460,14 @@ def save_cv_summary(experimental_setting, cv_outer_folds):
         # CV Fold directories
         f.write("CROSS-VALIDATION FOLD DIRECTORIES:\n")
         f.write("-" * 40 + "\n")
+        # Support both NePS and QuickTune directory structures
+        if hasattr(experimental_setting, "neps_directory") and experimental_setting.neps_directory:
+            base_cv_dir = experimental_setting.neps_directory
+        else:
+            # For QuickTune, CV folds are directly under experiment_base_dir
+            base_cv_dir = experimental_setting.experiment_base_dir
         for cv_outer_fold in range(cv_outer_folds):
-            cv_dir = f"{experimental_setting.neps_directory}/cv_outer_fold_{cv_outer_fold}"
+            cv_dir = f"{base_cv_dir}/cv_outer_fold_{cv_outer_fold}"
             f.write(f"CV Fold {cv_outer_fold}: {cv_dir}\n")
         f.write("\n")
         
