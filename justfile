@@ -229,6 +229,19 @@ create-multi-dataset-portfolio DATASET_SPEC:
     run_mode=Portfolio \
     hydra.run.dir=experiments/Portfolio/logs
 
+# example: just create-multi-dataset-portfolio-cluster "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
+# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio (cluster)
+create-multi-dataset-portfolio-cluster DATASET_SPEC:
+  #!/usr/bin/env bash
+  BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
+  mkdir -p ${BASE_DIR}/experiments/Portfolio/cluster_oe/
+  # Escape the DATASET_SPEC to prevent shell interpretation of special characters like parentheses
+  ESCAPED_SPEC=$(printf '%q' "{{DATASET_SPEC}}")
+  sbatch --exclude=dlcgpu19 \
+    --output=${BASE_DIR}/experiments/Portfolio/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=${BASE_DIR}/experiments/Portfolio/cluster_oe/%x.%A.%a.%N.err_out \
+    --export="DATASET_SPEC={{DATASET_SPEC}}" \
+    cluster_scripts/create_multi_dataset_portfolio.sh
 # --------------------------------------------------------------------------------------------------
 # QUICKTUNE EXPERIMENTS
 # --------------------------------------------------------------------------------------------------
