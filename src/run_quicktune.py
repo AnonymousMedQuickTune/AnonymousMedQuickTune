@@ -234,7 +234,12 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     total_inner_folds = cv_inner_folds_repeats * cv_inner_folds_splits
 
     # Set fidelity as number of epochs
-    trial["fidelity"] = hyperparameters["number_of_epochs"]
+    # number_of_epochs is only in hyperparameters for multifidelity search spaces
+    # Otherwise, use the value from experimental_setting.training.number_of_epochs
+    if "number_of_epochs" in hyperparameters:
+        trial["fidelity"] = hyperparameters["number_of_epochs"]
+    else:
+        trial["fidelity"] = experimental_setting.training.number_of_epochs
     print("trial fidelity (# epochs): ", trial["fidelity"])
 
     try:
@@ -671,12 +676,25 @@ def main(experimental_setting: DictConfig) -> None:
                     return result
                     
                 # Use the wrapped objective
-                tuner.f = objective_wrapper    
-                tuner.run(fevals=experimental_setting.max_evaluations, trial_info=trial_info)
+                tuner.f = objective_wrapper
+                # Use time_budget if cost_to_spend is specified, otherwise use max_evaluations
+                time_budget = experimental_setting.get("cost_to_spend")
+                if time_budget is not None and time_budget > 0:
+                    print(f"\nUsing time budget: {time_budget}s ({time_budget/3600:.2f}h) per outer fold")
+                    tuner.run(time_budget=time_budget, trial_info=trial_info)
+                else:
+                    print(f"\nUsing max_evaluations: {experimental_setting.max_evaluations}")
+                    tuner.run(fevals=experimental_setting.max_evaluations, trial_info=trial_info)
             else:
                 print("\nUse default objective\n")
-                tuner.run(fevals=experimental_setting.max_evaluations)
-            
+                # Use time_budget if cost_to_spend is specified, otherwise use max_evaluations
+                time_budget = experimental_setting.get("cost_to_spend")
+                if time_budget is not None and time_budget > 0:
+                    print(f"\nUsing time budget: {time_budget}s ({time_budget/3600:.2f}h) per outer fold")
+                    tuner.run(time_budget=time_budget)
+                else:
+                    print(f"\nUsing max_evaluations: {experimental_setting.max_evaluations}")
+                    tuner.run(fevals=experimental_setting.max_evaluations) 
         else:
             print("\nUse QuickTuner\n")
             tuner = QuickTuner(
@@ -684,7 +702,14 @@ def main(experimental_setting: DictConfig) -> None:
                 f=lambda trial, trial_info: quicktune_wrapper(optimizer.ask(), trial_info, experimental_setting, cv_outer_fold, status_logger),
                 path=str(cv_experiment_dir),
             )
-            tuner.run(fevals=experimental_setting.max_evaluations, time_budget=None, trial_info=trial_info)
+            # Use time_budget if cost_to_spend is specified, otherwise use max_evaluations
+            time_budget = experimental_setting.get("cost_to_spend")
+            if time_budget is not None and time_budget > 0:
+                print(f"\nUsing time budget: {time_budget}s ({time_budget/3600:.2f}h) per outer fold")
+                tuner.run(time_budget=time_budget, trial_info=trial_info)
+            else:
+                print(f"\nUsing max_evaluations: {experimental_setting.max_evaluations}")
+                tuner.run(fevals=experimental_setting.max_evaluations, time_budget=None, trial_info=trial_info)
         
         # Update outer fold status to completed and mark all inner folds as done
         status_logger.update_main_progress(
