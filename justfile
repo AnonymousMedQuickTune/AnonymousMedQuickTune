@@ -281,6 +281,19 @@ run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PO
     qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
     developer_mode=true
 
+# Submit an HPO experiment with QuickTune to the cluster for a 3D dataset
+run-3d-quicktune-cluster DATASET EXPERIMENT_NAME PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
+  #!/usr/bin/env bash
+  SEED=42
+  PORTFOLIO_DIR=/work/dlclarge1/wagnerd-medquicktune/code/MedQuickTune/experiments/Portfolio
+  USE_MEDICAL_PORTFOLIO="true"
+  mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/
+  sbatch --exclude=dlcgpu19 \
+    --output=/work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
+    --error=/work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
+    --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED=${SEED},PORTFOLIO_DIR={{PORTFOLIO_DIR}},USE_MEDICAL_PORTFOLIO={{USE_MEDICAL_PORTFOLIO}} \
+    cluster_scripts/run_quicktune_3d.sh
+
 # --------------------------------------------------------------------------------------------------
 # ANALYSIS  # TODO @Diane: test if this still works or delete this!
 # --------------------------------------------------------------------------------------------------
