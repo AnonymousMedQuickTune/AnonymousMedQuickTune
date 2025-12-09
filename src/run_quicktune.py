@@ -501,9 +501,35 @@ def main(experimental_setting: DictConfig) -> None:
     # Force save the initial status immediately after initialization to ensure the webapp can display "Active" status
     status_logger._save_main_status()
     
-    print(f"\n=== Starting Cross-Validation with {cv_outer_folds} folds ===\n")
+    # Check if running in array job mode (e.g., SLURM array job)
+    # If SLURM_ARRAY_TASK_ID is set, only process the corresponding outer fold
+    array_task_id_env = os.environ.get('SLURM_ARRAY_TASK_ID')
+    array_task_id = None  # Initialize to None for later check
+    if array_task_id_env is not None:
+        try:
+            array_task_id = int(array_task_id_env)
+            # SLURM array jobs are 1-based, but our outer folds are 0-based
+            # So we need to convert: array_task_id 1 -> outer_fold 0, array_task_id 2 -> outer_fold 1, etc.
+            outer_fold_index = array_task_id - 1
+            if outer_fold_index < 0 or outer_fold_index >= cv_outer_folds:
+                raise ValueError(f"SLURM_ARRAY_TASK_ID ({array_task_id}) maps to outer fold {outer_fold_index}, which is out of range for {cv_outer_folds} outer folds")
+            # Process only the outer fold corresponding to this array job
+            outer_folds_to_process = [outer_fold_index]
+            print(f"\n=== Running in Array Job Mode ===")
+            print(f"SLURM_ARRAY_TASK_ID: {array_task_id}")
+            print(f"Processing only outer fold {outer_fold_index} (0-based index)")
+            print(f"=== Starting Cross-Validation for outer fold {outer_fold_index} ===\n")
+        except (ValueError, TypeError) as e:
+            print(f"Warning: Invalid SLURM_ARRAY_TASK_ID '{array_task_id_env}': {e}")
+            print(f"Falling back to processing all {cv_outer_folds} outer folds sequentially")
+            array_task_id = None  # Reset to None on error
+            outer_folds_to_process = list(range(cv_outer_folds))
+    else:
+        # Normal mode: process all outer folds sequentially
+        outer_folds_to_process = list(range(cv_outer_folds))
+        print(f"\n=== Starting Cross-Validation with {cv_outer_folds} folds ===\n")
     
-    for cv_outer_fold in range(cv_outer_folds):
+    for cv_outer_fold in outer_folds_to_process:
         # Set a different seed for each outer fold to ensure different configurations are sampled
         # This prevents identical hyperparameter configurations across different outer folds
         fold_specific_seed = experimental_setting.seed + cv_outer_fold
@@ -700,36 +726,45 @@ def main(experimental_setting: DictConfig) -> None:
         print(f"Completed QuickTune optimization for CV fold {cv_outer_fold + 1}/{cv_outer_folds}")
         print(f"{'=' * 100}\n")
     
-    # Mark QuickTune experiment as finished
-    status_logger.mark_main_finished()
-    
-    print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
-    
-    # Save cross-validation summary to text file (similar to run_neps.py)
-    save_cv_summary(experimental_setting, cv_outer_folds)
-    
-    # Automatically summarize evaluation results including outer fold ensemble (similar to run_neps.py)
-    print(f"\n{'='*100}")
-    print(f"AUTOMATICALLY SUMMARIZING EVALUATION RESULTS")
-    print(f"{'='*100}\n")
-    
-    try:
-        # Generate summary with outer fold ensemble
-        # Remove seed_XX from experiment_base_dir to get the correct path
-        experiment_path = experimental_setting.experiment_base_dir.replace(f"/seed_{experimental_setting.seed}", "")
-        summary = summarize_experiment(experiment_path, str(experimental_setting.seed))
+    # Only mark as finished and generate summary if all outer folds are processed
+    # In array job mode, each job only processes one outer fold, so we don't mark as finished here
+    if array_task_id is None:
+        # Normal mode: all outer folds processed in this run
+        print(f"\n=== All {cv_outer_folds} Cross-Validation folds completed! ===\n")
         
-        # Save summary to file
-        summary_file = os.path.join(experimental_setting.experiment_base_dir, "evaluation_summary_across_outer_folds.txt")
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            f.write(summary)
+        # Mark QuickTune experiment as finished
+        status_logger.mark_main_finished()
         
-        print(f"\nEvaluation summary saved to: {summary_file}")
-        print("\n" + summary)
+        # Save cross-validation summary to text file (similar to run_neps.py)
+        save_cv_summary(experimental_setting, cv_outer_folds)
         
-    except Exception as e:
-        print(f"Warning: Could not generate evaluation summary: {e}")
-        print("You can manually run: python src/analysis/summarize_evaluation_results.py <experiment_path>")
+        # Automatically summarize evaluation results including outer fold ensemble (similar to run_neps.py)
+        print(f"\n{'='*100}")
+        print(f"AUTOMATICALLY SUMMARIZING EVALUATION RESULTS")
+        print(f"{'='*100}\n")
+        
+        try:
+            # Generate summary with outer fold ensemble
+            # Remove seed_XX from experiment_base_dir to get the correct path
+            experiment_path = experimental_setting.experiment_base_dir.replace(f"/seed_{experimental_setting.seed}", "")
+            summary = summarize_experiment(experiment_path, str(experimental_setting.seed))
+            
+            # Save summary to file
+            summary_file = os.path.join(experimental_setting.experiment_base_dir, "evaluation_summary_across_outer_folds.txt")
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                f.write(summary)
+            
+            print(f"\nEvaluation summary saved to: {summary_file}")
+            print("\n" + summary)
+            
+        except Exception as e:
+            print(f"Warning: Could not generate evaluation summary: {e}")
+            print("You can manually run: python src/analysis/summarize_evaluation_results.py <experiment_path>")
+    else:
+        # Array job mode: only one outer fold processed
+        print(f"\n=== Outer fold {cv_outer_fold + 1} completed! ===\n")
+        print(f"Note: Running in array job mode. Other outer folds are processed by other array jobs.")
+        print(f"Summary will be generated after all array jobs complete.\n")
 
 
 if __name__ == "__main__":
