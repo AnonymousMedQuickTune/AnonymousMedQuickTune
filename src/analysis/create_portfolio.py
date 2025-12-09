@@ -12,6 +12,7 @@ It creates four CSV files:
 
 import ast
 import logging
+import pickle
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -30,18 +31,25 @@ HYDRA_OUTPUT_DIR = "hydra_output"
 SUMMARY_FILE = "full.csv"
 METRICS_FILE = "metrics.csv"
 CONFIG_DIR_PREFIX = "config_"
-FOLD_DIR_PREFIX = "fold_"
+FOLD_DIR_PREFIX = "cv_inner_fold_"
 CV_FOLD_DIR = "cv_outer_fold_0"
 
 # Default meta-features (can be overridden by dataset-specific configs)
 DEFAULT_META_FEATURES = {
     "num_classes": 2,
     "input_channels": 1,
-    "input_size": 224,
+    "input_size_h": 224,
+    "input_size_w": 224,
+    "input_size_d": 224,
+    "modality": "CT",  # Default to CT
     "total_train_samples": 1000,
     "total_val_samples": 200,
     "total_test_samples": 300,
 }
+
+# Mapping of dataset names to modality
+MRI_DATASETS = ["lipo", "desmoid", "liver"]
+CT_DATASETS = ["brain_tumor"]  # Add other CT datasets as needed
 
 # Integer parameter names that should be converted to int
 INT_PARAM_NAMES = {"epochs", "batch_size"}
@@ -111,20 +119,58 @@ class PortfolioCreator:
         )
 
     def parse_neps_output(self) -> List[Dict[str, Any]]:
-        """Parse the NePS summary CSV file into a list of dictionaries."""
-        summary_path = self._find_summary_file()
-        df = pd.read_csv(summary_path)
-        results = []
-
-        for _, row in df.iterrows():
-            config_dict = self._extract_config_from_row(row, df.columns)
-            results.append(config_dict)
-
-        logging.info("Successfully parsed %d configurations", len(results))
-        return results
+        """Parse the NePS summary CSV files from all outer folds into a list of dictionaries."""
+        outer_fold_dirs = self._find_all_outer_folds()
+        all_results = []
+        
+        # Track configs by their hyperparameters to avoid duplicates
+        # Key: tuple of sorted config parameter values, Value: list of (config_dict, outer_fold_idx, config_id)
+        config_map = {}
+        
+        for outer_fold_idx, outer_fold_dir in enumerate(outer_fold_dirs):
+            summary_path = outer_fold_dir / SUMMARY_SUBDIR / SUMMARY_FILE
+            if not summary_path.exists():
+                # Fallback to old structure
+                summary_path = self.neps_output / SUMMARY_SUBDIR / SUMMARY_FILE
+                if not summary_path.exists():
+                    continue
+            
+            df = pd.read_csv(summary_path)
+            
+            for _, row in df.iterrows():
+                config_dict = self._extract_config_from_row(row, df.columns)
+                config_id = int(row["id"])
+                
+                # Create a key from config parameters (excluding non-hyperparameter fields)
+                excluded_keys = {"curves", "final_accuracy", "model_type", "dataset"}
+                config_key = tuple(sorted([
+                    (k, v) for k, v in config_dict.items() 
+                    if k not in excluded_keys
+                ]))
+                
+                if config_key not in config_map:
+                    config_map[config_key] = []
+                config_map[config_key].append((config_dict, outer_fold_idx, config_id))
+        
+        # For each unique configuration, aggregate across all outer folds
+        for config_key, occurrences in config_map.items():
+            # Use the first occurrence's config_dict as base
+            base_config = occurrences[0][0]
+            outer_fold_indices = [occ[1] for occ in occurrences]
+            config_ids = [occ[2] for occ in occurrences]
+            
+            # Store outer fold info for later aggregation
+            base_config["_outer_fold_indices"] = outer_fold_indices
+            base_config["_config_ids"] = config_ids
+            all_results.append(base_config)
+        
+        logging.info("Successfully parsed %d unique configurations from %d outer folds", 
+                    len(all_results), len(outer_fold_dirs))
+        return all_results
     
     def _find_summary_file(self) -> Path:
-        """Find the NePS summary file, checking new structure first."""
+        """Find the NePS summary file, checking new structure first.
+        Note: This method is kept for backward compatibility but parse_neps_output now uses all outer folds."""
         # Check for new outer fold structure first, then fall back to old structure
         summary_path = self.neps_output / CV_FOLD_DIR / SUMMARY_SUBDIR / SUMMARY_FILE
         if not summary_path.exists():
@@ -175,7 +221,7 @@ class PortfolioCreator:
     def _create_config_dataframe(self, results: List[Dict[str, Any]]) -> pd.DataFrame:
         """Create configuration DataFrame."""
         # Get all parameter keys except excluded ones
-        excluded_keys = {"curves", "final_accuracy", "model_type", "dataset"}
+        excluded_keys = {"curves", "final_accuracy", "model_type", "dataset", "_outer_fold_indices", "_config_ids"}
         param_keys = [key for key in results[0].keys() if key not in excluded_keys]
         
         # Build config data
@@ -198,7 +244,10 @@ class PortfolioCreator:
             "dataset": [dataset_name] * len(results),
             "num_classes": [meta_features["num_classes"]] * len(results),
             "input_channels": [meta_features["input_channels"]] * len(results),
-            "input_size": [meta_features["input_size"]] * len(results),
+            "input_size_h": [meta_features["input_size_h"]] * len(results),
+            "input_size_w": [meta_features["input_size_w"]] * len(results),
+            "input_size_d": [meta_features["input_size_d"]] * len(results),
+            "modality": [meta_features["modality"]] * len(results),
             "total_train_samples": [meta_features["total_train_samples"]] * len(results),
             "total_val_samples": [meta_features["total_val_samples"]] * len(results),
             "total_test_samples": [meta_features["total_test_samples"]] * len(results),
@@ -206,41 +255,269 @@ class PortfolioCreator:
 
         return pd.DataFrame(meta_data)
     
-    def _get_dataset_meta_features(self) -> Dict[str, int]:
-        """Get dataset-specific meta-features from config or return defaults."""
+    def _extract_sample_counts_from_splits(self) -> Dict[str, int]:
+        """Extract actual sample counts from CV splits files."""
+        outer_fold_dirs = self._find_all_outer_folds()
+        
+        # Try to get sample counts from inner_cv_splits.pkl
+        total_train_val_samples = None
+        total_test_samples = None
+        
+        for outer_fold_dir in outer_fold_dirs:
+            # Try to find a config directory to get splits from
+            configs_dir = outer_fold_dir / CONFIGS_SUBDIR
+            if configs_dir.exists():
+                # Get first config directory
+                config_dirs = [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith(CONFIG_DIR_PREFIX)]
+                if config_dirs:
+                    config_dir = config_dirs[0]
+                    splits_file = config_dir / "inner_cv_splits.pkl"
+                    
+                    if splits_file.exists():
+                        try:
+                            with open(splits_file, "rb") as f:
+                                splits_data = pickle.load(f)
+                            
+                            # Get total train+val samples from inner splits
+                            if "total_samples" in splits_data:
+                                total_train_val_samples = splits_data["total_samples"]
+                            
+                            # Get train/val split from first fold
+                            if "splits" in splits_data and len(splits_data["splits"]) > 0:
+                                train_idx, val_idx = splits_data["splits"][0]
+                                # Calculate average train/val split ratio
+                                # For stratified k-fold, val is typically 1/k of total
+                                avg_train_samples = len(train_idx)
+                                avg_val_samples = len(val_idx)
+                                
+                                # We'll use these as estimates if we can't get exact counts
+                                if total_train_val_samples:
+                                    # Estimate based on first fold (should be similar across folds)
+                                    estimated_train = int(total_train_val_samples * (avg_train_samples / (avg_train_samples + avg_val_samples)))
+                                    estimated_val = total_train_val_samples - estimated_train
+                        except Exception as e:
+                            logging.warning(f"Could not read splits file {splits_file}: {e}")
+                    
+                    break  # Only need to read from one config
+        
+        # Try to get test samples from outer CV splits
+        # Look for outer CV splits file in the dataset directory
+        dataset_name = self.hydra_config["data"]["dataset"]
+        data_path = self.hydra_config.get("data", {}).get("path", "datasets")
+        seed = self.hydra_config.get("seed", 42)
+        cv_outer_folds_splits = self.hydra_config.get("cv_outer_folds_splits", 2)
+        cv_outer_folds_repeats = self.hydra_config.get("cv_outer_folds_repeats", 1)
+        
+        # Try to find outer CV splits file
+        from src.utils.common_utils import get_deterministic_cv_splits_path
+        try:
+            splits_dir, splits_file = get_deterministic_cv_splits_path(
+                data_path, dataset_name, seed, cv_outer_folds_repeats, cv_outer_folds_splits, split_type="outer"
+            )
+            
+            if Path(splits_file).exists():
+                with open(splits_file, "rb") as f:
+                    outer_splits_data = pickle.load(f)
+                
+                if "dataset_info" in outer_splits_data and "total_samples" in outer_splits_data["dataset_info"]:
+                    total_samples = outer_splits_data["dataset_info"]["total_samples"]
+                    if total_train_val_samples and total_samples:
+                        total_test_samples = total_samples - total_train_val_samples
+        except Exception as e:
+            logging.warning(f"Could not read outer CV splits: {e}")
+        
+        return {
+            "total_train_val_samples": total_train_val_samples,
+            "total_test_samples": total_test_samples,
+        }
+    
+    def _extract_spatial_size(self) -> Tuple[int, int, int]:
+        """Extract input_size_h, input_size_w, input_size_d from spatial_size for 3D datasets or use default."""
         dataset = self.hydra_config["data"]["dataset"]
+        dimensionality = self.hydra_config.get("data", {}).get("dimensionality", "3d").lower()
+        
+        # For 3D datasets, try to extract spatial_size from statistics
+        if dimensionality == "3d":
+            model_type = self.hydra_config.get("model", {}).get("type", "efficientnet")
+            data_path = self.hydra_config.get("data", {}).get("path", "datasets")
+            developer_mode = self.hydra_config.get("developer_mode", False)
+            
+            # Try to get voxel_calculation from first config (if available)
+            outer_fold_dirs = self._find_all_outer_folds()
+            voxel_calculation = "median"  # default
+            for outer_fold_dir in outer_fold_dirs:
+                configs_dir = outer_fold_dir / CONFIGS_SUBDIR
+                if configs_dir.exists():
+                    config_dirs = [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith(CONFIG_DIR_PREFIX)]
+                    if config_dirs:
+                        config_file = config_dirs[0] / "config.yaml"
+                        if config_file.exists():
+                            try:
+                                with open(config_file, "r") as f:
+                                    config_data = yaml.safe_load(f)
+                                    if "voxel_calculation" in config_data:
+                                        voxel_calculation = config_data["voxel_calculation"]
+                                        break
+                            except Exception:
+                                pass
+            
+            # Try to extract spatial_size using the same logic as in training
+            try:
+                from src.classification_3d.utils.dataset_info import extract_spatial_size
+                spatial_size = extract_spatial_size(
+                    model_type=model_type,
+                    voxel_calculation=voxel_calculation,
+                    dataset_name=dataset,
+                    developer_mode=developer_mode,
+                    data_path=data_path,
+                    is_medmnist=False
+                )
+                
+                if spatial_size is not None:
+                    # For 3D, return (H, W, D) tuple
+                    if isinstance(spatial_size, tuple) and len(spatial_size) == 3:
+                        return (int(spatial_size[0]), int(spatial_size[1]), int(spatial_size[2]))
+                    elif isinstance(spatial_size, (int, float)):
+                        # If single value, use it for all dimensions
+                        size = int(spatial_size)
+                        return (size, size, size)
+            except Exception as e:
+                logging.warning(f"Could not extract spatial_size for {dataset}: {e}")
+        
+        # Fallback to default (for 2D or if extraction fails)
+        default_h = DEFAULT_META_FEATURES["input_size_h"]
+        default_w = DEFAULT_META_FEATURES["input_size_w"]
+        default_d = DEFAULT_META_FEATURES["input_size_d"]
+        return (default_h, default_w, default_d)
+    
+    def _get_modality(self, dataset_name: str) -> str:
+        """Determine modality (CT or MRI) based on dataset name."""
+        dataset_lower = dataset_name.lower()
+        if dataset_lower in MRI_DATASETS:
+            return "MRI"
+        elif dataset_lower in CT_DATASETS:
+            return "CT"
+        else:
+            # Default to CT if unknown, but log a warning
+            logging.warning(f"Unknown dataset '{dataset_name}', defaulting to CT modality. Please add to MRI_DATASETS or CT_DATASETS if needed.")
+            return DEFAULT_META_FEATURES["modality"]
+    
+    def _get_dataset_meta_features(self) -> Dict[str, Any]:
+        """Get dataset-specific meta-features from config, CV splits, or return defaults."""
+        dataset = self.hydra_config["data"]["dataset"]
+        
+        # Determine modality
+        modality = self._get_modality(dataset)
         
         # Try to get meta-features from config first
         if "meta_features" in self.hydra_config.get("data", {}):
             config_meta = self.hydra_config["data"]["meta_features"]
-            return {
+            
+            # Handle backward compatibility: if input_size exists, use it for all dimensions
+            if "input_size" in config_meta and "input_size_h" not in config_meta:
+                input_size = config_meta.get("input_size", DEFAULT_META_FEATURES["input_size_h"])
+                input_size_h = input_size_w = input_size_d = input_size
+            else:
+                input_size_h = config_meta.get("input_size_h", DEFAULT_META_FEATURES["input_size_h"])
+                input_size_w = config_meta.get("input_size_w", DEFAULT_META_FEATURES["input_size_w"])
+                input_size_d = config_meta.get("input_size_d", DEFAULT_META_FEATURES["input_size_d"])
+            
+            meta = {
                 "num_classes": config_meta.get("num_classes", DEFAULT_META_FEATURES["num_classes"]),
                 "input_channels": config_meta.get("input_channels", DEFAULT_META_FEATURES["input_channels"]),
-                "input_size": config_meta.get("input_size", DEFAULT_META_FEATURES["input_size"]),
+                "input_size_h": input_size_h,
+                "input_size_w": input_size_w,
+                "input_size_d": input_size_d,
+                "modality": config_meta.get("modality", modality),
                 "total_train_samples": config_meta.get("total_train_samples", DEFAULT_META_FEATURES["total_train_samples"]),
                 "total_val_samples": config_meta.get("total_val_samples", DEFAULT_META_FEATURES["total_val_samples"]),
                 "total_test_samples": config_meta.get("total_test_samples", DEFAULT_META_FEATURES["total_test_samples"]),
             }
+        else:
+            # Try to extract from CV splits
+            split_counts = self._extract_sample_counts_from_splits()
+            
+            # Estimate train/val split if we have total train+val
+            total_train_val = split_counts.get("total_train_val_samples")
+            if total_train_val:
+                # For typical k-fold CV, validation is ~1/k of train+val
+                cv_inner_folds_splits = self.hydra_config.get("cv_inner_folds_splits", 2)
+                # Rough estimate: val is 1/k, train is (k-1)/k
+                estimated_val = int(total_train_val / cv_inner_folds_splits)
+                estimated_train = total_train_val - estimated_val
+            else:
+                estimated_train = DEFAULT_META_FEATURES["total_train_samples"]
+                estimated_val = DEFAULT_META_FEATURES["total_val_samples"]
+            
+            # Extract input_size_h, input_size_w, input_size_d from spatial_size for 3D datasets
+            input_size_h, input_size_w, input_size_d = self._extract_spatial_size()
+            
+            meta = {
+                "num_classes": DEFAULT_META_FEATURES["num_classes"],
+                "input_channels": DEFAULT_META_FEATURES["input_channels"],
+                "input_size_h": input_size_h,
+                "input_size_w": input_size_w,
+                "input_size_d": input_size_d,
+                "modality": modality,
+                "total_train_samples": estimated_train,
+                "total_val_samples": estimated_val,
+                "total_test_samples": split_counts.get("total_test_samples", DEFAULT_META_FEATURES["total_test_samples"]),
+            }
         
-        # Fallback to defaults
-        return DEFAULT_META_FEATURES
+        return meta
+    
+    def _find_all_outer_folds(self) -> List[Path]:
+        """Find all cv_outer_fold directories."""
+        outer_fold_dirs = sorted(
+            [d for d in self.neps_output.iterdir() 
+             if d.is_dir() and d.name.startswith("cv_outer_fold_")],
+            key=lambda x: int(x.name.split("_")[-1])
+        )
+        return outer_fold_dirs if outer_fold_dirs else [self.neps_output / CV_FOLD_DIR]
     
     def _create_cost_dataframe(self, results: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Create cost DataFrame by reading evaluation_duration from report.yaml files."""
+        """Create cost DataFrame by reading evaluation_duration from report.yaml files.
+        Aggregates costs across all outer folds by averaging."""
         costs = []
+        outer_fold_dirs = self._find_all_outer_folds()
         
         for idx, result in enumerate(results, start=1):
-            config_dir = self._find_config_directory(idx)
-            report_path = config_dir / "report.yaml"
+            fold_costs = []
             
-            if report_path.exists():
-                with open(report_path, "r", encoding="utf-8") as f:
-                    report_data = yaml.safe_load(f)
-                    # Use evaluation_duration as cost
-                    cost = report_data.get("evaluation_duration", 1.0)
-                    costs.append(cost)
+            # Get outer fold indices and config IDs for this result
+            outer_fold_indices = result.get("_outer_fold_indices", list(range(len(outer_fold_dirs))))
+            config_ids = result.get("_config_ids", [idx] * len(outer_fold_indices))
+            
+            # Collect costs from all outer folds where this config exists
+            for outer_fold_idx, config_id in zip(outer_fold_indices, config_ids):
+                if outer_fold_idx < len(outer_fold_dirs):
+                    outer_fold_dir = outer_fold_dirs[outer_fold_idx]
+                    config_dir = outer_fold_dir / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_id}"
+                    report_path = config_dir / "report.yaml"
+                    
+                    if report_path.exists():
+                        with open(report_path, "r", encoding="utf-8") as f:
+                            report_data = yaml.safe_load(f)
+                            # Use evaluation_duration as cost
+                            cost = report_data.get("evaluation_duration", 1.0)
+                            fold_costs.append(cost)
+            
+            # Also check old structure as fallback
+            if not fold_costs:
+                old_config_dir = self.neps_output / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{idx}_0"
+                old_report_path = old_config_dir / "report.yaml"
+                if old_report_path.exists():
+                    with open(old_report_path, "r", encoding="utf-8") as f:
+                        report_data = yaml.safe_load(f)
+                        cost = report_data.get("evaluation_duration", 1.0)
+                        fold_costs.append(cost)
+            
+            if fold_costs:
+                # Average cost across all outer folds
+                avg_cost = np.mean(fold_costs)
+                costs.append(avg_cost)
             else:
-                logging.warning(f"Report file not found for config {idx}, using default cost of 1")
+                logging.warning(f"Report file not found for config {idx} in any outer fold, using default cost of 1")
                 costs.append(1.0)
         
         cost_data = {
@@ -250,28 +527,48 @@ class PortfolioCreator:
         return pd.DataFrame(cost_data)
     
     def _create_curves_dataframe(self, results: List[Dict[str, Any]]) -> pd.DataFrame:
-        """Create learning curves DataFrame."""
+        """Create learning curves DataFrame.
+        Aggregates curves across all outer folds and inner folds."""
         curves_data = []
+        outer_fold_dirs = self._find_all_outer_folds()
 
         for idx, result in enumerate(results, start=1):  # Start enumeration at 1
-            config_dir = self._find_config_directory(idx)
+            all_fold_curves = []
             
-            if not config_dir.exists():
-                logging.warning(f"Config directory not found: {config_dir}")
-                curves_data.append(np.zeros(1))
-                continue
-                
-            cv_inner_folds = self._count_folds(config_dir)
-            fold_curves = self.get_fold_metrics(idx, cv_inner_folds, str(config_dir))
+            # Get outer fold indices and config IDs for this result
+            outer_fold_indices = result.get("_outer_fold_indices", list(range(len(outer_fold_dirs))))
+            config_ids = result.get("_config_ids", [idx] * len(outer_fold_indices))
+            
+            # Collect curves from all outer folds where this config exists
+            for outer_fold_idx, config_id in zip(outer_fold_indices, config_ids):
+                if outer_fold_idx < len(outer_fold_dirs):
+                    outer_fold_dir = outer_fold_dirs[outer_fold_idx]
+                    config_dir = outer_fold_dir / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_id}"
+                    
+                    if config_dir.exists():
+                        cv_inner_folds = self._count_folds(config_dir)
+                        fold_curves = self.get_fold_metrics(config_id, cv_inner_folds, str(config_dir))
+                        
+                        if fold_curves:
+                            all_fold_curves.extend(fold_curves)
+            
+            # Also check old structure as fallback
+            if not all_fold_curves:
+                old_config_dir = self.neps_output / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{idx}_0"
+                if old_config_dir.exists():
+                    cv_inner_folds = self._count_folds(old_config_dir)
+                    fold_curves = self.get_fold_metrics(idx, cv_inner_folds, str(old_config_dir))
+                    if fold_curves:
+                        all_fold_curves.extend(fold_curves)
 
-            if fold_curves:
+            if all_fold_curves:
                 # Ensure all folds have same number of epochs
-                min_epochs = min(len(curve) for curve in fold_curves)
-                fold_curves = [curve[:min_epochs] for curve in fold_curves]
+                min_epochs = min(len(curve) for curve in all_fold_curves)
+                all_fold_curves = [curve[:min_epochs] for curve in all_fold_curves]
 
-                # Average over folds for each epoch
-                fold_curves = np.array(fold_curves)
-                avg_curve = np.mean(fold_curves, axis=0)
+                # Average over all folds (outer and inner) for each epoch
+                all_fold_curves = np.array(all_fold_curves)
+                avg_curve = np.mean(all_fold_curves, axis=0)
                 curves_data.append(avg_curve)
             else:
                 logging.warning(f"No valid curves found for config {idx}")
@@ -280,11 +577,16 @@ class PortfolioCreator:
         return pd.DataFrame(curves_data)
     
     def _find_config_directory(self, config_idx: int) -> Path:
-        """Find the configuration directory, checking new structure first."""
+        """Find the configuration directory, checking new structure first.
+        Returns the first available config directory (for backward compatibility)."""
         # Check for new outer fold structure first, then fall back to old structure
-        config_dir = self.neps_output / CV_FOLD_DIR / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_idx}"
-        if not config_dir.exists():
-            config_dir = self.neps_output / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_idx}_0"
+        outer_fold_dirs = self._find_all_outer_folds()
+        if outer_fold_dirs:
+            config_dir = outer_fold_dirs[0] / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_idx}"
+            if config_dir.exists():
+                return config_dir
+        # Fallback to old structure
+        config_dir = self.neps_output / CONFIGS_SUBDIR / f"{CONFIG_DIR_PREFIX}{config_idx}_0"
         return config_dir
     
     def _count_folds(self, config_dir: Path) -> int:
