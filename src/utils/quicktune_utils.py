@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import traceback
 from PIL import Image
 from torchvision import transforms  # type: ignore
 from torchvision.datasets import ImageFolder  # type: ignore
@@ -24,6 +25,94 @@ from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
                          UniformIntegerHyperparameter)
 
 logger = logging.getLogger(__name__)  # Add this line to create logger instance
+
+
+def extract_and_pad_learning_curve(pipeline_dir: Path, expected_length: int, metric: str = "auc"):
+    """
+    Extract learning curve from training logs and pad it to expected length.
+    
+    This function extracts validation metrics from the metrics.csv log file and pads
+    the curve to the expected length by repeating the last value. This is critical when
+    early stopping is enabled, as actual training epochs may be less than expected.
+    
+    Args:
+        pipeline_dir (Path): Directory containing training logs
+        expected_length (int): Expected number of epochs (curve length)
+        metric (str): Metric to extract (default: "auc")
+    
+    Returns:
+        np.ndarray | None: Learning curve array of shape (expected_length,), or None if extraction fails
+    """
+    try:
+        # Find metrics.csv file in the pipeline directory
+        # Metrics are logged per fold, so we need to aggregate across folds
+        metrics_files = list(pipeline_dir.glob("**/metrics.csv"))
+        
+        if not metrics_files:
+            print(f"[Learning Curve] Warning: No metrics.csv files found in {pipeline_dir}")
+            return None
+        
+        # Extract validation metrics from all folds and aggregate by epoch
+        # We need to average metrics across folds for each epoch
+        fold_curves = []
+        max_epochs = 0
+        
+        for metrics_file in metrics_files:
+            try:
+                df = pd.read_csv(metrics_file)
+                # Filter validation metrics
+                val_df = df[df["phase"] == "val"].copy()
+                if len(val_df) > 0:
+                    # Get the metric column (convert to percentage if needed)
+                    metric_values = val_df[metric].values
+                    # If values are in [0, 1] range, convert to percentage
+                    if len(metric_values) > 0 and metric_values.max() <= 1.0:
+                        metric_values = metric_values * 100
+                    fold_curves.append(metric_values)
+                    max_epochs = max(max_epochs, len(metric_values))
+            except Exception as e:
+                print(f"[Learning Curve] Warning: Could not read {metrics_file}: {e}")
+                continue
+        
+        if not fold_curves:
+            print(f"[Learning Curve] Warning: No validation metrics found")
+            return None
+        
+        # Pad all fold curves to the same length (max epochs across all folds)
+        # Then average across folds for each epoch
+        padded_curves = []
+        for fold_curve in fold_curves:
+            if len(fold_curve) < max_epochs:
+                # Pad with last value
+                last_value = fold_curve[-1] if len(fold_curve) > 0 else 0.0
+                padding = np.full(max_epochs - len(fold_curve), last_value)
+                padded_curve = np.concatenate([fold_curve, padding])
+            else:
+                padded_curve = fold_curve[:max_epochs]
+            padded_curves.append(padded_curve)
+        
+        # Average across folds for each epoch
+        curve = np.mean(padded_curves, axis=0)
+        actual_length = len(curve)
+        
+        # Pad curve to expected length by repeating the last value
+        if actual_length < expected_length:
+            last_value = curve[-1] if len(curve) > 0 else 0.0
+            padding = np.full(expected_length - actual_length, last_value)
+            curve = np.concatenate([curve, padding])
+            print(f"[Learning Curve] Padded curve from {actual_length} to {expected_length} epochs")
+        elif actual_length > expected_length:
+            # Trim if longer than expected (shouldn't happen, but handle it)
+            curve = curve[:expected_length]
+            print(f"[Learning Curve] Trimmed curve from {actual_length} to {expected_length} epochs")
+        
+        return curve.astype(np.float32)
+    
+    except Exception as e:
+        print(f"[Learning Curve] Error extracting learning curve: {e}")
+        traceback.print_exc()
+        return None
+
 
 def custom_extract_image_dataset_metafeat(
     path_root: str | Path, train_split: str = "train", val_split: str = "val"
@@ -127,7 +216,7 @@ def custom_extract_image_dataset_metafeat(
                 modality = "MRI"
                 total_num_samples = 203
             else:
-                raise ValueError(f"Unsupported dataset: {experimental_setting.data.dataset}")
+                raise ValueError(f"Unsupported dataset: {dataset_name}")
 
         except Exception as e:
             raise ValueError(f"Could not process dataset directory: {str(e)}")

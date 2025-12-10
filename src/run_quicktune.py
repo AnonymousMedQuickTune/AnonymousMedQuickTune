@@ -30,6 +30,7 @@ from src.utils.quicktune_utils import (
     save_config_files,
     custom_extract_image_dataset_metafeat,
     FTPFNPerfPredictor,
+    extract_and_pad_learning_curve,
 )
 from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
 from src.evaluate_trained_config import evaluate_config_on_test_set
@@ -390,7 +391,30 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         if isinstance(score, (int, float)) and score <= 1.0:
             score = score * 100
 
-        return {
+        # Extract and pad learning curve to match portfolio curve length
+        # This is critical when early stopping is enabled, as actual epochs may be less than expected
+        # The function automatically pads curves to the expected length by repeating the last value
+        learning_curve = None
+        if experimental_setting.qt.use_medical_portfolio:
+            early_stopping_enabled = getattr(experimental_setting.training, "early_stopping", False)
+            if early_stopping_enabled:
+                print(f"[Learning Curve] Early stopping is enabled. Extracting and padding learning curve "
+                      f"to expected length ({trial['fidelity']} epochs) using extract_and_pad_learning_curve()...")
+            
+            learning_curve = extract_and_pad_learning_curve(
+                pipeline_dir=pipeline_dir,
+                expected_length=trial["fidelity"],
+                metric=experimental_setting.metric
+            )
+            if learning_curve is not None:
+                actual_length = len([x for x in learning_curve if x > 0]) if len(learning_curve) > 0 else 0
+                print(f"[Learning Curve] Extracted curve with actual length {actual_length}, "
+                      f"padded to {trial['fidelity']} epochs (shape: {learning_curve.shape})")
+            else:
+                print(f"[Learning Curve] Warning: Could not extract learning curve. "
+                      f"QuickTune may extract it automatically from training logs.")
+
+        result_dict = {
             "config-id": trial["config-id"],
             "status": "SUCCESS",
             "score": score,
@@ -398,6 +422,12 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             "fidelity": trial["fidelity"],
             "config": hyperparameters,
         }
+        
+        # Add learning curve if available (QuickTune will use it for predictor updates)
+        if learning_curve is not None:
+            result_dict["curve"] = learning_curve
+        
+        return result_dict
 
     except Exception as e:
         print(f"Error in pipeline: {e}")
@@ -620,6 +650,34 @@ def main(experimental_setting: DictConfig) -> None:
             # Convert learning curves and cost data to numpy arrays for model training
             curve = portfolio.curve_df.values
             cost = portfolio.cost_df.values
+            
+            # Validate learning curve length consistency
+            # CRITICAL: Portfolio curves must have the same length as the expected number of epochs
+            # Otherwise QuickTune will fail with "curve must have the same number of features" error
+            expected_epochs = experimental_setting.training.number_of_epochs
+            actual_curve_length = curve.shape[1] if len(curve.shape) > 1 else 0
+            
+            print(f"\n[Portfolio Validation] Expected epochs: {expected_epochs}")
+            print(f"[Portfolio Validation] Portfolio curve length: {actual_curve_length}")
+            
+            # Check if early stopping is enabled (could cause actual epochs to be less than expected)
+            early_stopping_enabled = getattr(experimental_setting.training, "early_stopping", False)
+            if early_stopping_enabled:
+                print(f"[Portfolio Validation] INFO: Early stopping is enabled. "
+                      f"Actual training epochs may be less than {expected_epochs} due to early stopping. "
+                      f"The extract_and_pad_learning_curve() function will automatically pad learning curves "
+                      f"to the expected length ({expected_epochs} epochs) by repeating the last value.")
+            
+            if actual_curve_length != expected_epochs:
+                raise ValueError(
+                    f"Learning curve length mismatch! Portfolio curves have {actual_curve_length} epochs, "
+                    f"but experimental_setting.training.number_of_epochs is {expected_epochs}. "
+                    f"This will cause QuickTune to fail with 'curve must have the same number of features' error. "
+                    f"Please ensure the portfolio was created with the same number of epochs as used in the experiment, "
+                    f"or adjust experimental_setting.training.number_of_epochs to match the portfolio."
+                )
+            else:
+                print(f"[Portfolio Validation] Learning curve length matches expected epochs\n")
 
             # TODO @Diane: check parameters like learning_rate_init, batchsize for predictors
             # TODO @Diane: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
