@@ -74,7 +74,8 @@ def extract_and_pad_learning_curve(pipeline_dir: Path, expected_length: int, met
         metric (str): Metric to extract (default: "auc")
     
     Returns:
-        np.ndarray | None: Learning curve array of shape (expected_length,), or None if extraction fails
+        np.ndarray | None: Learning curve array of shape (1, expected_length) for QuickTune compatibility,
+        or None if extraction fails. The 2D shape [1, n_epochs] matches QuickTune's expected format.
     """
     try:
         # Find metrics.csv file in the pipeline directory
@@ -139,7 +140,12 @@ def extract_and_pad_learning_curve(pipeline_dir: Path, expected_length: int, met
             curve = curve[:expected_length]
             print(f"[Learning Curve] Trimmed curve from {actual_length} to {expected_length} epochs")
         
-        return curve.astype(np.float32)
+        # QuickTune expects curves as 2D array with shape [1, n_epochs] for single curves
+        # This matches the portfolio format where curves have shape [n_configs, n_epochs]
+        curve = curve.astype(np.float32)
+        curve = curve.reshape(1, -1)  # Reshape to [1, n_epochs]
+        
+        return curve
     
     except Exception as e:
         print(f"[Learning Curve] Error extracting learning curve: {e}")

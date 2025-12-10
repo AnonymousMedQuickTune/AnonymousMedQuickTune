@@ -434,7 +434,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                     actual_length = padding_start
                 
                 print(f"[Learning Curve] Extracted curve with actual length {actual_length}, "
-                      f"padded to {trial['fidelity']} epochs (shape: {learning_curve.shape})")
+                      f"padded to {trial['fidelity']} epochs (shape: {learning_curve.shape}, "
+                      f"expected 2D shape [1, {trial['fidelity']}] for QuickTune compatibility)")
             else:
                 print(f"[Learning Curve] ERROR: Could not extract learning curve. "
                       f"This may cause 'curve must have the same number of features' error. "
@@ -506,7 +507,11 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.cv_outer_folds_splits = 2   # 3 splits per repeat
 
     # Create directory for configuration files and logs
-    exp_base_dir = Path(experimental_setting.experiment_base_dir)
+    # Resolve experiment_base_dir to absolute path to ensure consistent behavior
+    # across different working directories (local vs cluster)
+    exp_base_dir = Path(experimental_setting.experiment_base_dir).resolve()
+    # Update experimental_setting with resolved absolute path for consistency
+    experimental_setting.experiment_base_dir = str(exp_base_dir)
     output_dir = exp_base_dir / "hydra_output"
     for directory in [exp_base_dir, output_dir]:
         directory.mkdir(parents=True, exist_ok=True)
