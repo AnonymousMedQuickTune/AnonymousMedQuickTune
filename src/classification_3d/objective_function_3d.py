@@ -91,10 +91,13 @@ def run_3d_pipeline(
     print(f"\nHyperparameters: {hyperparameters}\n")  
     
     # Get model type from hyperparameters or experimental_setting
+    # CRITICAL: Ensure model type is consistent between training and evaluation
     if "model" in hyperparameters:
         model_type = hyperparameters["model"]  # For QuickTune
+        # Synchronize experimental_setting to ensure consistency during evaluation
+        experimental_setting.model.type = model_type
         print(f"\nQuickTune selected model: {model_type}\n")
-
+        print(f"[Model Type Sync] Synchronized experimental_setting.model.type to: {model_type}\n")
     else:
         model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")

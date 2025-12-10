@@ -228,6 +228,23 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     hyperparameters = trial["config"]
     print("\n\nHyperparameters: ", hyperparameters, "\n\n")
 
+    # Align model type in experimental_setting with hyperparameter selection (e.g., portfolio configs)
+    # Otherwise evaluation may try to load a checkpoint into the wrong architecture (e.g., ResNet vs DenseNet)
+    # CRITICAL: This must be done BEFORE any model initialization to ensure consistency
+    if "model" in hyperparameters:
+        # Update experimental_setting to match the selected model type
+        experimental_setting.model.type = hyperparameters["model"]
+        print(f"\n[Model Type Sync] Updated experimental_setting.model.type to: {hyperparameters['model']}\n")
+    elif experimental_setting.qt.use_medical_portfolio:
+        # If using portfolio, model should always be in hyperparameters
+        raise ValueError(
+            "Model type not found in hyperparameters when using medical portfolio. "
+            "This indicates a configuration error. Please check portfolio setup."
+        )
+    else:
+        # For non-portfolio configs, use the default from experimental_setting
+        print(f"\n[Model Type Sync] Using default model type from config: {experimental_setting.model.type}\n")
+
     # Calculate total inner folds (repeats * splits) for repeated stratified K-fold cross-validation
     cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
     cv_inner_folds_repeats = experimental_setting.cv_inner_folds_repeats if hasattr(experimental_setting, "cv_inner_folds_repeats") else 1

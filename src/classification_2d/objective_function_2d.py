@@ -73,9 +73,13 @@ def run_2d_pipeline(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Initialize model and move it to the appropriate device
+    # CRITICAL: Ensure model type is consistent between training and evaluation
     if "model" in hyperparameters:
         model_type = hyperparameters["model"]  # For QuickTune
+        # Synchronize experimental_setting to ensure consistency during evaluation
+        experimental_setting.model.type = model_type
         print(f"\nQuickTune selected model: {model_type}\n")
+        print(f"[Model Type Sync] Synchronized experimental_setting.model.type to: {model_type}\n")
     else:
         model_type = experimental_setting.model.type  # For NePS
         print(f"\nNePS selected model: {model_type}\n")
