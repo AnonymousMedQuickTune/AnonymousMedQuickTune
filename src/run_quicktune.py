@@ -31,6 +31,7 @@ from src.utils.quicktune_utils import (
     custom_extract_image_dataset_metafeat,
     FTPFNPerfPredictor,
     extract_and_pad_learning_curve,
+    convert_numpy_to_python,
 )
 from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
 from src.evaluate_trained_config import evaluate_config_on_test_set
@@ -229,6 +230,14 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     hyperparameters = trial["config"]
     print("\n\nHyperparameters: ", hyperparameters, "\n\n")
 
+    # Convert numpy types to native Python types for OmegaConf compatibility
+    # QuickTune returns numpy types (np.str_, np.int_, np.float_, np.bool_) which OmegaConf doesn't support
+    # CRITICAL: This must be done BEFORE any assignment to experimental_setting
+    hyperparameters = {k: convert_numpy_to_python(v) for k, v in hyperparameters.items()}
+    
+    # Also update trial["config"] to ensure consistency throughout the function
+    trial["config"] = hyperparameters
+
     # Align model type in experimental_setting with hyperparameter selection (e.g., portfolio configs)
     # Otherwise evaluation may try to load a checkpoint into the wrong architecture (e.g., ResNet vs DenseNet)
     # CRITICAL: This must be done BEFORE any model initialization to ensure consistency
@@ -394,12 +403,16 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         # Extract and pad learning curve to match portfolio curve length
         # This is critical when early stopping is enabled, as actual epochs may be less than expected
         # The function automatically pads curves to the expected length by repeating the last value
+        # ALWAYS extract learning curve when using portfolio to ensure consistent curve lengths
         learning_curve = None
         if experimental_setting.qt.use_medical_portfolio:
             early_stopping_enabled = getattr(experimental_setting.training, "early_stopping", False)
             if early_stopping_enabled:
                 print(f"[Learning Curve] Early stopping is enabled. Extracting and padding learning curve "
                       f"to expected length ({trial['fidelity']} epochs) using extract_and_pad_learning_curve()...")
+            else:
+                print(f"[Learning Curve] Extracting learning curve to ensure consistent length "
+                      f"({trial['fidelity']} epochs) for portfolio compatibility...")
             
             learning_curve = extract_and_pad_learning_curve(
                 pipeline_dir=pipeline_dir,
@@ -407,12 +420,25 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                 metric=experimental_setting.metric
             )
             if learning_curve is not None:
-                actual_length = len([x for x in learning_curve if x > 0]) if len(learning_curve) > 0 else 0
+                # Count actual epochs (non-zero or non-padded values)
+                # Find where padding starts by looking for repeated values at the end
+                actual_length = trial["fidelity"]
+                if len(learning_curve) > 1:
+                    # Check if last few values are the same (likely padding)
+                    last_value = learning_curve[-1]
+                    padding_start = len(learning_curve)
+                    for i in range(len(learning_curve) - 2, -1, -1):
+                        if learning_curve[i] != last_value:
+                            padding_start = i + 1
+                            break
+                    actual_length = padding_start
+                
                 print(f"[Learning Curve] Extracted curve with actual length {actual_length}, "
                       f"padded to {trial['fidelity']} epochs (shape: {learning_curve.shape})")
             else:
-                print(f"[Learning Curve] Warning: Could not extract learning curve. "
-                      f"QuickTune may extract it automatically from training logs.")
+                print(f"[Learning Curve] ERROR: Could not extract learning curve. "
+                      f"This may cause 'curve must have the same number of features' error. "
+                      f"QuickTune will try to extract it automatically, but length may not match portfolio.")
 
         result_dict = {
             "config-id": trial["config-id"],

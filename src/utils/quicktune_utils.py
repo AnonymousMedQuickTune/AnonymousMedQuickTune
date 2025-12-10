@@ -27,6 +27,39 @@ from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
 logger = logging.getLogger(__name__)  # Add this line to create logger instance
 
 
+def convert_numpy_to_python(value):
+    """
+    Convert numpy types to native Python types for OmegaConf compatibility.
+    
+    OmegaConf doesn't support numpy types (np.str_, np.int64, np.float64, np.bool_),
+    so we need to convert them to native Python types.
+    This function is compatible with both NumPy 1.x and 2.x.
+    
+    Args:
+        value: Value that might be a numpy type
+    
+    Returns:
+        Native Python type equivalent
+    """
+    # Check for numpy string types
+    if isinstance(value, np.str_):
+        return str(value)
+    # Check for numpy integer types using base class (works with NumPy 1.x and 2.x)
+    elif isinstance(value, np.integer):
+        return int(value)
+    # Check for numpy float types using base class (works with NumPy 1.x and 2.x)
+    elif isinstance(value, np.floating):
+        return float(value)
+    # Check for numpy boolean types
+    elif isinstance(value, np.bool_):
+        return bool(value)
+    # Check for numpy arrays
+    elif isinstance(value, np.ndarray):
+        return value.tolist()
+    else:
+        return value
+
+
 def extract_and_pad_learning_curve(pipeline_dir: Path, expected_length: int, metric: str = "auc"):
     """
     Extract learning curve from training logs and pad it to expected length.
