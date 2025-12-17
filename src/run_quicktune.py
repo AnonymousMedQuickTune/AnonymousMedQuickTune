@@ -744,7 +744,7 @@ def main(experimental_setting: DictConfig) -> None:
             # Initialize fresh optimizer for this CV fold
             optimizer = QuickOptimizer(
                 cs=cv_configspace,
-                max_fidelity=50,
+                max_fidelity=int(expected_epochs),
                 cost_aware=True,
                 path=str(cv_experiment_dir),
                 perf_predictor=perf_predictor,
