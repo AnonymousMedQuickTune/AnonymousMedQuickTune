@@ -9,6 +9,7 @@ import os
 import json
 import argparse
 import statistics
+import math
 import numpy as np
 from pathlib import Path
 from typing import Dict, List, Any
@@ -321,7 +322,7 @@ def create_outer_fold_ensemble(predictions_data: Dict[str, Any]) -> Dict[str, fl
 
 def calculate_statistics(values: List[float]) -> Dict[str, float]:
     """
-    Calculate mean, std, median, and median absolute deviation for a list of values.
+    Calculate mean, std, SEM, median, MAD, and a simple median "SEM" analogue for a list of values.
     
     Args:
         values: List of numeric values
@@ -330,21 +331,33 @@ def calculate_statistics(values: List[float]) -> Dict[str, float]:
         Dictionary with statistical measures
     """
     if not values:
-        return {"mean": 0.0, "std": 0.0, "median": 0.0, "mad": 0.0}
+        return {
+            "mean": 0.0,
+            "std": 0.0,
+            "sem": 0.0,
+            "median": 0.0,
+            "mad": 0.0,
+            "sem_median": 0.0,
+        }
     
+    n = len(values)
     mean_val = statistics.mean(values)
     std_val = statistics.stdev(values) if len(values) > 1 else 0.0
+    sem_val = std_val / math.sqrt(n) if n > 0 else 0.0
     median_val = statistics.median(values)
     
     # Calculate median absolute deviation
     deviations = [abs(x - median_val) for x in values]
     mad_val = statistics.median(deviations)
+    sem_median_val = mad_val / math.sqrt(n) if n > 0 else 0.0
     
     return {
         "mean": float(mean_val),
         "std": float(std_val),
+        "sem": float(sem_val),
         "median": float(median_val),
-        "mad": float(mad_val)
+        "mad": float(mad_val),
+        "sem_median": float(sem_median_val),
     }
 
 
@@ -360,8 +373,8 @@ def format_statistics(stats: Dict[str, float], metric_name: str) -> str:
         Formatted string
     """
     return (f"{metric_name:30s}: "
-            f"mean={stats['mean']:8.4f}±{stats['std']:8.4f}, "
-            f"median={stats['median']:8.4f}±{stats['mad']:8.4f}")
+            f"mean={stats['mean']:8.4f}±{stats['std']:8.4f} (se={stats['sem']:8.4f}), "
+            f"median={stats['median']:8.4f}±{stats['mad']:8.4f} (se={stats['sem_median']:8.4f})")
 
 
 def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
@@ -450,11 +463,11 @@ def summarize_experiment(experiment_path: str, seed: str = "42") -> str:
         summary_lines.append("-" * 40)
         for class_metric, metric_names in per_class_metrics.items():
             summary_lines.append(f"\n{class_metric.replace('_', ' ').title()}:")
-        for metric_name in metric_names:
-            stats = calculate_statistics(all_test_metrics[metric_name])
-            class_name = metric_name.split("_")[-1]  # e.g., "class_0" -> "0"
-            display_name = f"  Class {class_name}"
-            summary_lines.append(format_statistics(stats, display_name))
+            for metric_name in metric_names:
+                stats = calculate_statistics(all_test_metrics[metric_name])
+                class_name = metric_name.split("_")[-1]  # e.g., "class_0" -> "0"
+                display_name = f"  Class {class_name}"
+                summary_lines.append(format_statistics(stats, display_name))
     
     summary_lines.append("")
 
@@ -519,7 +532,7 @@ def main():
         if args.output:
             output_file = Path(args.output)
         else:
-            output_file = experiment_path / "evaluation_summary_across_outer_fols.txt"
+            output_file = experiment_path / "evaluation_summary_across_outer_folds.txt"
         
         # Write summary to file
         with open(output_file, 'w') as f:
