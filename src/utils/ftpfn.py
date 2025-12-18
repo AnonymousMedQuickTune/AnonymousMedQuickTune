@@ -125,33 +125,46 @@ class FTPFNSurrogateModel(torch.nn.Module):
         context_curves = []
         query_curves = []
         
+        # Normalize ID to [0,1] range as required by IFBO FTPFN
+        n_samples = pipeline.size(0)
+        max_id = max(1, n_samples - 1)  # Avoid division by zero
+        
         # Create curves with proper ID and timestep format
         for i, (features, curve) in enumerate(zip(encoded_features_norm, curve_norm)):
+            # Normalize ID to [0,1] range
+            normalized_id = float(i) / max_id
+            
             # Add ID and timestep to features
             features_with_meta = torch.cat([
-                torch.tensor([float(i)], device=self.device),  # ID
+                torch.tensor([normalized_id], device=self.device),  # ID normalized to [0,1]
                 torch.zeros(1, device=self.device),  # Timestep placeholder
                 features
             ])
             
             # Create curves for each timestep
             for t in range(curve.size(0)):
-                timestep = float(t) / curve.size(0)
-                features_with_meta[1] = timestep
+                timestep = float(t) / max(1, curve.size(0))  # Normalize timestep to [0,1]
+                
+                # Create a copy of features for this timestep to avoid tensor sharing
+                features_for_timestep = features_with_meta.clone()
+                features_for_timestep[1] = timestep
+                
+                # Ensure all hyperparameter values are in [0,1] range (safety check)
+                features_for_timestep = torch.clamp(features_for_timestep, 0.0, 1.0)
                 curve_value = curve[t].unsqueeze(0).unsqueeze(0)  # Make 2D tensor [1,1]
                 
                 # During training
                 if hasattr(self, 'train_pipeline'):
                     # Use current curve as query, all others as context
-                    if i == len(encoded_features) - 1:
+                    if i == len(encoded_features_norm) - 1:
                         query_curves.append(Curve(
-                            hyperparameters=features_with_meta,
+                            hyperparameters=features_for_timestep,
                             t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
                             y=None
                         ))
                     else:
                         context_curves.append(Curve(
-                            hyperparameters=features_with_meta,
+                            hyperparameters=features_for_timestep,
                             t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
                             y=curve_value
                         ))
@@ -159,13 +172,13 @@ class FTPFNSurrogateModel(torch.nn.Module):
                 else:
                     if i == 0:
                         context_curves.append(Curve(
-                            hyperparameters=features_with_meta,
+                            hyperparameters=features_for_timestep,
                             t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
                             y=curve_value
                         ))
                     else:
                         query_curves.append(Curve(
-                            hyperparameters=features_with_meta,
+                            hyperparameters=features_for_timestep,
                             t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
                             y=None
                         ))
