@@ -125,20 +125,24 @@ class FTPFNSurrogateModel(torch.nn.Module):
         context_curves = []
         query_curves = []
         
-        # Normalize ID to [0,1] range as required by IFBO FTPFN
+        # Normalize ID to [0,1000] range as required by IFBO FTPFN
         n_samples = pipeline.size(0)
         max_id = max(1, n_samples - 1)  # Avoid division by zero
         
         # Create curves with proper ID and timestep format
         for i, (features, curve) in enumerate(zip(encoded_features_norm, curve_norm)):
-            # Normalize ID to [0,1] range
-            normalized_id = float(i) / max_id
+            # Scale ID to [0, 1000] range (IFBO requirement)
+            # If we have <= 1000 samples, use direct mapping; otherwise scale down
+            if n_samples <= 1000:
+                normalized_id = float(i)
+            else:
+                normalized_id = float(i) * (1000.0 / max_id)
             
             # Add ID and timestep to features
             features_with_meta = torch.cat([
-                torch.tensor([normalized_id], device=self.device),  # ID normalized to [0,1]
+                torch.tensor([normalized_id], device=self.device),  # ID in [0, 1000]
                 torch.zeros(1, device=self.device),  # Timestep placeholder
-                features
+                features  # Encoded features in [0, 1]
             ])
             
             # Create curves for each timestep
@@ -149,8 +153,18 @@ class FTPFNSurrogateModel(torch.nn.Module):
                 features_for_timestep = features_with_meta.clone()
                 features_for_timestep[1] = timestep
                 
-                # Ensure all hyperparameter values are in [0,1] range (safety check)
-                features_for_timestep = torch.clamp(features_for_timestep, 0.0, 1.0)
+                # Clamp only hyperparameters (indices 2+) to [0,1], keep ID in [0,1000] and timestep in [0,1]
+                # ID is at index 0, timestep at index 1, hyperparameters start at index 2
+                if features_for_timestep.size(0) > 2:
+                    hyperparams = features_for_timestep[2:]
+                    hyperparams_clamped = torch.clamp(hyperparams, 0.0, 1.0)
+                    features_for_timestep = torch.cat([
+                        features_for_timestep[:2],  # Keep ID and timestep unchanged
+                        hyperparams_clamped
+                    ])
+                # Ensure ID is in [0, 1000] and timestep is in [0, 1]
+                features_for_timestep[0] = torch.clamp(features_for_timestep[0], 0.0, 1000.0)
+                features_for_timestep[1] = torch.clamp(features_for_timestep[1], 0.0, 1.0)
                 curve_value = curve[t].unsqueeze(0).unsqueeze(0)  # Make 2D tensor [1,1]
                 
                 # During training
