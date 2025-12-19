@@ -708,7 +708,7 @@ def main(experimental_setting: DictConfig) -> None:
             curve = portfolio.curve_df.values
             cost = portfolio.cost_df.values
             
-            # Validate learning curve length consistency
+            # Validate and adjust learning curve length consistency
             # CRITICAL: Portfolio curves must have the same length as the expected number of epochs
             # Otherwise QuickTune will fail with "curve must have the same number of features" error
             expected_epochs = experimental_setting.training.number_of_epochs
@@ -725,15 +725,23 @@ def main(experimental_setting: DictConfig) -> None:
                       f"The extract_and_pad_learning_curve() function will automatically pad learning curves "
                       f"to the expected length ({expected_epochs} epochs) by repeating the last value.")
             
-            if actual_curve_length != expected_epochs:
-                raise ValueError(
-                    f"Learning curve length mismatch! Portfolio curves have {actual_curve_length} epochs, "
-                    f"but experimental_setting.training.number_of_epochs is {expected_epochs}. "
-                    f"This will cause QuickTune to fail with 'curve must have the same number of features' error. "
-                    f"Please ensure the portfolio was created with the same number of epochs as used in the experiment, "
-                    f"or adjust experimental_setting.training.number_of_epochs to match the portfolio."
-                )
-            else:
+            # Handle curve length mismatches
+            if actual_curve_length > expected_epochs:
+                # Portfolio has more epochs than expected - truncate curves to expected length
+                print(f"[Portfolio Validation] WARNING: Portfolio curves have {actual_curve_length} epochs, "
+                      f"but experimental_setting.training.number_of_epochs is {expected_epochs}. "
+                      f"Truncating portfolio curves to {expected_epochs} epochs.")
+                curve = curve[:, :expected_epochs]  # Truncate to expected length
+                actual_curve_length = expected_epochs
+            elif actual_curve_length < expected_epochs:
+                # Portfolio has fewer epochs than expected - this will be handled by extract_and_pad_learning_curve
+                # But we should still warn the user
+                print(f"[Portfolio Validation] WARNING: Portfolio curves have {actual_curve_length} epochs, "
+                      f"but experimental_setting.training.number_of_epochs is {expected_epochs}. "
+                      f"The extract_and_pad_learning_curve() function will pad learning curves "
+                      f"to the expected length ({expected_epochs} epochs) by repeating the last value.")
+            
+            if actual_curve_length == expected_epochs:
                 print(f"[Portfolio Validation] Learning curve length matches expected epochs\n")
 
             # TODO @Diane: check parameters like learning_rate_init, batchsize for predictors
