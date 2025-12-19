@@ -330,6 +330,243 @@ def collect_performances(experiment_dir: Path) -> Tuple[Dict[int, List[float]], 
     return validation_performances, test_performances
 
 
+def load_validation_performance_quicktune(results_path: Path, metric: str = "auc") -> float:
+    """
+    Load validation performance from QuickTune test_evaluation_results.json.
+    
+    Args:
+        results_path: Path to test_evaluation_results.json file
+        metric: Metric to extract (default: "auc")
+        
+    Returns:
+        Validation performance (from validation.{metric})
+    """
+    try:
+        with open(results_path, "r") as f:
+            results = json.load(f)
+        
+        validation = results.get("validation", None)
+        if validation is None:
+            raise ValueError(f"No 'validation' key found in {results_path}")
+        
+        # Try the specified metric, fallback to common metrics
+        perf = validation.get(metric, None)
+        if perf is None:
+            # Try common alternatives
+            if metric == "auc":
+                perf = validation.get("auc", None)
+            elif metric == "accuracy":
+                perf = validation.get("accuracy", None)
+            elif metric == "f1":
+                perf = validation.get("f1", None)
+        
+        if perf is None:
+            raise ValueError(f"No '{metric}' found in validation in {results_path}. Available keys: {list(validation.keys())}")
+        
+        return float(perf)
+    except Exception as e:
+        raise ValueError(f"Error loading validation performance from {results_path}: {e}")
+
+
+def collect_performances_quicktune(experiment_dir: Path, metric: str = "auc") -> Tuple[Dict[int, List[float]], Dict[int, List[float]]]:
+    """
+    Collect validation and test performances across all outer folds for QuickTune experiments.
+    
+    Args:
+        experiment_dir: Path to experiment directory (e.g., experiments/QuickTune/lipo/test_experiment)
+        metric: Metric to use for validation performance (default: "auc")
+        
+    Returns:
+        Tuple of (validation_performances, test_performances)
+        Each is a dict mapping config_number -> list of performances across outer folds
+        Performances are stored per fold, not aggregated yet
+    """
+    # Store performances per fold: fold_index -> list of (config_num, performance)
+    validation_performances_per_fold: Dict[int, List[Tuple[int, float]]] = {}
+    test_performances_per_fold: Dict[int, List[Tuple[int, float]]] = {}
+    
+    # Find all seed directories
+    seed_dirs = sorted([d for d in experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
+    
+    if not seed_dirs:
+        raise ValueError(f"No seed directories found in {experiment_dir}")
+    
+    print(f"Found {len(seed_dirs)} seed directory/ies")
+    
+    fold_counter = 0
+    
+    # Process each seed
+    for seed_dir in seed_dirs:
+        # Find all outer fold directories
+        outer_fold_dirs = sorted(
+            [d for d in seed_dir.iterdir() 
+             if d.is_dir() and d.name.startswith("cv_outer_fold_")]
+        )
+        
+        if not outer_fold_dirs:
+            print(f"Warning: No outer fold directories found in {seed_dir}, skipping...")
+            continue
+        
+        print(f"  Processing {len(outer_fold_dirs)} outer fold(s) in {seed_dir.name}")
+        
+        # Process each outer fold
+        for outer_fold_dir in outer_fold_dirs:
+            tuner_dir = outer_fold_dir / "tuner"
+            
+            if not tuner_dir.exists():
+                print(f"Warning: tuner directory not found in {outer_fold_dir}, skipping...")
+                continue
+            
+            # Find all config directories (numeric directories in tuner/)
+            config_dirs = []
+            for item in tuner_dir.iterdir():
+                if item.is_dir() and item.name.isdigit():
+                    try:
+                        config_num = int(item.name)
+                        config_dirs.append((config_num, item))
+                    except ValueError:
+                        continue
+            
+            # Sort by config number
+            config_dirs = sorted(config_dirs, key=lambda x: x[0])
+            
+            if not config_dirs:
+                print(f"Warning: No config directories found in {tuner_dir}, skipping...")
+                continue
+            
+            # Initialize lists for this fold
+            validation_performances_per_fold[fold_counter] = []
+            test_performances_per_fold[fold_counter] = []
+            
+            # Process each config
+            for config_num, config_dir in config_dirs:
+                # Load validation performance from test_evaluation_results.json
+                test_results_path = config_dir / "test_evaluation_results.json"
+                if not test_results_path.exists():
+                    print(f"Warning: test_evaluation_results.json not found in {config_dir}, skipping config {config_num}...")
+                    continue
+                
+                # Load validation performance
+                val_perf = None
+                try:
+                    val_perf = load_validation_performance_quicktune(test_results_path, metric)
+                    print(f"    Config {config_num}: Validation performance = {val_perf:.2f} (from test_evaluation_results.json, metric={metric})")
+                except Exception as e:
+                    print(f"Warning: Could not load validation performance from {test_results_path}: {e}")
+                    continue
+                
+                if val_perf is not None:
+                    validation_performances_per_fold[fold_counter].append((config_num, val_perf))
+                
+                # Load test performance
+                try:
+                    test_perf = load_test_performance(test_results_path)
+                    print(f"    Config {config_num}: Test performance = {test_perf:.2f}")
+                    test_performances_per_fold[fold_counter].append((config_num, test_perf))
+                except Exception as e:
+                    print(f"Warning: Could not load test performance from {test_results_path}: {e}")
+            
+            fold_counter += 1
+    
+    # Calculate incumbent performances for each fold independently (same logic as NePS)
+    validation_performances: Dict[int, List[float]] = {}
+    test_performances: Dict[int, List[float]] = {}
+    
+    # Process each fold independently
+    for fold_idx in sorted(validation_performances_per_fold.keys()):
+        val_perfs = validation_performances_per_fold.get(fold_idx, [])
+        test_perfs = test_performances_per_fold.get(fold_idx, [])
+        
+        if not val_perfs:
+            print(f"Warning: No validation performances for fold {fold_idx}, skipping...")
+            continue
+        
+        # Sort by config number for this fold
+        val_perfs_sorted = sorted(val_perfs, key=lambda x: x[0])
+        test_perfs_dict = dict(test_perfs) if test_perfs else {}
+        
+        print(f"Processing fold {fold_idx}: {len(val_perfs_sorted)} configs")
+        
+        # Calculate validation incumbent for this fold (best validation so far)
+        best_val_so_far = float('-inf')
+        for config_num, val_perf in val_perfs_sorted:
+            best_val_so_far = max(best_val_so_far, val_perf)  # For AUC, higher is better
+            if config_num not in validation_performances:
+                validation_performances[config_num] = []
+            validation_performances[config_num].append(best_val_so_far)
+            print(f"  Fold {fold_idx}, Config {config_num}: Val={val_perf:.2f}, Incumbent={best_val_so_far:.2f}")
+        
+        # For test performances: use test performance of config with best validation so far (for this fold)
+        best_val_so_far = float('-inf')
+        best_val_config = None
+        
+        for config_num, val_perf in val_perfs_sorted:
+            # Update best validation performance (incumbent) for this fold
+            if val_perf > best_val_so_far:
+                best_val_so_far = val_perf
+                best_val_config = config_num
+            
+            # Use test performance of the best validation config so far
+            if best_val_config is not None and best_val_config in test_perfs_dict:
+                test_perf = test_perfs_dict[best_val_config]
+                if config_num not in test_performances:
+                    test_performances[config_num] = []
+                test_performances[config_num].append(test_perf)
+    
+    # Fill missing configs with last incumbent values (same logic as NePS)
+    num_folds = len(validation_performances_per_fold)
+    max_config = max(validation_performances.keys()) if validation_performances else 0
+    
+    for fold_idx in range(num_folds):
+        last_val_incumbent = None
+        last_test_value = None
+        
+        # Find last incumbent values for this fold
+        for config_num in sorted(validation_performances.keys()):
+            if fold_idx < len(validation_performances[config_num]):
+                if validation_performances[config_num][fold_idx] is not None:
+                    last_val_incumbent = validation_performances[config_num][fold_idx]
+            if config_num in test_performances and fold_idx < len(test_performances[config_num]):
+                if test_performances[config_num][fold_idx] is not None:
+                    last_test_value = test_performances[config_num][fold_idx]
+        
+        # Fill missing configs with last incumbent values
+        for config_num in range(max_config + 1):
+            # Fill validation performances
+            if config_num not in validation_performances:
+                validation_performances[config_num] = [None] * num_folds
+            # Ensure list is long enough
+            while len(validation_performances[config_num]) < num_folds:
+                validation_performances[config_num].append(None)
+            
+            # If this config is missing in this fold, use last incumbent value
+            if validation_performances[config_num][fold_idx] is None:
+                if last_val_incumbent is not None:
+                    validation_performances[config_num][fold_idx] = last_val_incumbent
+            
+            # Fill test performances
+            if config_num not in test_performances:
+                test_performances[config_num] = [None] * num_folds
+            # Ensure list is long enough
+            while len(test_performances[config_num]) < num_folds:
+                test_performances[config_num].append(None)
+            
+            # If this config is missing in this fold, use last test value
+            if test_performances[config_num][fold_idx] is None:
+                if last_test_value is not None:
+                    test_performances[config_num][fold_idx] = last_test_value
+    
+    # Debug: Print collected performances
+    print("\nCollected validation performances:")
+    for config_num in sorted(validation_performances.keys()):
+        print(f"  Config {config_num}: {validation_performances[config_num]}")
+    
+    # Save performances to CSV file
+    save_performances_to_csv(experiment_dir, validation_performances, test_performances)
+    
+    return validation_performances, test_performances
+
+
 def save_performances_to_csv(
     experiment_dir: Path,
     validation_performances: Dict[int, List[float]],

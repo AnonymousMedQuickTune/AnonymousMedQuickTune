@@ -38,6 +38,7 @@ from src.evaluate_trained_config import evaluate_config_on_test_set
 from src.utils.common_utils import cleanup_training_artifacts
 from src.utils.logging_utils import save_cv_summary
 from src.analysis.summarize_evaluation_results import summarize_experiment
+from src.analysis.plot_results_over_time import collect_performances_quicktune, create_plots, collect_performances
 
 # For debugging purposes:
 # from qtt.predictors import PerfPredictor, CostPredictor
@@ -358,31 +359,56 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         cleanup_training_artifacts(str(pipeline_dir), total_inner_folds)
 
         # Automatically generate performance plots (similar to run_neps.py)
+        # Note: collect_performances is currently only implemented for NePS structure
+        # QuickTune uses a different structure (tuner/ instead of NePS_output/configs/)
+        # TODO: Implement QuickTune-specific performance plotting
         try:
             # Extract experiment directory from pipeline_dir
-            # QuickTune experiments have structure: .../cv_outer_fold_X/config_Y/...
-            # Experiment directory: experiments/QuickTune/lipo/test_experiment
+            # QuickTune experiments have structure: .../seed_X/cv_outer_fold_Y/tuner/Z/...
+            # Experiment directory: experiments/QuickTune/lipo/test_experiment (contains seed_* directories)
             pipeline_dir_str = str(pipeline_dir)
             if "/cv_outer_fold_" in pipeline_dir_str:
-                # Extract path up to cv_outer_fold, then go up to get experiment directory
-                experiment_dir_str = pipeline_dir_str.split("/cv_outer_fold_")[0]
-                experiment_dir = Path(experiment_dir_str)
+                # Extract path up to cv_outer_fold (this gives us seed_X directory)
+                seed_dir_str = pipeline_dir_str.split("/cv_outer_fold_")[0]
+                seed_dir = Path(seed_dir_str)
+                
+                # Go up one level to get experiment directory (which contains seed_* directories)
+                experiment_dir = seed_dir.parent
                 
                 # Check if experiment directory exists and has the expected structure
                 if experiment_dir.exists() and any(experiment_dir.iterdir()):
-                    from src.analysis.plot_results_over_time import collect_performances, create_plots
-                    
-                    print(f"\n{'='*100}")
-                    print(f"GENERATING PERFORMANCE PLOTS")
-                    print(f"{'='*100}\n")
-                    
-                    # Collect performances and create plots (single experiment)
-                    validation_performances, test_performances = collect_performances(experiment_dir)
-                    all_validation_performances = [(experiment_dir.name, validation_performances)]
-                    all_test_performances = [(experiment_dir.name, test_performances)]
-                    create_plots([experiment_dir], all_validation_performances, all_test_performances)
-                    
-                    print(f"Performance plots generated successfully!\n")
+                    # Check run_mode to determine which plotting function to use
+                    if experimental_setting.run_mode == "QuickTune":
+                        # QuickTune structure - use QuickTune-specific plotting function
+                        print(f"\n{'='*100}")
+                        print(f"GENERATING PERFORMANCE PLOTS (QuickTune)")
+                        print(f"{'='*100}\n")
+                        
+                        # Get metric from experimental_setting (default to "auc")
+                        metric = getattr(experimental_setting, "metric", "auc")
+                        
+                        # Collect performances and create plots (single experiment)
+                        validation_performances, test_performances = collect_performances_quicktune(
+                            experiment_dir, metric=metric
+                        )
+                        all_validation_performances = [(experiment_dir.name, validation_performances)]
+                        all_test_performances = [(experiment_dir.name, test_performances)]
+                        create_plots([experiment_dir], all_validation_performances, all_test_performances)
+                        
+                        print(f"Performance plots generated successfully!\n")
+                    else:  # TODO @Diane: del, as probably not needed
+                        # NePS structure - use existing plotting function
+                        print(f"\n{'='*100}")
+                        print(f"GENERATING PERFORMANCE PLOTS (NePS)")
+                        print(f"{'='*100}\n")
+                        
+                        # Collect performances and create plots (single experiment)
+                        validation_performances, test_performances = collect_performances(experiment_dir)
+                        all_validation_performances = [(experiment_dir.name, validation_performances)]
+                        all_test_performances = [(experiment_dir.name, test_performances)]
+                        create_plots([experiment_dir], all_validation_performances, all_test_performances)
+                        
+                        print(f"Performance plots generated successfully!\n")
         except Exception as e:
             # Don't fail the pipeline if plotting fails
             print(f"Warning: Could not generate performance plots: {e}")
