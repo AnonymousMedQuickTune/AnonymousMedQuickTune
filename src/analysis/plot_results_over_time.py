@@ -688,6 +688,35 @@ def calculate_mean_std(performances: Dict[int, List[float]]) -> Tuple[List[int],
     return config_numbers, means, stds
 
 
+def calculate_mean_std_error(performances: Dict[int, List[float]]) -> Tuple[List[int], List[float], List[float]]:
+    """
+    Calculate mean and standard error (SEM) for each config number.
+    
+    Standard Error = std / sqrt(n), where n is the number of samples.
+    
+    Args:
+        performances: Dict mapping config_number -> list of performances
+        
+    Returns:
+        Tuple of (config_numbers, means, std_errors) as sorted lists
+    """
+    config_numbers = sorted(performances.keys())
+    means = []
+    std_errors = []
+    
+    for config_num in config_numbers:
+        perfs = performances[config_num]
+        n = len(perfs)
+        mean = np.mean(perfs)
+        std = np.std(perfs)
+        # Standard Error of the Mean (SEM) = std / sqrt(n)
+        std_error = std / np.sqrt(n) if n > 1 else 0.0
+        means.append(mean)
+        std_errors.append(std_error)
+    
+    return config_numbers, means, std_errors
+
+
 def extend_performances_to_max_configs(
     performances: Dict[int, List[float]],
     max_config: int
@@ -728,7 +757,8 @@ def create_plots(
     all_validation_performances: List[Tuple[str, Dict[int, List[float]]]],
     all_test_performances: List[Tuple[str, Dict[int, List[float]]]],
     output_path: Path = None,
-    extend_to_max_configs: bool = False
+    extend_to_max_configs: bool = False,
+    use_standard_error: bool = True
 ):
     """
     Create plots for validation and test performance over time.
@@ -738,6 +768,8 @@ def create_plots(
         all_validation_performances: List of tuples (experiment_name, validation_performances dict)
         all_test_performances: List of tuples (experiment_name, test_performances dict)
         output_path: Optional path to save the plot. If None, saves to first seed directory.
+        extend_to_max_configs: Whether to extend shorter experiments to match the longest one
+        use_standard_error: If True, use standard error (SEM) instead of standard deviation for error bars
     """
     # Create figure with three subplots
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
@@ -787,19 +819,23 @@ def create_plots(
             all_test_configs.update(test_perfs.keys())
         all_configs = sorted(set(all_val_configs | all_test_configs))
     
+    # Choose the appropriate calculation function based on use_standard_error flag
+    calc_func = calculate_mean_std_error if use_standard_error else calculate_mean_std
+    error_label = "standard error" if use_standard_error else "std"
+    
     # Calculate global y-axis range across all plots for better comparison
     all_y_values = []
     for exp_name, validation_performances in all_validation_performances:
         if validation_performances:
-            val_configs, val_means, val_stds = calculate_mean_std(validation_performances)
+            val_configs, val_means, val_errors = calc_func(validation_performances)
             if val_configs:
                 # Debug: Print loaded validation values
-                print(f"  Validation values for {exp_name}: means={val_means}, stds={val_stds}")
+                print(f"  Validation values for {exp_name}: means={val_means}, {error_label}s={val_errors}")
                 # Only include reasonable values (AUC should be between 0 and 100)
                 val_means_array = np.array(val_means)
-                val_stds_array = np.array(val_stds)
-                val_upper = val_means_array + val_stds_array
-                val_lower = val_means_array - val_stds_array
+                val_errors_array = np.array(val_errors)
+                val_upper = val_means_array + val_errors_array
+                val_lower = val_means_array - val_errors_array
                 # Filter out clearly invalid values
                 valid_mask = (val_lower >= 0) & (val_lower <= 100) & (val_upper >= 0) & (val_upper <= 100)
                 if np.any(valid_mask):
@@ -811,15 +847,15 @@ def create_plots(
     
     for exp_name, test_performances in all_test_performances:
         if test_performances:
-            test_configs, test_means, test_stds = calculate_mean_std(test_performances)
+            test_configs, test_means, test_errors = calc_func(test_performances)
             if test_configs:
                 # Debug: Print loaded test values
-                print(f"  Test values for {exp_name}: means={test_means}, stds={test_stds}")
+                print(f"  Test values for {exp_name}: means={test_means}, {error_label}s={test_errors}")
                 # Only include reasonable values (AUC should be between 0 and 100)
                 test_means_array = np.array(test_means)
-                test_stds_array = np.array(test_stds)
-                test_upper = test_means_array + test_stds_array
-                test_lower = test_means_array - test_stds_array
+                test_errors_array = np.array(test_errors)
+                test_upper = test_means_array + test_errors_array
+                test_lower = test_means_array - test_errors_array
                 # Filter out clearly invalid values
                 valid_mask = (test_lower >= 0) & (test_lower <= 100) & (test_upper >= 0) & (test_upper <= 100)
                 if np.any(valid_mask):
@@ -855,17 +891,17 @@ def create_plots(
     has_validation_data = False
     for idx, (exp_name, validation_performances) in enumerate(all_validation_performances):
         if validation_performances:
-            val_configs, val_means, val_stds = calculate_mean_std(validation_performances)
+            val_configs, val_means, val_errors = calc_func(validation_performances)
             if val_configs:
                 has_validation_data = True
                 # Use different shades of blue for different experiments
                 color = experiment_colors[idx] if len(experiment_dirs) > 1 else validation_color_base
                 ax1.plot(val_configs, val_means, marker="o", linewidth=2, markersize=8, 
-                        label=f"{exp_name} (Mean with std)", color=color, linestyle="--")
+                        label=f"{exp_name} (Mean with {error_label})", color=color, linestyle="--")
                 ax1.fill_between(
                     val_configs,
-                    np.array(val_means) - np.array(val_stds),
-                    np.array(val_means) + np.array(val_stds),
+                    np.array(val_means) - np.array(val_errors),
+                    np.array(val_means) + np.array(val_errors),
                     alpha=0.2,
                     color=color
                 )
@@ -894,17 +930,17 @@ def create_plots(
     has_test_data = False
     for idx, (exp_name, test_performances) in enumerate(all_test_performances):
         if test_performances:
-            test_configs, test_means, test_stds = calculate_mean_std(test_performances)
+            test_configs, test_means, test_errors = calc_func(test_performances)
             if test_configs:
                 has_test_data = True
                 # Use different shades of green for different experiments
                 color = experiment_colors[idx] if len(experiment_dirs) > 1 else test_color_base
                 ax2.plot(test_configs, test_means, marker="s", linewidth=2, markersize=8, 
-                        label=f"{exp_name} (Mean with std)", color=color, linestyle="-")
+                        label=f"{exp_name} (Mean with {error_label})", color=color, linestyle="-")
                 ax2.fill_between(
                     test_configs,
-                    np.array(test_means) - np.array(test_stds),
-                    np.array(test_means) + np.array(test_stds),
+                    np.array(test_means) - np.array(test_errors),
+                    np.array(test_means) + np.array(test_errors),
                     alpha=0.2,
                     color=color
                 )
@@ -934,15 +970,15 @@ def create_plots(
         # Plot validation for each experiment
         for idx, (exp_name, validation_performances) in enumerate(all_validation_performances):
             if validation_performances:
-                val_configs, val_means, val_stds = calculate_mean_std(validation_performances)
+                val_configs, val_means, val_errors = calc_func(validation_performances)
                 if val_configs:
                     color = experiment_colors[idx] if len(experiment_dirs) > 1 else validation_color_base
                     ax3.plot(val_configs, val_means, marker="o", linewidth=2, markersize=8, 
                             label=f"{exp_name} (Validation)", color=color, linestyle="--")
                     ax3.fill_between(
                         val_configs,
-                        np.array(val_means) - np.array(val_stds),
-                        np.array(val_means) + np.array(val_stds),
+                        np.array(val_means) - np.array(val_errors),
+                        np.array(val_means) + np.array(val_errors),
                         alpha=0.15,
                         color=color
                     )
@@ -950,15 +986,15 @@ def create_plots(
         # Plot test for each experiment
         for idx, (exp_name, test_performances) in enumerate(all_test_performances):
             if test_performances:
-                test_configs, test_means, test_stds = calculate_mean_std(test_performances)
+                test_configs, test_means, test_errors = calc_func(test_performances)
                 if test_configs:
                     color = experiment_colors[idx] if len(experiment_dirs) > 1 else test_color_base
                     ax3.plot(test_configs, test_means, marker="s", linewidth=2, markersize=8, 
                             label=f"{exp_name} (Test)", color=color, linestyle="-")
                     ax3.fill_between(
                         test_configs,
-                        np.array(test_means) - np.array(test_stds),
-                        np.array(test_means) + np.array(test_stds),
+                        np.array(test_means) - np.array(test_errors),
+                        np.array(test_means) + np.array(test_errors),
                         alpha=0.15,
                         color=color
                     )
@@ -1033,7 +1069,8 @@ def create_plots(
 def create_performance_over_time_plot(
     experiment_dir: Path,
     cost_to_spend: float,
-    output_path: Path = None
+    output_path: Path = None,
+    use_standard_error: bool = True
 ):
     """
     Create plots for validation and test performance over time (wall-clock time).
@@ -1162,9 +1199,10 @@ def create_performance_over_time_plot(
     sorted_configs = sorted(config_data.keys())
     time_points = [config_data[config_num]["max_time"] for config_num in sorted_configs]
     val_means = []
-    val_stds = []
+    val_errors = []
     test_means = []
-    test_stds = []
+    test_errors = []
+    error_label = "standard error" if use_standard_error else "std"
     
     for config_num in sorted_configs:
         val_perfs = config_data[config_num]["val_perfs"]
@@ -1172,17 +1210,27 @@ def create_performance_over_time_plot(
         
         if val_perfs:
             val_means.append(np.mean(val_perfs))
-            val_stds.append(np.std(val_perfs) if len(val_perfs) > 1 else 0.0)
+            if use_standard_error:
+                n = len(val_perfs)
+                std = np.std(val_perfs) if n > 1 else 0.0
+                val_errors.append(std / np.sqrt(n) if n > 1 else 0.0)
+            else:
+                val_errors.append(np.std(val_perfs) if len(val_perfs) > 1 else 0.0)
         else:
             val_means.append(0.0)
-            val_stds.append(0.0)
+            val_errors.append(0.0)
         
         if test_perfs:
             test_means.append(np.mean(test_perfs))
-            test_stds.append(np.std(test_perfs) if len(test_perfs) > 1 else 0.0)
+            if use_standard_error:
+                n = len(test_perfs)
+                std = np.std(test_perfs) if n > 1 else 0.0
+                test_errors.append(std / np.sqrt(n) if n > 1 else 0.0)
+            else:
+                test_errors.append(np.std(test_perfs) if len(test_perfs) > 1 else 0.0)
         else:
             test_means.append(0.0)
-            test_stds.append(0.0)
+            test_errors.append(0.0)
     
     # Create plots
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
@@ -1193,11 +1241,11 @@ def create_performance_over_time_plot(
     # Calculate y-axis range
     all_y_values = []
     if val_means:
-        all_y_values.extend([m + s for m, s in zip(val_means, val_stds)])
-        all_y_values.extend([m - s for m, s in zip(val_means, val_stds)])
+        all_y_values.extend([m + e for m, e in zip(val_means, val_errors)])
+        all_y_values.extend([m - e for m, e in zip(val_means, val_errors)])
     if test_means:
-        all_y_values.extend([m + s for m, s in zip(test_means, test_stds)])
-        all_y_values.extend([m - s for m, s in zip(test_means, test_stds)])
+        all_y_values.extend([m + e for m, e in zip(test_means, test_errors)])
+        all_y_values.extend([m - e for m, e in zip(test_means, test_errors)])
     
     if all_y_values:
         y_min = min(all_y_values)
@@ -1213,11 +1261,11 @@ def create_performance_over_time_plot(
     # Plot validation performance
     if time_points and val_means:
         ax1.plot(time_points, val_means, marker="o", linewidth=2, markersize=8, 
-                label="Validation (Mean with std)", color=validation_color, linestyle="--")
+                label=f"Validation (Mean with {error_label})", color=validation_color, linestyle="--")
         ax1.fill_between(
             time_points,
-            np.array(val_means) - np.array(val_stds),
-            np.array(val_means) + np.array(val_stds),
+            np.array(val_means) - np.array(val_errors),
+            np.array(val_means) + np.array(val_errors),
             alpha=0.2,
             color=validation_color
         )
@@ -1243,11 +1291,11 @@ def create_performance_over_time_plot(
     # Plot test performance
     if time_points and test_means:
         ax2.plot(time_points, test_means, marker="s", linewidth=2, markersize=8, 
-                label="Test (Mean with std)", color=test_color, linestyle="-")
+                label=f"Test (Mean with {error_label})", color=test_color, linestyle="-")
         ax2.fill_between(
             time_points,
-            np.array(test_means) - np.array(test_stds),
-            np.array(test_means) + np.array(test_stds),
+            np.array(test_means) - np.array(test_errors),
+            np.array(test_means) + np.array(test_errors),
             alpha=0.2,
             color=test_color
         )
@@ -1277,8 +1325,8 @@ def create_performance_over_time_plot(
                     label="Validation", color=validation_color, linestyle="--")
             ax3.fill_between(
                 time_points,
-                np.array(val_means) - np.array(val_stds),
-                np.array(val_means) + np.array(val_stds),
+                np.array(val_means) - np.array(val_errors),
+                np.array(val_means) + np.array(val_errors),
                 alpha=0.15,
                 color=validation_color
             )
@@ -1288,8 +1336,8 @@ def create_performance_over_time_plot(
                     label="Test", color=test_color, linestyle="-")
             ax3.fill_between(
                 time_points,
-                np.array(test_means) - np.array(test_stds),
-                np.array(test_means) + np.array(test_stds),
+                np.array(test_means) - np.array(test_errors),
+                np.array(test_means) + np.array(test_errors),
                 alpha=0.15,
                 color=test_color
             )
