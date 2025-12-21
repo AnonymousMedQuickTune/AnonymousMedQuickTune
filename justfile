@@ -357,6 +357,46 @@ plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
     python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
   fi
 
+# Plot test and validation performance over time for QuickTune experiments
+# Automatically handles paths with or without seed_* directories
+# Example: just plot-quicktune experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn
+# Example with seed: just plot-quicktune experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn/seed_42
+# Example with custom output: just plot-quicktune experiments/Cluster/QuickTune/test_experiment output.png
+# Example over time (hours): just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment
+plot-quicktune EXPERIMENT_PATH OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  # If path ends with seed_*, go up one level to get experiment directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    EXPERIMENT_DIR=$(dirname "{{EXPERIMENT_PATH}}")
+  else
+    EXPERIMENT_DIR="{{EXPERIMENT_PATH}}"
+  fi
+  
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}"
+  else
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --output {{OUTPUT_PATH}}
+  fi
+
+# Plot test and validation performance over time (wall-clock time) for QuickTune experiments
+# Example: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn
+# Example with seed: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment/seed_42
+# Example with custom output: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment output.png
+plot-quicktune-over-time EXPERIMENT_PATH OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  # If path ends with seed_*, go up one level to get experiment directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    EXPERIMENT_DIR=$(dirname "{{EXPERIMENT_PATH}}")
+  else
+    EXPERIMENT_DIR="{{EXPERIMENT_PATH}}"
+  fi
+  
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time
+  else
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time --output {{OUTPUT_PATH}}
+  fi
+
 # Plot test and validation performance over time for multiple experiments together
 # Example: just plot-performance-over-time-multi test_plot experiments/NePS/lipo/test_plotting_script experiments/NePS/lipo/test_plotting_script_2
 # This will save plots to experiments/Plots/test_plot.png and experiments/Plots/test_plot.pdf
