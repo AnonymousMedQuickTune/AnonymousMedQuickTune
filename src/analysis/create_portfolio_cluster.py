@@ -647,12 +647,62 @@ class PortfolioCreator:
                 # Average over all folds (outer and inner) for each epoch
                 all_fold_curves = np.array(all_fold_curves)
                 avg_curve = np.mean(all_fold_curves, axis=0)
+                
+                # Ensure avg_curve is a numpy array with float dtype for NaN checking
+                avg_curve = np.asarray(avg_curve, dtype=np.float64)
+                
+                # Check for NaN values
+                if np.any(np.isnan(avg_curve)):
+                    nan_count = np.isnan(avg_curve).sum()
+                    logging.warning(f"Config {idx} has {nan_count} NaN values in averaged curve (out of {len(avg_curve)} epochs)")
+                
                 curves_data.append(avg_curve)
             else:
-                logging.warning(f"No valid curves found for config {idx}")
-                curves_data.append(np.zeros(1))
+                dataset = self.hydra_config["data"]["dataset"]
+                exp_name = self.input_path.parent.name
+                seed = self.input_path.name.replace("seed_", "")
+                logging.warning(
+                    f"No valid curves found for config {idx} in dataset={dataset}, "
+                    f"experiment={exp_name}, seed={seed}. "
+                    f"Config IDs: {config_ids}, Outer fold indices: {outer_fold_indices}. "
+                    f"Using 0.0 as default (likely CUDA error or early failure)."
+                )
+                # Use a single 0 for failed configs (CUDA error or complete failure)
+                # This signals to the algorithm that this config is bad
+                curves_data.append(np.array([0.0]))
 
-        return pd.DataFrame(curves_data)
+        # Create DataFrame - curves may have different lengths
+        curves_df = pd.DataFrame(curves_data)
+        
+        # Find the maximum curve length (for padding shorter curves)
+        max_length = max(len(curve) for curve in curves_data) if curves_data else 1
+        
+        # Pad all curves to the same length
+        # For curves with actual data (early stopping): pad with last value
+        # For curves with only 0.0 (CUDA error): pad with 0.0
+        padded_curves = []
+        for curve in curves_data:
+            if len(curve) < max_length:
+                # Check if this is a failed config (only has 0.0) or early stopping (has real values)
+                if len(curve) == 1 and curve[0] == 0.0:
+                    # CUDA error - pad with 0.0
+                    padding = np.full(max_length - len(curve), 0.0)
+                else:
+                    # Early stopping - pad with last value
+                    last_value = curve[-1] if len(curve) > 0 else 0.0
+                    padding = np.full(max_length - len(curve), last_value)
+                padded_curve = np.concatenate([curve, padding])
+            else:
+                padded_curve = curve
+            padded_curves.append(padded_curve)
+        
+        # Create DataFrame from padded curves
+        curves_df = pd.DataFrame(padded_curves)
+        
+        # Fill any remaining NaN values (shouldn't happen after padding, but safety check)
+        curves_df = curves_df.fillna(0.0)
+        
+        return curves_df
     
     def _find_config_directory(self, config_idx: int) -> Path:
         """Find the configuration directory, checking new structure first.
@@ -887,9 +937,15 @@ def merge_neps_runs_multi_dataset(
     merged_costs.index = range(1, len(merged_costs) + 1)
     merged_meta.index = range(1, len(merged_meta) + 1)
 
+    # Fill NaN values in curves with 0.0 before saving (for failed configs due to CUDA errors)
+    # This ensures QuickTune can properly use the portfolio - empty values would become NaN
+    # which could cause issues with the predictors (GPRegressionModel, FTPFN, etc.)
+    merged_curves = merged_curves.fillna(0.0)
+    
     # Save merged files with index
     merged_config.to_csv(portfolio_dir / CONFIG_CSV, index=True)
-    merged_curves.to_csv(portfolio_dir / CURVE_CSV, index=True)
+    # Use na_rep='0.0' to ensure empty values are written as 0.0 in CSV (not empty strings)
+    merged_curves.to_csv(portfolio_dir / CURVE_CSV, index=True, na_rep='0.0')
     merged_costs.to_csv(portfolio_dir / COST_CSV, index=True)
     merged_meta.to_csv(portfolio_dir / META_CSV, index=True)
 
