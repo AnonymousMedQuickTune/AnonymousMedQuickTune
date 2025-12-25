@@ -13,6 +13,7 @@ It creates four CSV files:
 import ast
 import logging
 import pickle
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -21,6 +22,8 @@ import numpy as np
 import pandas as pd
 import yaml
 from omegaconf import DictConfig
+
+from src.utils.quicktune_utils import custom_extract_image_dataset_metafeat
 
 
 # Constants
@@ -42,9 +45,7 @@ DEFAULT_META_FEATURES = {
     "input_size_w": 224,
     "input_size_d": 224,
     "modality": "CT",  # Default to CT
-    "total_train_samples": 1000,
-    "total_val_samples": 200,
-    "total_test_samples": 300,
+    "total_num_samples": 1500,  # Total number of samples (matches quicktune_utils.py format)
 }
 
 # Mapping of dataset names to modality
@@ -113,10 +114,41 @@ class PortfolioCreator:
             return yaml.safe_load(f)
 
     @staticmethod
-    def setup_logging() -> None:
-        """Configure logging settings."""
+    def setup_logging(log_file: Path | None = None) -> None:
+        """Configure logging settings.
+        
+        Args:
+            log_file: Optional path to log file. If provided, logs will be written to both
+                     file and console. If None, logs only go to console.
+        """
+        # Check if logging is already configured
+        root_logger = logging.getLogger()
+        if root_logger.handlers:
+            # Logging already configured, just add file handler if needed
+            if log_file:
+                # Check if file handler already exists for this file
+                log_file_str = str(log_file.resolve())
+                has_file_handler = any(
+                    isinstance(h, logging.FileHandler) and h.baseFilename == log_file_str
+                    for h in root_logger.handlers
+                )
+                if not has_file_handler:
+                    log_file.parent.mkdir(parents=True, exist_ok=True)
+                    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+                    file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+                    root_logger.addHandler(file_handler)
+            return
+        
+        # First time setup
+        handlers = [logging.StreamHandler()]
+        if log_file:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(logging.FileHandler(log_file, mode='a', encoding='utf-8'))
+        
         logging.basicConfig(
-            level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+            level=logging.INFO,
+            format="%(asctime)s - %(levelname)s - %(message)s",
+            handlers=handlers
         )
 
     def parse_neps_output(self) -> List[Dict[str, Any]]:
@@ -201,7 +233,16 @@ class PortfolioCreator:
 
         # Add learning curve if available
         if "learning_curve" in row:
-            config_dict["curves"] = ast.literal_eval(row["learning_curve"])
+            learning_curve_value = row["learning_curve"]
+            # Handle nan values (pandas represents NaN as float('nan') or string 'nan')
+            if pd.isna(learning_curve_value) or (isinstance(learning_curve_value, str) and learning_curve_value.lower() == 'nan'):
+                config_dict["curves"] = []
+            else:
+                try:
+                    config_dict["curves"] = ast.literal_eval(learning_curve_value)
+                except (ValueError, SyntaxError) as e:
+                    logging.warning(f"Could not parse learning_curve for config: {e}. Using empty list.")
+                    config_dict["curves"] = []
 
         return config_dict
 
@@ -249,65 +290,27 @@ class PortfolioCreator:
             "input_size_w": [meta_features["input_size_w"]] * len(results),
             "input_size_d": [meta_features["input_size_d"]] * len(results),
             "modality": [meta_features["modality"]] * len(results),
-            "total_train_samples": [meta_features["total_train_samples"]] * len(results),
-            "total_val_samples": [meta_features["total_val_samples"]] * len(results),
-            "total_test_samples": [meta_features["total_test_samples"]] * len(results),
+            "total_num_samples": [meta_features["total_num_samples"]] * len(results),
         }
 
         return pd.DataFrame(meta_data)
     
     def _extract_sample_counts_from_splits(self) -> Dict[str, int]:
-        """Extract actual sample counts from CV splits files."""
+        """Extract actual sample counts from CV splits files.
+        
+        Returns:
+            Dictionary with "total_num_samples" if available
+        """
         outer_fold_dirs = self._find_all_outer_folds()
         
-        # Try to get sample counts from inner_cv_splits.pkl
-        total_train_val_samples = None
-        total_test_samples = None
-        
-        for outer_fold_dir in outer_fold_dirs:
-            # Try to find a config directory to get splits from
-            configs_dir = outer_fold_dir / CONFIGS_SUBDIR
-            if configs_dir.exists():
-                # Get first config directory
-                config_dirs = [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith(CONFIG_DIR_PREFIX)]
-                if config_dirs:
-                    config_dir = config_dirs[0]
-                    splits_file = config_dir / "inner_cv_splits.pkl"
-                    
-                    if splits_file.exists():
-                        try:
-                            with open(splits_file, "rb") as f:
-                                splits_data = pickle.load(f)
-                            
-                            # Get total train+val samples from inner splits
-                            if "total_samples" in splits_data:
-                                total_train_val_samples = splits_data["total_samples"]
-                            
-                            # Get train/val split from first fold
-                            if "splits" in splits_data and len(splits_data["splits"]) > 0:
-                                train_idx, val_idx = splits_data["splits"][0]
-                                # Calculate average train/val split ratio
-                                # For stratified k-fold, val is typically 1/k of total
-                                avg_train_samples = len(train_idx)
-                                avg_val_samples = len(val_idx)
-                                
-                                # We'll use these as estimates if we can't get exact counts
-                                if total_train_val_samples:
-                                    # Estimate based on first fold (should be similar across folds)
-                                    estimated_train = int(total_train_val_samples * (avg_train_samples / (avg_train_samples + avg_val_samples)))
-                                    estimated_val = total_train_val_samples - estimated_train
-                        except Exception as e:
-                            logging.warning(f"Could not read splits file {splits_file}: {e}")
-                    
-                    break  # Only need to read from one config
-        
-        # Try to get test samples from outer CV splits
-        # Look for outer CV splits file in the dataset directory
+        # Try to get total samples from outer CV splits (most reliable)
         dataset_name = self.hydra_config["data"]["dataset"]
         data_path = self.hydra_config.get("data", {}).get("path", "datasets")
         seed = self.hydra_config.get("seed", 42)
         cv_outer_folds_splits = self.hydra_config.get("cv_outer_folds_splits", 2)
         cv_outer_folds_repeats = self.hydra_config.get("cv_outer_folds_repeats", 1)
+        
+        total_num_samples = None
         
         # Try to find outer CV splits file
         from src.utils.common_utils import get_deterministic_cv_splits_path
@@ -321,15 +324,36 @@ class PortfolioCreator:
                     outer_splits_data = pickle.load(f)
                 
                 if "dataset_info" in outer_splits_data and "total_samples" in outer_splits_data["dataset_info"]:
-                    total_samples = outer_splits_data["dataset_info"]["total_samples"]
-                    if total_train_val_samples and total_samples:
-                        total_test_samples = total_samples - total_train_val_samples
+                    total_num_samples = outer_splits_data["dataset_info"]["total_samples"]
         except Exception as e:
             logging.warning(f"Could not read outer CV splits: {e}")
         
+        # Fallback: try to get from inner_cv_splits.pkl
+        if total_num_samples is None:
+            for outer_fold_dir in outer_fold_dirs:
+                configs_dir = outer_fold_dir / CONFIGS_SUBDIR
+                if configs_dir.exists():
+                    config_dirs = [d for d in configs_dir.iterdir() if d.is_dir() and d.name.startswith(CONFIG_DIR_PREFIX)]
+                    if config_dirs:
+                        config_dir = config_dirs[0]
+                        splits_file = config_dir / "inner_cv_splits.pkl"
+                        
+                        if splits_file.exists():
+                            try:
+                                with open(splits_file, "rb") as f:
+                                    splits_data = pickle.load(f)
+                                
+                                # Get total samples from inner splits
+                                if "total_samples" in splits_data:
+                                    # This is train+val, but we'll use it as total if we can't get better info
+                                    total_num_samples = splits_data["total_samples"]
+                            except Exception as e:
+                                logging.warning(f"Could not read splits file {splits_file}: {e}")
+                        
+                        break  # Only need to read from one config
+        
         return {
-            "total_train_val_samples": total_train_val_samples,
-            "total_test_samples": total_test_samples,
+            "total_num_samples": total_num_samples,
         }
     
     def _extract_spatial_size(self) -> Tuple[int, int, int]:
@@ -403,9 +427,46 @@ class PortfolioCreator:
             logging.warning(f"Unknown dataset '{dataset_name}', defaulting to CT modality. Please add to MRI_DATASETS or CT_DATASETS if needed.")
             return DEFAULT_META_FEATURES["modality"]
     
+    def _get_dataset_meta_features_from_quicktune_utils(self, dataset_name: str) -> Dict[str, Any] | None:
+        """Get dataset-specific meta-features from custom_extract_image_dataset_metafeat.
+        
+        Args:
+            dataset_name: Name of the dataset
+            
+        Returns:
+            Dictionary with meta-features or None if extraction fails
+        """
+        try:
+            # Create a temporary directory with the dataset name to satisfy the function's path requirement
+            # The function uses path_root.name to get the dataset name, so we create a temp dir with that name
+            with tempfile.TemporaryDirectory() as temp_base:
+                temp_path = Path(temp_base) / dataset_name
+                temp_path.mkdir(parents=True, exist_ok=True)
+                
+                # Call the function - it will use the directory name (dataset_name) to determine meta-features
+                trial_info, metafeat = custom_extract_image_dataset_metafeat(temp_path)
+                
+                # Convert the metafeat to our format (matches quicktune_utils.py format)
+                meta = {
+                    "num_classes": metafeat.get("num_classes", DEFAULT_META_FEATURES["num_classes"]),
+                    "input_channels": metafeat.get("input_channels", DEFAULT_META_FEATURES["input_channels"]),
+                    "input_size_h": metafeat.get("input_size_h", DEFAULT_META_FEATURES["input_size_h"]),
+                    "input_size_w": metafeat.get("input_size_w", DEFAULT_META_FEATURES["input_size_w"]),
+                    "input_size_d": metafeat.get("input_size_d", DEFAULT_META_FEATURES["input_size_d"]),
+                    "modality": metafeat.get("modality", DEFAULT_META_FEATURES["modality"]),
+                    "total_num_samples": metafeat.get("total_num_samples", None),
+                }
+                return meta
+        except Exception as e:
+            logging.warning(f"Could not extract meta-features from quicktune_utils for dataset {dataset_name}: {e}")
+            return None
+    
     def _get_dataset_meta_features(self) -> Dict[str, Any]:
         """Get dataset-specific meta-features from config, CV splits, or return defaults."""
         dataset = self.hydra_config["data"]["dataset"]
+        
+        # First, try to get meta-features from quicktune_utils (dataset-specific defaults)
+        quicktune_meta = self._get_dataset_meta_features_from_quicktune_utils(dataset)
         
         # Determine modality
         modality = self._get_modality(dataset)
@@ -414,55 +475,71 @@ class PortfolioCreator:
         if "meta_features" in self.hydra_config.get("data", {}):
             config_meta = self.hydra_config["data"]["meta_features"]
             
+            # Use quicktune defaults as fallback if not in config
+            default_h = quicktune_meta["input_size_h"] if quicktune_meta else DEFAULT_META_FEATURES["input_size_h"]
+            default_w = quicktune_meta["input_size_w"] if quicktune_meta else DEFAULT_META_FEATURES["input_size_w"]
+            default_d = quicktune_meta["input_size_d"] if quicktune_meta else DEFAULT_META_FEATURES["input_size_d"]
+            default_channels = quicktune_meta["input_channels"] if quicktune_meta else DEFAULT_META_FEATURES["input_channels"]
+            default_classes = quicktune_meta["num_classes"] if quicktune_meta else DEFAULT_META_FEATURES["num_classes"]
+            default_modality = quicktune_meta["modality"] if quicktune_meta else modality
+            
             # Handle backward compatibility: if input_size exists, use it for all dimensions
             if "input_size" in config_meta and "input_size_h" not in config_meta:
-                input_size = config_meta.get("input_size", DEFAULT_META_FEATURES["input_size_h"])
+                input_size = config_meta.get("input_size", default_h)
                 input_size_h = input_size_w = input_size_d = input_size
             else:
-                input_size_h = config_meta.get("input_size_h", DEFAULT_META_FEATURES["input_size_h"])
-                input_size_w = config_meta.get("input_size_w", DEFAULT_META_FEATURES["input_size_w"])
-                input_size_d = config_meta.get("input_size_d", DEFAULT_META_FEATURES["input_size_d"])
+                input_size_h = config_meta.get("input_size_h", default_h)
+                input_size_w = config_meta.get("input_size_w", default_w)
+                input_size_d = config_meta.get("input_size_d", default_d)
+            
+            # Get total_num_samples from config or use quicktune/default
+            default_total_samples = quicktune_meta.get("total_num_samples") if quicktune_meta else DEFAULT_META_FEATURES["total_num_samples"]
+            total_num_samples = config_meta.get("total_num_samples", 
+                                                config_meta.get("total_train_samples", default_total_samples))  # Backward compatibility
             
             meta = {
-                "num_classes": config_meta.get("num_classes", DEFAULT_META_FEATURES["num_classes"]),
-                "input_channels": config_meta.get("input_channels", DEFAULT_META_FEATURES["input_channels"]),
+                "num_classes": config_meta.get("num_classes", default_classes),
+                "input_channels": config_meta.get("input_channels", default_channels),
                 "input_size_h": input_size_h,
                 "input_size_w": input_size_w,
                 "input_size_d": input_size_d,
-                "modality": config_meta.get("modality", modality),
-                "total_train_samples": config_meta.get("total_train_samples", DEFAULT_META_FEATURES["total_train_samples"]),
-                "total_val_samples": config_meta.get("total_val_samples", DEFAULT_META_FEATURES["total_val_samples"]),
-                "total_test_samples": config_meta.get("total_test_samples", DEFAULT_META_FEATURES["total_test_samples"]),
+                "modality": config_meta.get("modality", default_modality),
+                "total_num_samples": total_num_samples,
             }
         else:
             # Try to extract from CV splits
             split_counts = self._extract_sample_counts_from_splits()
             
-            # Estimate train/val split if we have total train+val
-            total_train_val = split_counts.get("total_train_val_samples")
-            if total_train_val:
-                # For typical k-fold CV, validation is ~1/k of train+val
-                cv_inner_folds_splits = self.hydra_config.get("cv_inner_folds_splits", 2)
-                # Rough estimate: val is 1/k, train is (k-1)/k
-                estimated_val = int(total_train_val / cv_inner_folds_splits)
-                estimated_train = total_train_val - estimated_val
-            else:
-                estimated_train = DEFAULT_META_FEATURES["total_train_samples"]
-                estimated_val = DEFAULT_META_FEATURES["total_val_samples"]
+            # Get total_num_samples from splits, quicktune_meta, or default
+            total_num_samples = split_counts.get("total_num_samples")
+            if total_num_samples is None:
+                if quicktune_meta and quicktune_meta.get("total_num_samples"):
+                    total_num_samples = quicktune_meta["total_num_samples"]
+                else:
+                    total_num_samples = DEFAULT_META_FEATURES["total_num_samples"]
             
             # Extract input_size_h, input_size_w, input_size_d from spatial_size for 3D datasets
+            # Use quicktune defaults as fallback
             input_size_h, input_size_w, input_size_d = self._extract_spatial_size()
+            if input_size_h == DEFAULT_META_FEATURES["input_size_h"] and quicktune_meta:
+                # If extraction failed and we have quicktune defaults, use those
+                input_size_h = quicktune_meta["input_size_h"]
+                input_size_w = quicktune_meta["input_size_w"]
+                input_size_d = quicktune_meta["input_size_d"]
+            
+            # Use quicktune defaults for other fields
+            default_classes = quicktune_meta["num_classes"] if quicktune_meta else DEFAULT_META_FEATURES["num_classes"]
+            default_channels = quicktune_meta["input_channels"] if quicktune_meta else DEFAULT_META_FEATURES["input_channels"]
+            default_modality = quicktune_meta["modality"] if quicktune_meta else modality
             
             meta = {
-                "num_classes": DEFAULT_META_FEATURES["num_classes"],
-                "input_channels": DEFAULT_META_FEATURES["input_channels"],
+                "num_classes": default_classes,
+                "input_channels": default_channels,
                 "input_size_h": input_size_h,
                 "input_size_w": input_size_w,
                 "input_size_d": input_size_d,
-                "modality": modality,
-                "total_train_samples": estimated_train,
-                "total_val_samples": estimated_val,
-                "total_test_samples": split_counts.get("total_test_samples", DEFAULT_META_FEATURES["total_test_samples"]),
+                "modality": default_modality,
+                "total_num_samples": total_num_samples,
             }
         
         return meta
@@ -727,6 +804,14 @@ def merge_neps_runs_multi_dataset(
         ValueError: If no valid NePS runs are found to merge
         FileNotFoundError: If specified directories don't exist
     """
+    # Create portfolio directory and set up logging to file
+    portfolio_dir = Path(output_dir)
+    portfolio_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir = portfolio_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_file = logs_dir / "create_portfolio_cluster.log"
+    PortfolioCreator.setup_logging(log_file=log_file)
+    
     all_configs = []
     all_curves = []
     all_costs = []
@@ -795,10 +880,6 @@ def merge_neps_runs_multi_dataset(
     merged_curves = pd.concat(all_curves, ignore_index=True)
     merged_costs = pd.concat(all_costs, ignore_index=True)
     merged_meta = pd.concat(all_meta, ignore_index=True)
-
-    # Create portfolio directory
-    portfolio_dir = Path(output_dir)
-    portfolio_dir.mkdir(parents=True, exist_ok=True)
 
     # Add 1-based indices to match the config IDs
     merged_config.index = range(1, len(merged_config) + 1)
