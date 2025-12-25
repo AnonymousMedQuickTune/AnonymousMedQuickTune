@@ -841,6 +841,7 @@ def merge_neps_runs_multi_dataset(
     dataset_spec: str,
     output_dir: str | Path,
     experiments_base_path: str | Path | None = None,
+    portfolio_name: str | None = None,
 ) -> None:
     """
     Merge multiple NePS runs from multiple datasets into a single portfolio directory.
@@ -848,14 +849,20 @@ def merge_neps_runs_multi_dataset(
     Args:
         dataset_spec: Dataset-experiment specification string 
                      (e.g., 'lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_5(42,43),test_portfolio_2(43,44)')
-        output_dir: Directory to save the merged portfolio
+        output_dir: Base directory to save the merged portfolio
+        experiments_base_path: Base path to NePS experiments (optional)
+        portfolio_name: Name of the portfolio subdirectory (optional). If provided, portfolio will be saved to output_dir/portfolio_name
 
     Raises:
         ValueError: If no valid NePS runs are found to merge
         FileNotFoundError: If specified directories don't exist
     """
     # Create portfolio directory and set up logging to file
-    portfolio_dir = Path(output_dir)
+    base_portfolio_dir = Path(output_dir)
+    if portfolio_name:
+        portfolio_dir = base_portfolio_dir / portfolio_name
+    else:
+        portfolio_dir = base_portfolio_dir
     portfolio_dir.mkdir(parents=True, exist_ok=True)
     logs_dir = portfolio_dir / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
@@ -973,11 +980,15 @@ def main(config: DictConfig) -> None:
 
     # Convert portfolio_dir to absolute path to avoid issues with relative paths
     portfolio_dir = Path(config.portfolio_dir).resolve()
+    
+    # Get portfolio name from config (optional)
+    portfolio_name = config.get("portfolio_name", None)
         
     merge_neps_runs_multi_dataset(
         dataset_spec=dataset_spec,
         output_dir=portfolio_dir,
-        experiments_base_path=experiments_base_path
+        experiments_base_path=experiments_base_path,
+        portfolio_name=portfolio_name
     )
 
 

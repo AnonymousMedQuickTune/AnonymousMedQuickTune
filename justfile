@@ -230,14 +230,15 @@ create-multi-dataset-portfolio DATASET_SPEC:
     hydra.run.dir=experiments/Portfolio/logs
 
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio on the cluster
-create-multi-dataset-portfolio-cluster DATASET_SPEC:
+create-multi-dataset-portfolio-cluster DATASET_SPEC PORTFOLIO_NAME:
   python -m src.analysis.create_portfolio_cluster \
     +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
     portfolio_dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio \
     merge_runs=true \
     +multi_dataset=true \
     run_mode=Portfolio \
-    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/logs
+    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
 
 # example: just create-multi-dataset-portfolio-cluster "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio (cluster)
