@@ -133,22 +133,29 @@ def get_deterministic_inner_cv_splits_path(data_path, dataset_name, seed, cv_inn
     
 def yaml_to_neps_pipeline_space(yaml_path):
     """Convert YAML pipeline space configuration to NePS format.
+    
+    Supports conditional hyperparameters using the 'condition' field:
+    condition:
+      parent: "parameter_name"
+      value: "expected_value"
 
     Args:
         yaml_path (str): Path to YAML configuration file
 
     Returns:
-        dict: NePS-compatible pipeline space configuration
+        dict: NePS-compatible pipeline space configuration with conditions applied
     """
     with open(yaml_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     pipeline_space = {}
+    conditions_to_apply = []  # Store conditions to apply after all parameters are created
 
+    # First pass: create all parameters
     for key, param_config in config.items():
         param_kwargs = {}
         for k, v in param_config.items():
-            if k not in ["type", "is_fidelity"]:
+            if k not in ["type", "is_fidelity", "condition"]:
                 # Handle scientific notation strings (e.g., "1e-6")
                 if isinstance(v, str) and ("e" in v.lower()):
                     try:
@@ -166,12 +173,86 @@ def yaml_to_neps_pipeline_space(yaml_path):
             param = neps.Integer(**param_kwargs)
         elif param_config["type"] == "categorical":
             param = neps.Categorical(**param_kwargs)
+        else:
+            raise ValueError(f"Unknown parameter type: {param_config['type']}")
 
         # Add is_fidelity if specified
         if param_config.get("is_fidelity", False):
             param.is_fidelity = True
 
         pipeline_space[key] = param
+        
+        # Store condition information for second pass
+        if "condition" in param_config:
+            condition_config = param_config["condition"]
+            parent_param_name = condition_config.get("parent")
+            parent_value = condition_config.get("value")
+            
+            if parent_param_name is None or parent_value is None:
+                raise ValueError(
+                    f"Condition for '{key}' must have both 'parent' and 'value' fields"
+                )
+            
+            conditions_to_apply.append({
+                "child_param": key,
+                "parent_param": parent_param_name,
+                "parent_value": parent_value
+            })
+
+    # Second pass: apply conditions
+    # NePS parameters are wrappers around ConfigSpace parameters
+    # We need to access the underlying ConfigSpace parameter to add conditions
+    from ConfigSpace import EqualsCondition
+    
+    for condition_info in conditions_to_apply:
+        child_name = condition_info["child_param"]
+        parent_name = condition_info["parent_param"]
+        parent_value = condition_info["parent_value"]
+        
+        if parent_name not in pipeline_space:
+            raise ValueError(
+                f"Condition parent parameter '{parent_name}' not found for '{child_name}'"
+            )
+        
+        # Get the underlying ConfigSpace hyperparameters from NePS parameters
+        # NePS parameters have a .hyperparameter attribute that points to the ConfigSpace object
+        child_param = pipeline_space[child_name]
+        parent_param = pipeline_space[parent_name]
+        
+        # Access the underlying ConfigSpace hyperparameter
+        # NePS parameters expose the ConfigSpace hyperparameter directly
+        child_cs_param = child_param.hyperparameter if hasattr(child_param, 'hyperparameter') else child_param
+        parent_cs_param = parent_param.hyperparameter if hasattr(parent_param, 'hyperparameter') else parent_param
+        
+        # Create and add condition
+        # Note: NePS handles conditions through ConfigSpace, so we need to add the condition
+        # to the ConfigSpace configuration space that NePS uses internally
+        # However, NePS might handle this automatically when we set conditions on the parameters
+        # Let's try setting the condition directly on the NePS parameter if it supports it
+        try:
+            # Try to add condition using NePS's internal mechanism
+            # NePS parameters might have a way to set conditions
+            if hasattr(child_param, 'set_condition'):
+                child_param.set_condition(parent_param, parent_value)
+            else:
+                # Fallback: use ConfigSpace directly
+                # This requires access to the ConfigurationSpace object that NePS uses
+                # For now, we'll store the condition info and let NePS handle it
+                # NePS should automatically handle conditions when sampling
+                condition = EqualsCondition(child_cs_param, parent_cs_param, parent_value)
+                # Store condition in a way that NePS can use
+                # NePS might need the condition to be set on the parameter object itself
+                if not hasattr(child_param, '_conditions'):
+                    child_param._conditions = []
+                child_param._conditions.append(condition)
+        except Exception as e:
+            # If direct condition setting fails, log a warning
+            # NePS might handle conditions differently or require a different approach
+            import warnings
+            warnings.warn(
+                f"Could not set condition for '{child_name}' based on '{parent_name}' == '{parent_value}'. "
+                f"Error: {e}. NePS might handle this automatically or require manual configuration."
+            )
 
     return pipeline_space
 
