@@ -443,7 +443,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
 
         # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
         # NOTE: When adding a new dataset, pls verify if -1 is not a valid label!
-        if dataset_name in ["lipo", "desmoid", "gist"]:
+        if dataset_name in ["lipo", "desmoid", "gist", "melanoma", "crlm", "liver"]:
             # Create a list of indices for which the label is not -1 and not NaN
             filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
             # Keep only the images corresponding to valid indices
