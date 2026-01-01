@@ -218,16 +218,17 @@ run-3d-baseline-cluster DATASET MODEL EXPERIMENT_NAME:
 # PORTFOLIO EXPERIMENTS
 # --------------------------------------------------------------------------------------------------
 
-# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
+# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)" portfolio_name
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio
-create-multi-dataset-portfolio DATASET_SPEC:
+create-multi-dataset-portfolio DATASET_SPEC PORTFOLIO_NAME:
   python -m src.analysis.create_portfolio \
     +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
     portfolio_dir=experiments/Portfolio \
     merge_runs=true \
     +multi_dataset=true \
     run_mode=Portfolio \
-    hydra.run.dir=experiments/Portfolio/logs
+    hydra.run.dir=experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
 
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio on the cluster
 create-multi-dataset-portfolio-cluster DATASET_SPEC PORTFOLIO_NAME:
@@ -280,7 +281,8 @@ run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PO
     data.dimensionality=3d \
     run_mode=QuickTune \
     qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
-    developer_mode=true
+    developer_mode=true \
+    cost_to_spend=600
 
 # Submit an HPO experiment with QuickTune to the cluster for a 3D dataset
 run-3d-quicktune-cluster DATASET EXPERIMENT_NAME PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":

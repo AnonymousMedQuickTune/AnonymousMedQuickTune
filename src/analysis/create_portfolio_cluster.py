@@ -225,7 +225,10 @@ class PortfolioCreator:
                 config_dict[param_name] = value
 
         # Add model type and dataset info
-        config_dict["model_type"] = self.hydra_config["model"]["type"]
+        # Only add model_type if there's no "model" hyperparameter
+        # If "model" exists, it will be used directly; otherwise add model_type from config
+        if "model" not in config_dict:
+            config_dict["model_type"] = self.hydra_config["model"]["type"]
         config_dict["dataset"] = self.hydra_config["data"]["dataset"]
 
         # Add performance metrics
@@ -264,7 +267,14 @@ class PortfolioCreator:
         """Create configuration DataFrame."""
         # Get all parameter keys except excluded ones
         excluded_keys = {"curves", "final_accuracy", "model_type", "dataset", "_outer_fold_indices", "_config_ids"}
-        param_keys = [key for key in results[0].keys() if key not in excluded_keys]
+        
+        # Collect all possible keys from all results (different datasets may have different hyperparameters)
+        all_keys = set()
+        for result in results:
+            all_keys.update(result.keys())
+        
+        # Filter out excluded keys
+        param_keys = [key for key in all_keys if key not in excluded_keys]
         
         # Build config data
         config_data = {}
@@ -272,7 +282,8 @@ class PortfolioCreator:
             for key in ["model_type", "dataset"] + param_keys:
                 if key not in config_data:
                     config_data[key] = []
-                config_data[key].append(result[key])
+                # Use None as default if key is missing (for datasets with different hyperparameters)
+                config_data[key].append(result.get(key, None))
 
         return pd.DataFrame(config_data)
     
