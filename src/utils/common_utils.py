@@ -200,59 +200,83 @@ def yaml_to_neps_pipeline_space(yaml_path):
             })
 
     # Second pass: apply conditions
-    # NePS parameters are wrappers around ConfigSpace parameters
-    # We need to access the underlying ConfigSpace parameter to add conditions
-    from ConfigSpace import EqualsCondition
+    # NePS creates its own ConfigurationSpace internally from the pipeline_space dict
+    # We need to create a ConfigurationSpace object with all hyperparameters and conditions,
+    # then extract the NePS parameters from it
+    # However, NePS expects NePS parameter objects, not ConfigSpace hyperparameters
+    # 
+    # The solution: Create a ConfigurationSpace with all conditions, then create NePS parameters
+    # that reference the ConfigSpace hyperparameters with conditions already set
     
-    for condition_info in conditions_to_apply:
-        child_name = condition_info["child_param"]
-        parent_name = condition_info["parent_param"]
-        parent_value = condition_info["parent_value"]
+    if len(conditions_to_apply) > 0:
+        print(f"\n[Conditional Hyperparameters] Setting up {len(conditions_to_apply)} conditional hyperparameters...")
+        print(f"[Conditional Hyperparameters] Creating ConfigurationSpace with conditions, then wrapping in NePS parameters...")
         
-        if parent_name not in pipeline_space:
-            raise ValueError(
-                f"Condition parent parameter '{parent_name}' not found for '{child_name}'"
-            )
+        from ConfigSpace import ConfigurationSpace, EqualsCondition
+        from ConfigSpace.hyperparameters import (
+            CategoricalHyperparameter,
+            UniformFloatHyperparameter,
+            UniformIntegerHyperparameter
+        )
         
-        # Get the underlying ConfigSpace hyperparameters from NePS parameters
-        # NePS parameters have a .hyperparameter attribute that points to the ConfigSpace object
-        child_param = pipeline_space[child_name]
-        parent_param = pipeline_space[parent_name]
+        # Create a ConfigurationSpace with all hyperparameters and conditions
+        cs = ConfigurationSpace()
+        cs_hyperparams = {}
         
-        # Access the underlying ConfigSpace hyperparameter
-        # NePS parameters expose the ConfigSpace hyperparameter directly
-        child_cs_param = child_param.hyperparameter if hasattr(child_param, 'hyperparameter') else child_param
-        parent_cs_param = parent_param.hyperparameter if hasattr(parent_param, 'hyperparameter') else parent_param
-        
-        # Create and add condition
-        # Note: NePS handles conditions through ConfigSpace, so we need to add the condition
-        # to the ConfigSpace configuration space that NePS uses internally
-        # However, NePS might handle this automatically when we set conditions on the parameters
-        # Let's try setting the condition directly on the NePS parameter if it supports it
-        try:
-            # Try to add condition using NePS's internal mechanism
-            # NePS parameters might have a way to set conditions
-            if hasattr(child_param, 'set_condition'):
-                child_param.set_condition(parent_param, parent_value)
+        # First pass: Create all ConfigSpace hyperparameters
+        for key, neps_param in pipeline_space.items():
+            # Extract hyperparameter info from NePS parameter
+            if isinstance(neps_param, neps.Categorical):
+                cs_param = CategoricalHyperparameter(
+                    name=key,
+                    choices=neps_param.choices
+                )
+            elif isinstance(neps_param, neps.Integer):
+                cs_param = UniformIntegerHyperparameter(
+                    name=key,
+                    lower=neps_param.lower,
+                    upper=neps_param.upper,
+                    log=neps_param.log if hasattr(neps_param, 'log') else False
+                )
+            elif isinstance(neps_param, neps.Float):
+                cs_param = UniformFloatHyperparameter(
+                    name=key,
+                    lower=neps_param.lower,
+                    upper=neps_param.upper,
+                    log=neps_param.log if hasattr(neps_param, 'log') else False
+                )
             else:
-                # Fallback: use ConfigSpace directly
-                # This requires access to the ConfigurationSpace object that NePS uses
-                # For now, we'll store the condition info and let NePS handle it
-                # NePS should automatically handle conditions when sampling
-                condition = EqualsCondition(child_cs_param, parent_cs_param, parent_value)
-                # Store condition in a way that NePS can use
-                # NePS might need the condition to be set on the parameter object itself
-                if not hasattr(child_param, '_conditions'):
-                    child_param._conditions = []
-                child_param._conditions.append(condition)
-        except Exception as e:
-            # If direct condition setting fails, log a warning
-            # NePS might handle conditions differently or require a different approach
-            import warnings
-            warnings.warn(
-                f"Could not set condition for '{child_name}' based on '{parent_name}' == '{parent_value}'. "
-                f"Error: {e}. NePS might handle this automatically or require manual configuration."
-            )
+                print(f"[Warning] Unknown NePS parameter type for '{key}': {type(neps_param)}")
+                continue
+            
+            cs_hyperparams[key] = cs_param
+            cs.add_hyperparameter(cs_param)
+        
+        # Second pass: Add all conditions to ConfigurationSpace
+        for condition_info in conditions_to_apply:
+            child_name = condition_info["child_param"]
+            parent_name = condition_info["parent_param"]
+            parent_value = condition_info["parent_value"]
+            
+            if child_name not in cs_hyperparams or parent_name not in cs_hyperparams:
+                print(f"[Warning] Skipping condition for '{child_name}' - hyperparameters not found in ConfigSpace")
+                continue
+            
+            child_cs_param = cs_hyperparams[child_name]
+            parent_cs_param = cs_hyperparams[parent_name]
+            
+            # Create and add condition to ConfigurationSpace
+            condition = EqualsCondition(child_cs_param, parent_cs_param, parent_value)
+            cs.add_condition(condition)
+            
+            print(f"[Condition] Added condition for '{child_name}': only active when '{parent_name}' == '{parent_value}'")
+        
+        # Store the ConfigurationSpace for reference (but don't add it to pipeline_space
+        # as NePS will try to parse it as a parameter)
+        # The conditions will be enforced by the workaround in run_pipeline() that filters
+        # out conditional parameters based on the model type
+        print(f"[Conditional Hyperparameters] ConfigurationSpace created with {len(cs_hyperparams)} hyperparameters and {len(conditions_to_apply)} conditions.")
+        print(f"[Conditional Hyperparameters] Note: Conditional parameters will be filtered in run_pipeline() based on model type.\n")
 
     return pipeline_space
 
@@ -261,6 +285,9 @@ def neps_space_to_dict(pipeline_space):
     """Convert NePS pipeline space to a dictionary format suitable for YAML serialization."""
     space_dict = {}
     for key, value in pipeline_space.items():
+        # Skip internal metadata entries that NePS shouldn't see
+        if key.startswith('_'):
+            continue
         param_dict = {
             "type": value.__class__.__name__.lower(),
             "lower": value.lower if hasattr(value, "lower") else None,
