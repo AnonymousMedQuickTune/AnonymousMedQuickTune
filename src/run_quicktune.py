@@ -130,7 +130,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             raise ValueError(f"Unsupported 2D dataset: {experimental_setting.data.dataset}")
 
     elif dimensionality == "3d":
-        if experimental_setting.data.dataset in ["lipo", "desmoid"]:
+        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver"]:
 
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
@@ -573,7 +573,7 @@ def main(experimental_setting: DictConfig) -> None:
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
-    elif experimental_setting.data.dataset in ["lipo", "desmoid"]:  # TODO @Diane: Fix placeholder values!
+    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver"]:  # TODO @Diane: Fix placeholder values!
         # Use portfolio meta-features for 3D datasets
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
             path_root=Path(experimental_setting.data.path) / experimental_setting.data.dataset,
