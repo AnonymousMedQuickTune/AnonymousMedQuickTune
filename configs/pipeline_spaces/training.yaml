@@ -1,8 +1,8 @@
-voxel_calculation:
-  type: categorical
-  choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
-  # prior: "median"
-  # prior_confidence: "low"
+# voxel_calculation:
+#   type: categorical
+#   choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
+#   # prior: "median"
+#   # prior_confidence: "low"
 
 learning_rate:
   type: float
@@ -42,7 +42,7 @@ scheduler_type:
 warmup_epochs:
   type: int
   lower: 0
-  upper: 10
+  upper: 5
   # prior: 0
   # prior_confidence: "low"
 
