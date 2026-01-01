@@ -218,26 +218,28 @@ run-3d-baseline-cluster DATASET MODEL EXPERIMENT_NAME:
 # PORTFOLIO EXPERIMENTS
 # --------------------------------------------------------------------------------------------------
 
-# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
+# example: just create-multi-dataset-portfolio "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)" portfolio_name
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio
-create-multi-dataset-portfolio DATASET_SPEC:
+create-multi-dataset-portfolio DATASET_SPEC PORTFOLIO_NAME:
   python -m src.analysis.create_portfolio \
     +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
     portfolio_dir=experiments/Portfolio \
     merge_runs=true \
     +multi_dataset=true \
     run_mode=Portfolio \
-    hydra.run.dir=experiments/Portfolio/logs
+    hydra.run.dir=experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
 
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio on the cluster
-create-multi-dataset-portfolio-cluster DATASET_SPEC:
+create-multi-dataset-portfolio-cluster DATASET_SPEC PORTFOLIO_NAME:
   python -m src.analysis.create_portfolio_cluster \
     +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
     portfolio_dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio \
     merge_runs=true \
     +multi_dataset=true \
     run_mode=Portfolio \
-    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/logs
+    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
 
 # example: just create-multi-dataset-portfolio-cluster "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio (cluster)
@@ -279,7 +281,8 @@ run-3d-quicktune-local DATASET EXPERIMENT_NAME SEED PORTFOLIO_DIR USE_MEDICAL_PO
     data.dimensionality=3d \
     run_mode=QuickTune \
     qt.use_medical_portfolio={{USE_MEDICAL_PORTFOLIO}} \
-    developer_mode=true
+    developer_mode=true \
+    cost_to_spend=600
 
 # Submit an HPO experiment with QuickTune to the cluster for a 3D dataset
 run-3d-quicktune-cluster DATASET EXPERIMENT_NAME PORTFOLIO_DIR USE_MEDICAL_PORTFOLIO="true":
@@ -355,6 +358,46 @@ plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
     python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}}
   else
     python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
+  fi
+
+# Plot test and validation performance over time for QuickTune experiments
+# Automatically handles paths with or without seed_* directories
+# Example: just plot-quicktune experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn
+# Example with seed: just plot-quicktune experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn/seed_42
+# Example with custom output: just plot-quicktune experiments/Cluster/QuickTune/test_experiment output.png
+# Example over time (hours): just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment
+plot-quicktune EXPERIMENT_PATH OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  # If path ends with seed_*, go up one level to get experiment directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    EXPERIMENT_DIR=$(dirname "{{EXPERIMENT_PATH}}")
+  else
+    EXPERIMENT_DIR="{{EXPERIMENT_PATH}}"
+  fi
+  
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}"
+  else
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --output {{OUTPUT_PATH}}
+  fi
+
+# Plot test and validation performance over time (wall-clock time) for QuickTune experiments
+# Example: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn
+# Example with seed: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment/seed_42
+# Example with custom output: just plot-quicktune-over-time experiments/Cluster/QuickTune/test_experiment output.png
+plot-quicktune-over-time EXPERIMENT_PATH OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  # If path ends with seed_*, go up one level to get experiment directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    EXPERIMENT_DIR=$(dirname "{{EXPERIMENT_PATH}}")
+  else
+    EXPERIMENT_DIR="{{EXPERIMENT_PATH}}"
+  fi
+  
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time
+  else
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time --output {{OUTPUT_PATH}}
   fi
 
 # Plot test and validation performance over time for multiple experiments together

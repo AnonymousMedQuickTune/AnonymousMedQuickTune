@@ -252,7 +252,7 @@ def main(experimental_setting: DictConfig) -> None:
         print(f"\n\nDeveloper mode is enabled!\n\n")
         if experimental_setting.run_mode != "Baseline":
             experimental_setting.max_evaluations = 2
-            experimental_setting.pipeline_space = "configs/pipeline_spaces/efficientnet.yaml"
+            experimental_setting.pipeline_space = "configs/pipeline_spaces/full_search_space.yaml"
         experimental_setting.training.number_of_epochs = 2
         # Set number of inner CV folds for developer mode: #repeats * #splits per repeat = #total inner folds
         experimental_setting.cv_inner_folds_repeats = 1
@@ -316,6 +316,20 @@ def main(experimental_setting: DictConfig) -> None:
     # Convert YAML pipeline space configuration into NePS-compatible format
     # NePS requires a specific dictionary structure for hyperparameter definitions
     pipeline_space = yaml_to_neps_pipeline_space(experimental_setting.pipeline_space)
+    
+    # Remove any internal metadata entries (like _configspace, _cs_hyperparams) that NePS shouldn't see
+    # These are added by yaml_to_neps_pipeline_space for reference but NePS will try to parse them as parameters
+    pipeline_space = {k: v for k, v in pipeline_space.items() if not k.startswith('_')}
+    
+    # Patch NePS to support conditional hyperparameters (for random_search, BO, IFBO)
+    # This ensures that optimizers only sample valid configurations that respect conditions
+    if experimental_setting.searcher in ["random_search", "bo", "bayesian_optimization", "ifbo"]:
+        from src.utils.neps_conditional_patch import patch_neps_for_conditionals
+        try:
+            patch_neps_for_conditionals(pipeline_space, experimental_setting.pipeline_space)
+        except Exception as e:
+            print(f"[Warning] Failed to patch NePS for conditionals: {e}")
+            print("[Warning] Continuing without conditional support. Invalid configurations may be sampled.")
 
     # Print experimental setting and pipeline space
     print("\nexperimental setting: ", experimental_setting, "\n\npipeline space: ", pipeline_space, "\n")

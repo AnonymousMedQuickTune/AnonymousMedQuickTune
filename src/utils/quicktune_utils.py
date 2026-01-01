@@ -21,6 +21,7 @@ from qtt.predictors.cost import DEFAULT_FIT_PARAMS as COST_DEFAULT_FIT_PARAMS
 from src.utils.ftpfn import FTPFNSurrogateModel  # , FTPFN, FTPFNSurrogateModel2
 
 from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
+                         EqualsCondition,
                          UniformFloatHyperparameter,
                          UniformIntegerHyperparameter)
 
@@ -429,6 +430,8 @@ class ConfigSpaceBuilder:
             "categorical": CategoricalHyperparameter,
         }
 
+        # First pass: create all hyperparameters
+        hyperparams = {}
         for param_name, param_config in config_dict.items():
             param_type = param_config["type"]
             param_class = type_to_param.get(param_type)
@@ -463,7 +466,26 @@ class ConfigSpaceBuilder:
             else:  # categorical
                 param = param_class(name=param_name, choices=param_config["choices"])
 
+            hyperparams[param_name] = param
             cs.add_hyperparameter(param)
+
+        # Second pass: add conditions for conditional hyperparameters
+        for param_name, param_config in config_dict.items():
+            if "condition" in param_config:
+                condition_config = param_config["condition"]
+                parent_param_name = condition_config.get("parent")
+                parent_value = condition_config.get("value")
+                
+                if parent_param_name not in hyperparams:
+                    raise ValueError(
+                        f"Condition parent parameter '{parent_param_name}' not found for '{param_name}'"
+                    )
+                
+                parent_param = hyperparams[parent_param_name]
+                child_param = hyperparams[param_name]
+                
+                condition = EqualsCondition(child_param, parent_param, parent_value)
+                cs.add_condition(condition)
 
         return cs
 
