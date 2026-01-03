@@ -125,50 +125,33 @@ class FTPFNSurrogateModel(torch.nn.Module):
         context_curves = []
         query_curves = []
         
-        # Normalize ID to [0,1000] range as required by IFBO FTPFN
         n_samples = pipeline.size(0)
+        # Normalize ID to [0,1] range as required by IfBO FTPFN
+        # All hyperparameter values must be in [0,1]
         max_id = max(1, n_samples - 1)  # Avoid division by zero
         
         # Create curves with proper ID and timestep format
         for i, (features, curve) in enumerate(zip(encoded_features_norm, curve_norm)):
-            # Scale ID to [0, 1000] range (IFBO requirement)
-            # If we have <= 1000 samples, use direct mapping; otherwise scale down
-            if n_samples <= 1000:
-                normalized_id = float(i)
-            else:
-                normalized_id = float(i) * (1000.0 / max_id)
+            # Normalize ID to [0,1] range
+            normalized_id = float(i) / max_id if max_id > 0 else 0.0
+            normalized_id = min(1.0, normalized_id)  # Ensure it's at most 1.0
             
             # Add ID and timestep to features
             features_with_meta = torch.cat([
-                torch.tensor([normalized_id], device=self.device),  # ID in [0, 1000]
+                torch.tensor([normalized_id], device=self.device),  # ID normalized to [0,1]
                 torch.zeros(1, device=self.device),  # Timestep placeholder
-                features  # Encoded features in [0, 1]
+                features  # Encoded features already in [0,1]
             ])
             
-            # Create curves for each timestep
-            for t in range(curve.size(0)):
-                timestep = float(t) / max(1, curve.size(0))  # Normalize timestep to [0,1]
-                
-                # Create a copy of features for this timestep to avoid tensor sharing
-                features_for_timestep = features_with_meta.clone()
-                features_for_timestep[1] = timestep
-                
-                # Clamp only hyperparameters (indices 2+) to [0,1], keep ID in [0,1000] and timestep in [0,1]
-                # ID is at index 0, timestep at index 1, hyperparameters start at index 2
-                if features_for_timestep.size(0) > 2:
-                    hyperparams = features_for_timestep[2:]
-                    hyperparams_clamped = torch.clamp(hyperparams, 0.0, 1.0)
-                    features_for_timestep = torch.cat([
-                        features_for_timestep[:2],  # Keep ID and timestep unchanged
-                        hyperparams_clamped
-                    ])
-                # Ensure ID is in [0, 1000] and timestep is in [0, 1]
-                features_for_timestep[0] = torch.clamp(features_for_timestep[0], 0.0, 1000.0)
-                features_for_timestep[1] = torch.clamp(features_for_timestep[1], 0.0, 1.0)
-                curve_value = curve[t].unsqueeze(0).unsqueeze(0)  # Make 2D tensor [1,1]
-                
-                # During training
-                if hasattr(self, 'train_pipeline'):
+            # During training: create curves for each timestep
+            if hasattr(self, 'train_pipeline'):
+                for t in range(curve.size(0)):
+                    timestep = float(t) / curve.size(0) if curve.size(0) > 0 else 0.0
+                    # Create a copy to avoid modifying the original tensor
+                    features_for_timestep = features_with_meta.clone()
+                    features_for_timestep[1] = timestep
+                    curve_value = curve[t].unsqueeze(0).unsqueeze(0)  # Make 2D tensor [1,1]
+                    
                     # Use current curve as query, all others as context
                     if i == len(encoded_features_norm) - 1:
                         query_curves.append(Curve(
@@ -182,20 +165,29 @@ class FTPFNSurrogateModel(torch.nn.Module):
                             t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
                             y=curve_value
                         ))
-                # During inference
+            # During inference: only use the last timestep for prediction (one prediction per config)
+            else:
+                # Use the last timestep (final performance) for prediction
+                last_t = curve.size(0) - 1
+                timestep = 1.0 if curve.size(0) > 0 else 0.0  # Last timestep normalized to 1.0
+                features_for_timestep = features_with_meta.clone()
+                features_for_timestep[1] = timestep
+                curve_value = curve[last_t].unsqueeze(0).unsqueeze(0)  # Make 2D tensor [1,1]
+                
+                if i == 0:
+                    # First config: use as context
+                    context_curves.append(Curve(
+                        hyperparameters=features_for_timestep,
+                        t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
+                        y=curve_value
+                    ))
                 else:
-                    if i == 0:
-                        context_curves.append(Curve(
-                            hyperparameters=features_for_timestep,
-                            t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
-                            y=curve_value
-                        ))
-                    else:
-                        query_curves.append(Curve(
-                            hyperparameters=features_for_timestep,
-                            t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
-                            y=None
-                        ))
+                    # Other configs: use as query (one per config)
+                    query_curves.append(Curve(
+                        hyperparameters=features_for_timestep,
+                        t=torch.tensor([[timestep]], device=self.device),  # Make 2D tensor [1,1]
+                        y=None
+                    ))
         
         # Ensure we have at least one context curve
         if not context_curves:
@@ -221,11 +213,27 @@ class FTPFNSurrogateModel(torch.nn.Module):
         with torch.set_grad_enabled(self.training):
             predictions = self.ftpfn.predict(context_curves, query_curves)
             logits = predictions[0].logits.to(self.device)
-            # Ensure predictions have the right shape and wrap in PredictionOutput
+            # Ensure predictions have the right shape
+            # During inference, we should have one prediction per query curve (one per config)
             mean = logits.squeeze()
             if mean.dim() == 0:
                 mean = mean.unsqueeze(0)
-            return PredictionOutput(mean=mean)
+            
+            # Ensure we have exactly n_samples predictions (one per configuration)
+            # If we have more predictions than samples, take only the first n_samples
+            # This can happen if context curves are also included in predictions
+            if mean.size(0) > n_samples:
+                mean = mean[:n_samples]
+            elif mean.size(0) < n_samples:
+                # If we have fewer predictions, pad with the last prediction
+                last_pred = mean[-1:] if mean.size(0) > 0 else torch.zeros(1, device=self.device)
+                padding = last_pred.repeat(n_samples - mean.size(0))
+                mean = torch.cat([mean, padding])
+            
+            # FT-PFN doesn't provide explicit uncertainty, so we use a small default stddev
+            # This is a reasonable default for normalized predictions in [0,1] range
+            stddev = torch.full_like(mean, 0.1)  # Default uncertainty of 0.1
+            return PredictionOutput(mean=mean, stddev=stddev)
 
     def train_step(self, pipeline, curve, y):
         """Training step required by QuickTune API."""
@@ -281,5 +289,6 @@ class FTPFNSurrogateModel(torch.nn.Module):
 class PredictionOutput:
     """Container for prediction output to match QuickTune API"""
     mean: torch.Tensor
+    stddev: torch.Tensor
 
 
