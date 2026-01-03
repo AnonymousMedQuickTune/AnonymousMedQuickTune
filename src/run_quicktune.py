@@ -130,7 +130,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             raise ValueError(f"Unsupported 2D dataset: {experimental_setting.data.dataset}")
 
     elif dimensionality == "3d":
-        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver"]:
+        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist"]:
 
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
@@ -264,10 +264,16 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
     # Set fidelity as number of epochs
     # number_of_epochs is only in hyperparameters for multifidelity search spaces
     # Otherwise, use the value from experimental_setting.training.number_of_epochs
+    trial["fidelity"] = experimental_setting.training.number_of_epochs
+    """
+    # Only use hyperparameter value for multifidelity search spaces (when explicitly optimizing epochs)
+    # For portfolio-based optimization, we always use the fixed number_of_epochs from experimental_setting
     if "number_of_epochs" in hyperparameters:
+        # Only override for non-portfolio multifidelity search spaces
+        print("\n\n\n\n\nHEEEEREEEE\n\n\n\n\n")
         trial["fidelity"] = hyperparameters["number_of_epochs"]
-    else:
-        trial["fidelity"] = experimental_setting.training.number_of_epochs
+    """
+    
     print("trial fidelity (# epochs): ", trial["fidelity"])
 
     try:
@@ -526,10 +532,10 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.max_evaluations = 2
         experimental_setting.cv_inner_folds_repeats = 1
         experimental_setting.cv_inner_folds_splits = 2
-        experimental_setting.pipeline_space = "configs/pipeline_spaces/pipeline_space_developer_mode.yaml"  # TODO @Diane: Update this
-        experimental_setting.training.number_of_epochs = 3
+        experimental_setting.pipeline_space = "configs/pipeline_spaces/full_search_space.yaml"  # TODO @Diane: Update this
+        experimental_setting.training.number_of_epochs = 2
         # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
-        experimental_setting.cv_outer_folds_repeats = 2  # 2 repeats
+        experimental_setting.cv_outer_folds_repeats = 1  # 2 repeats
         experimental_setting.cv_outer_folds_splits = 2   # 3 splits per repeat
 
     # Create directory for configuration files and logs
@@ -573,7 +579,7 @@ def main(experimental_setting: DictConfig) -> None:
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
-    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver"]:  # TODO @Diane: Fix placeholder values!
+    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist"]:  # TODO @Diane: Fix placeholder values!
         # Use portfolio meta-features for 3D datasets
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
             path_root=Path(experimental_setting.data.path) / experimental_setting.data.dataset,
@@ -670,18 +676,19 @@ def main(experimental_setting: DictConfig) -> None:
             portfolio = PortfolioManager.load(experimental_setting.portfolio_dir)
             
             # Extract unique model types from the portfolio
-            model_types = portfolio.pipeline_df['model_type'].unique().tolist()
+            model_types = portfolio.pipeline_df['model'].unique().tolist()
             print(f"\nAvailable models in portfolio: {model_types}\n")
             
             # Create a fresh configspace for this CV fold
             cv_configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
             
-            # Add model as a categorical hyperparameter to the configspace
-            model_param = CategoricalHyperparameter(
-                name="model",
-                choices=model_types
-            )
-            cv_configspace.add(model_param)
+            # Add model as a categorical hyperparameter to the configspace if it's not already there
+            if "model" not in cv_configspace:
+                model_param = CategoricalHyperparameter(
+                    name="model",
+                    choices=model_types
+                )
+                cv_configspace.add(model_param)
 
             # Merge pipeline configurations with their corresponding metadata
             # Note: Each dataset must have exactly one metadata entry to maintain data integrity

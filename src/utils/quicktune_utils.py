@@ -255,6 +255,15 @@ def custom_extract_image_dataset_metafeat(
                 input_size_d = 32
                 modality = "MRI"
                 total_num_samples = 203
+            elif dataset_name == "gist":
+                dataset = "gist"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 96
+                modality = "CT"
+                total_num_samples = 245
             else:
                 raise ValueError(f"Unsupported dataset: {dataset_name}")
 
