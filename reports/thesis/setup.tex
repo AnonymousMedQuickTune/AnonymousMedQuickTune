@@ -5,6 +5,7 @@
     % font encoding is set up for pdflatex, for other environments see
     % http://tex.stackexchange.com/questions/44694/fontenc-vs-inputenc
     \usepackage[T1]{fontenc}  % 8-bit fonts, improves handling of hyphenations
+    \usepackage[utf8x]{inputenc}
     % provides `old' commands for table of contents. Eases the ability to switch
     % between book and scrbook
     \usepackage{scrhack}
@@ -13,15 +14,6 @@
     % ------------------- layout, default -------------------
     % adjust the style of float's captions, separated from text to improve readabilty
     \usepackage[labelfont=bf, labelsep=colon, format=hang, textfont=singlespacing]{caption}
-    % With format = hang your caption will look like this:
-    % Figure 1: Lorem ipsum dolor sit amet,
-    %           consectetuer adipiscing elit.
-    %           Ut purus elit, vestibulum
-    % If you instead want
-    % Figure 1: Lorem ipsum dolor sit amet,
-    % consectetuer adipiscing elit. Ut purus
-    % elit, vestibulum
-    % change to format=plain
     \usepackage{chngcntr}  % continuous numbering of figures/tables over chapters
     \counterwithout{equation}{chapter}
     \counterwithout{figure}{chapter}
@@ -49,7 +41,7 @@
     \usepackage[unicode=true,bookmarks=true,bookmarksnumbered=true,
                 bookmarksopen=true,bookmarksopenlevel=1,breaklinks=false,
                 pdfborder={0 0 0},backref=false,colorlinks=false]{hyperref}
-    \usepackage{etoolbox} % if-else commands
+    \usepackage[sort&compress,numbers]{natbib} % citet, citep
 
 
     %==========================================
@@ -60,21 +52,10 @@
     \usepackage{bm}  % bold greek variables (boldmath)
     \usepackage{tikz}
     \usetikzlibrary{positioning}  % use: above left of, etc
-    
-    % Required for the ToDo list.
-    \usepackage{ifthen}
+    \usepackage{booktabs}
 
     % Improves general appearance of the text
     \usepackage[protrusion=true,expansion=true, kerning]{microtype}
-    \usepackage{enumitem}
-    % Nicer font for pdf rendering.
-    %\usepackage{lmodern}
-    
-    % For nicer looking tables.
-    \usepackage{booktabs}
-
-    % You don't need this, just for demonstration of a longer caption.
-    \usepackage{lipsum}
 
 %------------------------------------------------------------------------------
 %       (re)new commands / settings
@@ -101,6 +82,13 @@
     \let\mySubSection\subsection\renewcommand{\subsection}{\suppressfloats[t]\mySubSection}
 
 
+    % ------------------- marker commands -------------------
+    % ToDo command
+    \newcommand{\todo}[1]{\textbf{\textcolor{red}{(TODO: #1)}}}
+    \newcommand{\extend}[1]{\textbf{\textcolor{darkgreen}{(EXTEND: #1)}}}
+    % Lighter color to note down quick drafts
+    \newcommand{\draft}[1]{\textbf{\textcolor{NavyBlue}{(DRAFT: #1)}}}
+
 
     % ------------------- math formatting commands -------------------
     % define vectors to be bold instead of using an arrow
@@ -112,8 +100,8 @@
 
     % ------------------- pdf settings -------------------
     % ADAPT THIS
-    \hypersetup{pdftitle={\thetitle},
-                pdfauthor={\theauthor},
+    \hypersetup{pdftitle={The great title!},
+                pdfauthor={FirstName LastName},
                 pdfsubject={Undergraduate thesis at the Albert Ludwig University of Freiburg},
                 pdfkeywords={deep learning, awesome algorithm,  undergraduate thesis},
                 pdfpagelayout=OneColumn, pdfnewwindow=true, pdfstartview=XYZ, plainpages=false}
@@ -134,32 +122,21 @@
     \algnewcommand\algorithmicforeach{\textbf{foreach}}
     \algdef{S}[FOR]{ForEach}[1]{\algorithmicforeach\ #1\ \algorithmicdo}
 
-    % line spacing should be 1.5
-    \renewcommand{\baselinestretch}{1.5}
 
-    % set distance between items in a list, for more details see the
-    % enumitem package: https://www.ctan.org/pkg/enumitem
-    \setlist{itemsep=.5em}
-    
-    % use ra in your tables to increase the space between rows
-    % 1.3 should be fine
-    \newcommand{\ra}[1]{\renewcommand{\arraystretch}{#1}}
 
-	% ToDo counters
-	\usepackage{ifthen} %für whiledo-Schleife
-	\newcounter{todos}
-	\setcounter{todos}{0}
-	\newcounter{extends}
-	\setcounter{extends}{0}
-	\newcounter{drafts}
-	\setcounter{drafts}{0}
 
-	% ------------------- marker commands -------------------
-    % ToDo command
-    \newcommand{\todo}[1]{\textbf{\textcolor{red}{(TODO: #1)}}\refstepcounter{todos}\label{todo \thetodos}}
-	\newcommand{\extend}[1]{\textbf{\textcolor{darkgreen}{(EXTEND: #1)}}\refstepcounter{extends}\label{extend \theextends}}
-	% Lighter color to note down quick drafts
-	\newcommand{\draft}[1]{\textbf{\textcolor{NavyBlue}{(DRAFT: #1)}}\refstepcounter{drafts}\label{draft \thedrafts}}
-	
-	% microtype with lmodern, see https://tex.stackexchange.com/questions/75305/microtype-warning-with-lmodern-package-and-koma-script
-	%\DeclareMicrotypeAlias{lmss}{cmr}
+
+% reproducibility checklist
+\usepackage{xcolor}
+\usepackage{xspace}
+
+% https://colorbrewer2.org/#type=qualitative&scheme=Paired&n=11 Cynthia Brewer
+\definecolor{answerYesColor}{RGB}{31,120,180}
+\definecolor{answerNoColor}{RGB}{227,26,28}
+\definecolor{answerNAColor}{RGB}{32, 32, 32}
+\definecolor{answerTODOColor}{RGB}{255,127,0}
+
+\newcommand{\answerYes}[1]{{\textcolor{answerYesColor}{[Yes]}\xspace#1}}
+\newcommand{\answerNo}[1]{{\textcolor{answerNoColor}{[No]}\xspace#1}}
+\newcommand{\answerNA}[1]{{\textcolor{answerNAColor}{[N/A]}\xspace#1}}
+\newcommand{\answerTODO}{\textcolor{answerTODOColor}{\textbf{[TODO]}}}

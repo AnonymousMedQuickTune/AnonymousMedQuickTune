@@ -12,6 +12,7 @@ datasets/*
 # Thesis
 reports/thesis_update/*
 reports/thesis/*
+reports/thesis_old/*
 
 # LaTeX
 *.aux
