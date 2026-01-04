@@ -1238,8 +1238,12 @@ def collect_performances_and_times_quicktune(
     all_unique_times = sorted(all_unique_times)
     
     # For each time point, collect incumbent values from each fold
+    # IMPORTANT: Only include time points where ALL folds have data
+    # This ensures the mean incumbent performance only increases over time
     validation_performances: Dict[float, List[float]] = {}  # time -> [val_incumbent per fold]
     test_performances: Dict[float, List[float]] = {}  # time -> [test_perf per fold]
+    
+    num_folds = len(all_time_points_per_fold)
     
     for time_point in all_unique_times:
         validation_performances[time_point] = []
@@ -1263,15 +1267,25 @@ def collect_performances_and_times_quicktune(
                 validation_performances[time_point].append(last_val_incumbent)
                 if last_test_perf is not None:
                     test_performances[time_point].append(last_test_perf)
+        
+        # Only keep time points where ALL folds have data
+        if len(validation_performances[time_point]) < num_folds:
+            # Remove this time point if not all folds have data
+            del validation_performances[time_point]
+            if time_point in test_performances:
+                del test_performances[time_point]
     
     # Convert to config-number-based structure for compatibility with plotting function
     # We'll use time points as "config numbers" (but they're actually time points)
     # Or better: create a mapping from sequential index to time point
+    # Only include time points that are still in validation_performances (i.e., all folds have data)
+    valid_time_points = sorted([t for t in all_unique_times if t in validation_performances])
+    
     validation_performances_by_index: Dict[int, List[float]] = {}
     test_performances_by_index: Dict[int, List[float]] = {}
     time_points_by_index: Dict[int, List[float]] = {}
     
-    for idx, time_point in enumerate(all_unique_times):
+    for idx, time_point in enumerate(valid_time_points):
         validation_performances_by_index[idx] = validation_performances[time_point]
         if time_point in test_performances and test_performances[time_point]:
             test_performances_by_index[idx] = test_performances[time_point]
@@ -1572,10 +1586,26 @@ def create_performance_over_time_plot(
         time_unit_label = "Time (seconds)"
         costs_csv_path = neps_output_dir / "costs_in_sec.csv"
     
-    # Read costs CSV
+    # Read costs CSV - create it if it doesn't exist
     if not costs_csv_path.exists():
-        print(f"Warning: Cost CSV file not found: {costs_csv_path}")
-        return
+        print(f"Cost CSV file not found: {costs_csv_path}")
+        print(f"Attempting to create cost CSV files from report.yaml files...")
+        import sys
+        from pathlib import Path
+        # Add project root to path if not already there
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+        from src.utils.logging_utils import update_cost_csv_from_neps_output
+        update_cost_csv_from_neps_output(str(neps_output_dir))
+        
+        # Check again if the file exists now
+        if not costs_csv_path.exists():
+            print(f"Warning: Could not create cost CSV file: {costs_csv_path}")
+            print(f"Please ensure report.yaml files exist in config directories.")
+            return
+        else:
+            print(f"Successfully created cost CSV files.")
     
     costs_df = pd.read_csv(costs_csv_path)
     
@@ -1587,15 +1617,12 @@ def create_performance_over_time_plot(
     
     performances_df = pd.read_csv(performances_csv_path)
     
-    # Collect data per config (not per fold)
-    # Structure: config_num -> {"max_time": max_time_across_folds, "val_perfs": [...], "test_perfs": [...]}
-    config_data = {}  # config_num -> {"max_time": float, "val_perfs": [float, ...], "test_perfs": [float, ...]}
-    
     # Get all fold numbers from costs CSV
     all_folds = sorted(costs_df["outer_fold"].unique())
     
-    # First pass: Calculate cumulative times per fold and collect config data
-    fold_cumulative_times = {}  # fold_num -> {config_num: cumulative_time}
+    # Calculate cumulative times per fold and per config
+    # Structure: fold_num -> {config_num: cumulative_time}
+    fold_cumulative_times = {}
     
     for fold_num in all_folds:
         fold_costs = costs_df[costs_df["outer_fold"] == fold_num].sort_values("config")
@@ -1612,85 +1639,138 @@ def create_performance_over_time_plot(
                 fold_cumulative_times[fold_num] = {}
             fold_cumulative_times[fold_num][config_num] = cumulative_time
     
-    # Get all config numbers
-    all_configs = set()
-    for fold_times in fold_cumulative_times.values():
-        all_configs.update(fold_times.keys())
-    all_configs = sorted(all_configs)
+    # Determine time intervals based on time unit
+    if time_unit == "hours":
+        # For hours: check every hour from 1 to 24
+        time_intervals = list(range(1, 25))  # 1, 2, ..., 24 hours
+    elif time_unit == "min":
+        # For minutes: check every minute (or every 5 minutes for efficiency)
+        max_time_minutes = int(cost_to_spend / 60) + 1
+        time_intervals = list(range(0, max_time_minutes + 1, 5))  # Every 5 minutes
+    else:  # seconds
+        # For seconds: check every 60 seconds (every minute)
+        max_time_seconds = int(cost_to_spend) + 1
+        time_intervals = list(range(0, max_time_seconds + 1, 60))  # Every 60 seconds
     
-    # Second pass: For each config, collect max time and performances across all folds
-    for config_num in all_configs:
-        config_times = []
-        config_val_perfs = []
-        config_test_perfs = []
-        
-        for fold_num in all_folds:
-            # Get cumulative time for this config in this fold
-            if fold_num in fold_cumulative_times and config_num in fold_cumulative_times[fold_num]:
-                config_time = fold_cumulative_times[fold_num][config_num]
-                config_times.append(config_time)
-            
-            # Get performance for this config in this fold
-            perf_row = performances_df[performances_df["config"] == config_num]
-            if not perf_row.empty:
-                val_col = f"validation_fold_{fold_num}"
-                test_col = f"test_fold_{fold_num}"
-                
-                if val_col in perf_row.columns:
-                    val_perf = perf_row[val_col].iloc[0]
-                    if pd.notna(val_perf) and val_perf != "":
-                        config_val_perfs.append(float(val_perf))
-                
-                if test_col in perf_row.columns:
-                    test_perf = perf_row[test_col].iloc[0]
-                    if pd.notna(test_perf) and test_perf != "":
-                        config_test_perfs.append(float(test_perf))
-        
-        # Use max time across all folds for this config
-        max_time = max(config_times) if config_times else 0.0
-        
-        config_data[config_num] = {
-            "max_time": max_time,
-            "val_perfs": config_val_perfs,
-            "test_perfs": config_test_perfs
-        }
-    
-    # Sort by config number and extract data for plotting
-    sorted_configs = sorted(config_data.keys())
-    time_points = [config_data[config_num]["max_time"] for config_num in sorted_configs]
+    # For each time interval, find the best config (best mean validation performance)
+    # that was evaluated by that time across all folds
+    time_points = []
     val_means = []
     val_errors = []
     test_means = []
     test_errors = []
     error_label = "standard error" if use_standard_error else "std"
     
-    for config_num in sorted_configs:
-        val_perfs = config_data[config_num]["val_perfs"]
-        test_perfs = config_data[config_num]["test_perfs"]
+    for time_interval in time_intervals:
+        # Find all configs that were evaluated by this time across all folds
+        # A config is only considered "evaluated" if it was evaluated in ALL folds by this time
+        available_configs = set()
         
-        if val_perfs:
-            val_means.append(np.mean(val_perfs))
-            if use_standard_error:
-                n = len(val_perfs)
-                std = np.std(val_perfs) if n > 1 else 0.0
-                val_errors.append(std / np.sqrt(n) if n > 1 else 0.0)
-            else:
-                val_errors.append(np.std(val_perfs) if len(val_perfs) > 1 else 0.0)
-        else:
+        # First, find all configs that were evaluated in at least one fold
+        all_evaluated_configs = set()
+        for fold_num in all_folds:
+            if fold_num in fold_cumulative_times:
+                for config_num, cumulative_time in fold_cumulative_times[fold_num].items():
+                    if cumulative_time <= time_interval:
+                        all_evaluated_configs.add(config_num)
+        
+        # Then, check which configs were evaluated in ALL folds
+        for config_num in all_evaluated_configs:
+            evaluated_in_all_folds = True
+            for fold_num in all_folds:
+                if fold_num not in fold_cumulative_times:
+                    evaluated_in_all_folds = False
+                    break
+                if config_num not in fold_cumulative_times[fold_num]:
+                    evaluated_in_all_folds = False
+                    break
+                if fold_cumulative_times[fold_num][config_num] > time_interval:
+                    evaluated_in_all_folds = False
+                    break
+            
+            if evaluated_in_all_folds:
+                available_configs.add(config_num)
+        
+        if not available_configs:
+            # No configs evaluated yet at this time: use 0 as performance
+            time_points.append(time_interval)
             val_means.append(0.0)
             val_errors.append(0.0)
-        
-        if test_perfs:
-            test_means.append(np.mean(test_perfs))
-            if use_standard_error:
-                n = len(test_perfs)
-                std = np.std(test_perfs) if n > 1 else 0.0
-                test_errors.append(std / np.sqrt(n) if n > 1 else 0.0)
-            else:
-                test_errors.append(np.std(test_perfs) if len(test_perfs) > 1 else 0.0)
-        else:
             test_means.append(0.0)
             test_errors.append(0.0)
+            continue
+        
+        # For each available config, check if it has validation_mean in performances_df
+        # Find the config with the best validation_mean
+        best_val_mean = float('-inf')
+        best_config = None
+        best_test_mean = None
+        
+        for config_num in available_configs:
+            perf_row = performances_df[performances_df["config"] == config_num]
+            if not perf_row.empty:
+                val_mean = perf_row["validation_mean"].iloc[0]
+                if pd.notna(val_mean) and val_mean != "":
+                    val_mean_float = float(val_mean)
+                    if val_mean_float > best_val_mean:
+                        best_val_mean = val_mean_float
+                        best_config = config_num
+                        test_mean = perf_row["test_mean"].iloc[0]
+                        if pd.notna(test_mean) and test_mean != "":
+                            best_test_mean = float(test_mean)
+        
+        if best_config is not None:
+            # Get validation and test performances across all folds for this config
+            perf_row = performances_df[performances_df["config"] == best_config]
+            if not perf_row.empty:
+                val_perfs = []
+                test_perfs = []
+                
+                for fold_num in all_folds:
+                    val_col = f"validation_fold_{fold_num}"
+                    test_col = f"test_fold_{fold_num}"
+                    
+                    if val_col in perf_row.columns:
+                        val_perf = perf_row[val_col].iloc[0]
+                        if pd.notna(val_perf) and val_perf != "":
+                            val_perfs.append(float(val_perf))
+                    
+                    if test_col in perf_row.columns:
+                        test_perf = perf_row[test_col].iloc[0]
+                        if pd.notna(test_perf) and test_perf != "":
+                            test_perfs.append(float(test_perf))
+                
+                # Use validation_mean and test_mean from CSV (already averaged over folds)
+                # But we still need to calculate standard error across folds
+                if val_perfs:
+                    val_mean = np.mean(val_perfs)  # Should match validation_mean from CSV
+                    if use_standard_error:
+                        n = len(val_perfs)
+                        std = np.std(val_perfs) if n > 1 else 0.0
+                        val_error = std / np.sqrt(n) if n > 1 else 0.0
+                    else:
+                        val_error = np.std(val_perfs) if len(val_perfs) > 1 else 0.0
+                else:
+                    val_mean = best_val_mean
+                    val_error = 0.0
+                
+                if test_perfs:
+                    test_mean = np.mean(test_perfs)  # Should match test_mean from CSV
+                    if use_standard_error:
+                        n = len(test_perfs)
+                        std = np.std(test_perfs) if n > 1 else 0.0
+                        test_error = std / np.sqrt(n) if n > 1 else 0.0
+                    else:
+                        test_error = np.std(test_perfs) if len(test_perfs) > 1 else 0.0
+                else:
+                    test_mean = best_test_mean if best_test_mean is not None else 0.0
+                    test_error = 0.0
+                
+                time_points.append(time_interval)
+                val_means.append(val_mean)
+                val_errors.append(val_error)
+                test_means.append(test_mean)
+                test_errors.append(test_error)
     
     # Create plots
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
@@ -1734,18 +1814,21 @@ def create_performance_over_time_plot(
         ax1.set_title("Validation Performance Over Time", fontsize=14, fontweight="bold")
         ax1.legend(fontsize=10, loc='lower right')
         ax1.grid(True, alpha=0.3)
-        ax1.set_xlim(left=0)
         if time_unit == "hours":
-            ax1.set_xlim(left=0, right=24)
-            ax1.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax1.set_xlim(left=1, right=24)
+            ax1.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax1.set_xlim(left=0)
         ax1.set_ylim(bottom=y_lim_min, top=y_lim_max)
     else:
         ax1.text(0.5, 0.5, "No validation data available", 
                 ha="center", va="center", transform=ax1.transAxes)
         ax1.set_title("Validation Performance Over Time", fontsize=14, fontweight="bold")
         if time_unit == "hours":
-            ax1.set_xlim(left=0, right=24)
-            ax1.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax1.set_xlim(left=1, right=24)
+            ax1.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax1.set_xlim(left=0)
         ax1.set_ylim(bottom=y_lim_min, top=y_lim_max)
     
     # Plot test performance
@@ -1764,18 +1847,21 @@ def create_performance_over_time_plot(
         ax2.set_title("Test Performance Over Time", fontsize=14, fontweight="bold")
         ax2.legend(fontsize=10, loc='lower right')
         ax2.grid(True, alpha=0.3)
-        ax2.set_xlim(left=0)
         if time_unit == "hours":
-            ax2.set_xlim(left=0, right=24)
-            ax2.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax2.set_xlim(left=1, right=24)
+            ax2.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax2.set_xlim(left=0)
         ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
     else:
         ax2.text(0.5, 0.5, "No test data available", 
                 ha="center", va="center", transform=ax2.transAxes)
         ax2.set_title("Test Performance Over Time", fontsize=14, fontweight="bold")
         if time_unit == "hours":
-            ax2.set_xlim(left=0, right=24)
-            ax2.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax2.set_xlim(left=1, right=24)
+            ax2.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax2.set_xlim(left=0)
         ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
     
     # Plot both together
@@ -1807,18 +1893,21 @@ def create_performance_over_time_plot(
         ax3.set_title("Validation & Test Performance Over Time", fontsize=14, fontweight="bold")
         ax3.legend(fontsize=9, loc='lower right')
         ax3.grid(True, alpha=0.3)
-        ax3.set_xlim(left=0)
         if time_unit == "hours":
-            ax3.set_xlim(left=0, right=24)
-            ax3.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax3.set_xlim(left=1, right=24)
+            ax3.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax3.set_xlim(left=0)
         ax3.set_ylim(bottom=y_lim_min, top=y_lim_max)
     else:
         ax3.text(0.5, 0.5, "No data available", 
                 ha="center", va="center", transform=ax3.transAxes)
         ax3.set_title("Validation & Test Performance Over Time", fontsize=14, fontweight="bold")
         if time_unit == "hours":
-            ax3.set_xlim(left=0, right=24)
-            ax3.set_xticks(range(25))  # 0, 1, 2, ..., 24
+            ax3.set_xlim(left=1, right=24)
+            ax3.set_xticks(range(1, 25))  # 1, 2, ..., 24
+        else:
+            ax3.set_xlim(left=0)
         ax3.set_ylim(bottom=y_lim_min, top=y_lim_max)
     
     # Add experiment name as suptitle
@@ -1828,6 +1917,658 @@ def create_performance_over_time_plot(
     # Determine output path
     if output_path is None:
         output_path = seed_dir / "performance_over_time.png"
+    else:
+        output_path = Path(output_path)
+    
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Apply tight layout
+    plt.tight_layout()
+    
+    # Re-apply y-axis limits after tight_layout
+    for ax in [ax1, ax2, ax3]:
+        ax.set_autoscale_on(False)
+        ax.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    print(f"\nPlot saved to: {output_path}")
+    
+    # Also save as PDF
+    pdf_path = output_path.with_suffix(".pdf")
+    for ax in [ax1, ax2, ax3]:
+        ax.set_autoscale_on(False)
+        ax.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    plt.savefig(pdf_path, bbox_inches="tight")
+    print(f"Plot saved to: {pdf_path}")
+    
+    plt.close()
+
+
+def create_performance_over_time_plot_multi(
+    experiment_dirs: List[Path],
+    cost_to_spend: float,
+    output_path: Path = None,
+    use_standard_error: bool = True,
+    y_min: float = None,
+    y_max: float = None
+):
+    """
+    Create combined plots for multiple experiments showing performance over time (wall-clock time).
+    
+    For Baseline experiments (only 1 config), the performance is repeated for all 24 hours.
+    For NePS experiments, the best validation performance at each hour is shown.
+    
+    Args:
+        experiment_dirs: List of paths to experiment directories
+        cost_to_spend: Total time budget in seconds
+        output_path: Optional path to save the plot
+        use_standard_error: If True, use standard error instead of std
+        y_min: Optional minimum value for y-axis. If None, calculated from data.
+        y_max: Optional maximum value for y-axis. If None, calculated from data.
+    """
+    # Determine time unit based on cost_to_spend
+    if cost_to_spend >= 60 and cost_to_spend < 3600:
+        time_unit = "min"
+        time_unit_label = "Time (minutes)"
+    elif cost_to_spend >= 3600:
+        time_unit = "hours"
+        time_unit_label = "Time (hours)"
+    else:
+        time_unit = "sec"
+        time_unit_label = "Time (seconds)"
+    
+    # Determine time intervals
+    if time_unit == "hours":
+        time_intervals = list(range(1, 25))  # 1, 2, ..., 24 hours
+    elif time_unit == "min":
+        max_time_minutes = int(cost_to_spend / 60) + 1
+        time_intervals = list(range(0, max_time_minutes + 1, 5))
+    else:
+        max_time_seconds = int(cost_to_spend) + 1
+        time_intervals = list(range(0, max_time_seconds + 1, 60))
+    
+    # Collect data for each experiment
+    all_experiment_data = []
+    
+    for experiment_dir in experiment_dirs:
+        exp_name = get_experiment_name_with_prefix(experiment_dir)
+        print(f"\nProcessing experiment: {exp_name}")
+        
+        # Find seed directory
+        seed_dirs = sorted([d for d in experiment_dir.iterdir() if d.is_dir() and d.name.startswith("seed_")])
+        if not seed_dirs:
+            print(f"Warning: No seed directories found in {experiment_dir}, skipping...")
+            continue
+        
+        seed_dir = seed_dirs[0]
+        
+        # Detect experiment type: QuickTune has tuner directories, NePS/Baseline have NePS_output
+        is_quicktune = False
+        outer_fold_dirs = sorted([d for d in seed_dir.iterdir() if d.is_dir() and d.name.startswith("cv_outer_fold_")])
+        if outer_fold_dirs:
+            first_outer_fold = outer_fold_dirs[0]
+            tuner_dir = first_outer_fold / "tuner"
+            if tuner_dir.exists():
+                is_quicktune = True
+                print(f"Detected QuickTune experiment structure")
+        
+        if is_quicktune:
+            # For QuickTune: use collect_performances_and_times_quicktune
+            try:
+                validation_performances, test_performances, time_points_dict = collect_performances_and_times_quicktune(
+                    experiment_dir, metric="auc"
+                )
+                
+                if not validation_performances or not time_points_dict:
+                    print(f"Warning: No performance or time data found for QuickTune experiment, skipping...")
+                    continue
+                
+                # Convert QuickTune time points to the same format as NePS/Baseline
+                # time_points_dict maps index -> [time_point, time_point, ...] (one per fold)
+                # We need to map these to the time_intervals (1-24 hours)
+                
+                # Get all unique time points and convert to hours
+                all_unique_times = []
+                for times_list in time_points_dict.values():
+                    all_unique_times.extend(times_list)
+                
+                if not all_unique_times:
+                    print(f"Warning: No time data found for QuickTune experiment, skipping...")
+                    continue
+                
+                # Convert times to hours
+                time_conversion = 1.0 / 3600.0 if time_unit == "hours" else (1.0 / 60.0 if time_unit == "min" else 1.0)
+                
+                # For each time interval, find the best validation performance up to that time
+                # A config is only available if it was evaluated in ALL outer folds by this time
+                time_points = []
+                val_means = []
+                val_errors = []
+                test_means = []
+                test_errors = []
+                
+                # Get number of folds from time_points_dict (each config should have same number of time points = number of folds)
+                num_folds = 0
+                if time_points_dict:
+                    first_idx = next(iter(time_points_dict.keys()))
+                    num_folds = len(time_points_dict[first_idx])
+                
+                for time_interval in time_intervals:
+                    # Convert time_interval to seconds for comparison
+                    if time_unit == "hours":
+                        time_interval_sec = time_interval * 3600.0
+                    elif time_unit == "min":
+                        time_interval_sec = time_interval * 60.0
+                    else:
+                        time_interval_sec = time_interval
+                    
+                    # Find all configs (indices) that were evaluated in ALL folds by this time
+                    available_indices = []
+                    for idx in sorted(validation_performances.keys()):
+                        times = time_points_dict.get(idx, [])
+                        if len(times) == num_folds:  # Config must be evaluated in all folds
+                            # Check if all fold times are <= time_interval_sec
+                            if all(t <= time_interval_sec for t in times):
+                                available_indices.append(idx)
+                    
+                    if not available_indices:
+                        # No configs evaluated yet: use 0 as performance
+                        time_points.append(time_interval)
+                        val_means.append(0.0)
+                        val_errors.append(0.0)
+                        test_means.append(0.0)
+                        test_errors.append(0.0)
+                        continue
+                    
+                    # Find best config (best mean validation performance)
+                    best_val_mean = float('-inf')
+                    best_idx = None
+                    
+                    for idx in available_indices:
+                        val_perfs = validation_performances.get(idx, [])
+                        if val_perfs:
+                            val_mean = np.mean(val_perfs)
+                            if val_mean > best_val_mean:
+                                best_val_mean = val_mean
+                                best_idx = idx
+                    
+                    if best_idx is not None:
+                        val_perfs = validation_performances.get(best_idx, [])
+                        test_perfs = test_performances.get(best_idx, [])
+                        
+                        if val_perfs:
+                            val_mean = np.mean(val_perfs)
+                            if use_standard_error:
+                                n = len(val_perfs)
+                                std = np.std(val_perfs) if n > 1 else 0.0
+                                val_error = std / np.sqrt(n) if n > 1 else 0.0
+                            else:
+                                val_error = np.std(val_perfs) if len(val_perfs) > 1 else 0.0
+                        else:
+                            val_mean = best_val_mean
+                            val_error = 0.0
+                        
+                        if test_perfs:
+                            test_mean = np.mean(test_perfs)
+                            if use_standard_error:
+                                n = len(test_perfs)
+                                std = np.std(test_perfs) if n > 1 else 0.0
+                                test_error = std / np.sqrt(n) if n > 1 else 0.0
+                            else:
+                                test_error = np.std(test_perfs) if len(test_perfs) > 1 else 0.0
+                        else:
+                            test_mean = 0.0
+                            test_error = 0.0
+                        
+                        time_points.append(time_interval)
+                        val_means.append(val_mean)
+                        val_errors.append(val_error)
+                        test_means.append(test_mean)
+                        test_errors.append(test_error)
+                
+                all_experiment_data.append({
+                    "name": exp_name,
+                    "time_points": time_points,
+                    "val_means": val_means,
+                    "val_errors": val_errors,
+                    "test_means": test_means,
+                    "test_errors": test_errors
+                })
+                continue
+                
+            except Exception as e:
+                print(f"Warning: Error processing QuickTune experiment: {e}, skipping...")
+                continue
+        
+        # For NePS/Baseline: use existing logic
+        neps_output_dir = seed_dir / "NePS_output"
+        
+        if not neps_output_dir.exists():
+            print(f"Warning: NePS_output directory not found: {neps_output_dir}, skipping...")
+            continue
+        
+        # Read incumbent performances CSV
+        performances_csv_path = neps_output_dir / "incumbent_performances.csv"
+        if not performances_csv_path.exists():
+            print(f"Warning: Incumbent performances CSV file not found: {performances_csv_path}, skipping...")
+            continue
+        
+        performances_df = pd.read_csv(performances_csv_path)
+        
+        # Check if this is a Baseline experiment (only 1 config)
+        num_configs = len(performances_df)
+        is_baseline = num_configs == 1
+        
+        if is_baseline:
+            # For Baseline: check when the config was evaluated, show 0 before that time
+            # Read costs CSV to determine evaluation time
+            if time_unit == "hours":
+                costs_csv_path = neps_output_dir / "costs_in_hours.csv"
+            elif time_unit == "min":
+                costs_csv_path = neps_output_dir / "costs_in_min.csv"
+            else:
+                costs_csv_path = neps_output_dir / "costs_in_sec.csv"
+            
+            if not costs_csv_path.exists():
+                print(f"Warning: Cost CSV file not found: {costs_csv_path}")
+                print(f"Attempting to create cost CSV files from report.yaml files...")
+                import sys
+                project_root = Path(__file__).parent.parent.parent
+                if str(project_root) not in sys.path:
+                    sys.path.insert(0, str(project_root))
+                from src.utils.logging_utils import update_cost_csv_from_neps_output
+                update_cost_csv_from_neps_output(str(neps_output_dir))
+                
+                if not costs_csv_path.exists():
+                    print(f"Warning: Could not create cost CSV file: {costs_csv_path}, skipping...")
+                    continue
+            
+            costs_df = pd.read_csv(costs_csv_path)
+            all_folds = sorted(costs_df["outer_fold"].unique())
+            
+            # Calculate cumulative times per fold for config 1 (Baseline has only 1 config)
+            fold_cumulative_times = {}
+            for fold_num in all_folds:
+                fold_costs = costs_df[costs_df["outer_fold"] == fold_num].sort_values("config")
+                cumulative_time = 0.0
+                
+                for _, cost_row in fold_costs.iterrows():
+                    config_num = int(cost_row["config"])
+                    evaluation_duration = cost_row["evaluation_duration"]
+                    cumulative_time += evaluation_duration
+                    
+                    if fold_num not in fold_cumulative_times:
+                        fold_cumulative_times[fold_num] = {}
+                    fold_cumulative_times[fold_num][config_num] = cumulative_time
+            
+            # Get the maximum time across all folds when config 1 was evaluated
+            max_evaluation_time = 0.0
+            for fold_num in all_folds:
+                if fold_num in fold_cumulative_times and 1 in fold_cumulative_times[fold_num]:
+                    max_evaluation_time = max(max_evaluation_time, fold_cumulative_times[fold_num][1])
+            
+            # Get performance data
+            perf_row = performances_df.iloc[0]
+            val_mean = float(perf_row["validation_mean"])
+            test_mean = float(perf_row["test_mean"])
+            
+            # Get performances across folds for error calculation
+            val_perfs = []
+            test_perfs = []
+            
+            for fold_num in all_folds:
+                val_col = f"validation_fold_{fold_num}"
+                test_col = f"test_fold_{fold_num}"
+                
+                if val_col in perf_row and pd.notna(perf_row[val_col]):
+                    val_perfs.append(float(perf_row[val_col]))
+                if test_col in perf_row and pd.notna(perf_row[test_col]):
+                    test_perfs.append(float(perf_row[test_col]))
+            
+            # Calculate errors
+            if val_perfs:
+                if use_standard_error:
+                    n = len(val_perfs)
+                    std = np.std(val_perfs) if n > 1 else 0.0
+                    val_error = std / np.sqrt(n) if n > 1 else 0.0
+                else:
+                    val_error = np.std(val_perfs) if len(val_perfs) > 1 else 0.0
+            else:
+                val_error = 0.0
+            
+            if test_perfs:
+                if use_standard_error:
+                    n = len(test_perfs)
+                    std = np.std(test_perfs) if n > 1 else 0.0
+                    test_error = std / np.sqrt(n) if n > 1 else 0.0
+                else:
+                    test_error = np.std(test_perfs) if len(test_perfs) > 1 else 0.0
+            else:
+                test_error = 0.0
+            
+            # For each time interval, show 0 if before evaluation time, otherwise show performance
+            time_points = []
+            val_means = []
+            val_errors = []
+            test_means = []
+            test_errors = []
+            
+            for time_interval in time_intervals:
+                time_points.append(time_interval)
+                
+                if time_interval < max_evaluation_time:
+                    # Before evaluation: show 0
+                    val_means.append(0.0)
+                    val_errors.append(0.0)
+                    test_means.append(0.0)
+                    test_errors.append(0.0)
+                else:
+                    # After evaluation: show actual performance
+                    val_means.append(val_mean)
+                    val_errors.append(val_error)
+                    test_means.append(test_mean)
+                    test_errors.append(test_error)
+            
+        else:
+            # For NePS: use existing logic to find best config at each time interval
+            # Read costs CSV
+            if time_unit == "hours":
+                costs_csv_path = neps_output_dir / "costs_in_hours.csv"
+            elif time_unit == "min":
+                costs_csv_path = neps_output_dir / "costs_in_min.csv"
+            else:
+                costs_csv_path = neps_output_dir / "costs_in_sec.csv"
+            
+            if not costs_csv_path.exists():
+                print(f"Warning: Cost CSV file not found: {costs_csv_path}")
+                print(f"Attempting to create cost CSV files from report.yaml files...")
+                import sys
+                project_root = Path(__file__).parent.parent.parent
+                if str(project_root) not in sys.path:
+                    sys.path.insert(0, str(project_root))
+                from src.utils.logging_utils import update_cost_csv_from_neps_output
+                update_cost_csv_from_neps_output(str(neps_output_dir))
+                
+                if not costs_csv_path.exists():
+                    print(f"Warning: Could not create cost CSV file: {costs_csv_path}, skipping...")
+                    continue
+            
+            costs_df = pd.read_csv(costs_csv_path)
+            all_folds = sorted(costs_df["outer_fold"].unique())
+            
+            # Calculate cumulative times per fold
+            fold_cumulative_times = {}
+            for fold_num in all_folds:
+                fold_costs = costs_df[costs_df["outer_fold"] == fold_num].sort_values("config")
+                cumulative_time = 0.0
+                
+                for _, cost_row in fold_costs.iterrows():
+                    config_num = int(cost_row["config"])
+                    evaluation_duration = cost_row["evaluation_duration"]
+                    cumulative_time += evaluation_duration
+                    
+                    if fold_num not in fold_cumulative_times:
+                        fold_cumulative_times[fold_num] = {}
+                    fold_cumulative_times[fold_num][config_num] = cumulative_time
+            
+            # For each time interval, find best config
+            time_points = []
+            val_means = []
+            val_errors = []
+            test_means = []
+            test_errors = []
+            
+            for time_interval in time_intervals:
+                # A config is only available if it was evaluated in ALL folds by this time
+                available_configs = set()
+                # First, find all configs that were evaluated in at least one fold
+                all_evaluated_configs = set()
+                for fold_num in all_folds:
+                    if fold_num in fold_cumulative_times:
+                        for config_num, cumulative_time in fold_cumulative_times[fold_num].items():
+                            if cumulative_time <= time_interval:
+                                all_evaluated_configs.add(config_num)
+                
+                # Then, check which configs were evaluated in ALL folds
+                for config_num in all_evaluated_configs:
+                    evaluated_in_all_folds = True
+                    for fold_num in all_folds:
+                        if fold_num not in fold_cumulative_times:
+                            evaluated_in_all_folds = False
+                            break
+                        if config_num not in fold_cumulative_times[fold_num]:
+                            evaluated_in_all_folds = False
+                            break
+                        if fold_cumulative_times[fold_num][config_num] > time_interval:
+                            evaluated_in_all_folds = False
+                            break
+                    
+                    if evaluated_in_all_folds:
+                        available_configs.add(config_num)
+                
+                if not available_configs:
+                    # No configs evaluated yet: use 0 as performance
+                    time_points.append(time_interval)
+                    val_means.append(0.0)
+                    val_errors.append(0.0)
+                    test_means.append(0.0)
+                    test_errors.append(0.0)
+                    continue
+                
+                # Find best config
+                best_val_mean = float('-inf')
+                best_config = None
+                best_test_mean = None
+                
+                for config_num in available_configs:
+                    perf_row = performances_df[performances_df["config"] == config_num]
+                    if not perf_row.empty:
+                        val_mean = perf_row["validation_mean"].iloc[0]
+                        if pd.notna(val_mean) and val_mean != "":
+                            val_mean_float = float(val_mean)
+                            if val_mean_float > best_val_mean:
+                                best_val_mean = val_mean_float
+                                best_config = config_num
+                                test_mean = perf_row["test_mean"].iloc[0]
+                                if pd.notna(test_mean) and test_mean != "":
+                                    best_test_mean = float(test_mean)
+                
+                if best_config is not None:
+                    perf_row = performances_df[performances_df["config"] == best_config]
+                    if not perf_row.empty:
+                        val_perfs = []
+                        test_perfs = []
+                        
+                        for fold_num in all_folds:
+                            val_col = f"validation_fold_{fold_num}"
+                            test_col = f"test_fold_{fold_num}"
+                            
+                            if val_col in perf_row.columns:
+                                val_perf = perf_row[val_col].iloc[0]
+                                if pd.notna(val_perf) and val_perf != "":
+                                    val_perfs.append(float(val_perf))
+                            
+                            if test_col in perf_row.columns:
+                                test_perf = perf_row[test_col].iloc[0]
+                                if pd.notna(test_perf) and test_perf != "":
+                                    test_perfs.append(float(test_perf))
+                        
+                        if val_perfs:
+                            val_mean = np.mean(val_perfs)
+                            if use_standard_error:
+                                n = len(val_perfs)
+                                std = np.std(val_perfs) if n > 1 else 0.0
+                                val_error = std / np.sqrt(n) if n > 1 else 0.0
+                            else:
+                                val_error = np.std(val_perfs) if len(val_perfs) > 1 else 0.0
+                        else:
+                            val_mean = best_val_mean
+                            val_error = 0.0
+                        
+                        if test_perfs:
+                            test_mean = np.mean(test_perfs)
+                            if use_standard_error:
+                                n = len(test_perfs)
+                                std = np.std(test_perfs) if n > 1 else 0.0
+                                test_error = std / np.sqrt(n) if n > 1 else 0.0
+                            else:
+                                test_error = np.std(test_perfs) if len(test_perfs) > 1 else 0.0
+                        else:
+                            test_mean = best_test_mean if best_test_mean is not None else 0.0
+                            test_error = 0.0
+                        
+                        time_points.append(time_interval)
+                        val_means.append(val_mean)
+                        val_errors.append(val_error)
+                        test_means.append(test_mean)
+                        test_errors.append(test_error)
+        
+        all_experiment_data.append({
+            "name": exp_name,
+            "time_points": time_points,
+            "val_means": val_means,
+            "val_errors": val_errors,
+            "test_means": test_means,
+            "test_errors": test_errors
+        })
+    
+    if not all_experiment_data:
+        print("Error: No valid experiment data found")
+        return
+    
+    # Create combined plots
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(21, 6))
+    
+    # Define colors for different experiments
+    experiment_colors = plt.cm.tab10(np.linspace(0, 1, len(all_experiment_data)))
+    error_label = "standard error" if use_standard_error else "std"
+    
+    # Calculate y-axis range
+    all_y_values = []
+    for exp_data in all_experiment_data:
+        if exp_data["val_means"]:
+            all_y_values.extend([m + e for m, e in zip(exp_data["val_means"], exp_data["val_errors"])])
+            all_y_values.extend([m - e for m, e in zip(exp_data["val_means"], exp_data["val_errors"])])
+        if exp_data["test_means"]:
+            all_y_values.extend([m + e for m, e in zip(exp_data["test_means"], exp_data["test_errors"])])
+            all_y_values.extend([m - e for m, e in zip(exp_data["test_means"], exp_data["test_errors"])])
+    
+    # Use user-specified values if provided, otherwise calculate from data
+    if y_min is not None:
+        y_lim_min = y_min
+    elif all_y_values:
+        data_y_min = min(all_y_values)
+        y_range = max(all_y_values) - data_y_min
+        y_padding = y_range * 0.1
+        y_lim_min = max(0, data_y_min - y_padding) if data_y_min < 50 else 50
+    else:
+        y_lim_min = 50
+    
+    if y_max is not None:
+        y_lim_max = y_max
+    elif all_y_values:
+        y_lim_max = 100
+    else:
+        y_lim_max = 100
+    
+    # Plot validation performance
+    for idx, exp_data in enumerate(all_experiment_data):
+        if exp_data["time_points"] and exp_data["val_means"]:
+            color = experiment_colors[idx]
+            ax1.plot(exp_data["time_points"], exp_data["val_means"], marker="o", linewidth=2, markersize=8,
+                    label=f"{exp_data['name']} (Validation)", color=color, linestyle="--")
+            ax1.fill_between(
+                exp_data["time_points"],
+                np.array(exp_data["val_means"]) - np.array(exp_data["val_errors"]),
+                np.array(exp_data["val_means"]) + np.array(exp_data["val_errors"]),
+                alpha=0.2,
+                color=color
+            )
+    
+    ax1.set_xlabel(time_unit_label, fontsize=12)
+    ax1.set_ylabel("Validation AUC", fontsize=12)
+    ax1.set_title("Validation Performance Over Time", fontsize=14, fontweight="bold")
+    ax1.legend(fontsize=10, loc='lower right')
+    ax1.grid(True, alpha=0.3)
+    if time_unit == "hours":
+        ax1.set_xlim(left=1, right=24)
+        ax1.set_xticks(range(1, 25))
+    else:
+        ax1.set_xlim(left=0)
+    ax1.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Plot test performance
+    for idx, exp_data in enumerate(all_experiment_data):
+        if exp_data["time_points"] and exp_data["test_means"]:
+            color = experiment_colors[idx]
+            ax2.plot(exp_data["time_points"], exp_data["test_means"], marker="s", linewidth=2, markersize=8,
+                    label=f"{exp_data['name']} (Test)", color=color, linestyle="-")
+            ax2.fill_between(
+                exp_data["time_points"],
+                np.array(exp_data["test_means"]) - np.array(exp_data["test_errors"]),
+                np.array(exp_data["test_means"]) + np.array(exp_data["test_errors"]),
+                alpha=0.2,
+                color=color
+            )
+    
+    ax2.set_xlabel(time_unit_label, fontsize=12)
+    ax2.set_ylabel("Test AUC", fontsize=12)
+    ax2.set_title("Test Performance Over Time", fontsize=14, fontweight="bold")
+    ax2.legend(fontsize=10, loc='lower right')
+    ax2.grid(True, alpha=0.3)
+    if time_unit == "hours":
+        ax2.set_xlim(left=1, right=24)
+        ax2.set_xticks(range(1, 25))
+    else:
+        ax2.set_xlim(left=0)
+    ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Plot both together
+    for idx, exp_data in enumerate(all_experiment_data):
+        color = experiment_colors[idx]
+        if exp_data["time_points"] and exp_data["val_means"]:
+            ax3.plot(exp_data["time_points"], exp_data["val_means"], marker="o", linewidth=2, markersize=8,
+                    label=f"{exp_data['name']} (Validation)", color=color, linestyle="--")
+            ax3.fill_between(
+                exp_data["time_points"],
+                np.array(exp_data["val_means"]) - np.array(exp_data["val_errors"]),
+                np.array(exp_data["val_means"]) + np.array(exp_data["val_errors"]),
+                alpha=0.15,
+                color=color
+            )
+        if exp_data["time_points"] and exp_data["test_means"]:
+            ax3.plot(exp_data["time_points"], exp_data["test_means"], marker="s", linewidth=2, markersize=8,
+                    label=f"{exp_data['name']} (Test)", color=color, linestyle="-")
+            ax3.fill_between(
+                exp_data["time_points"],
+                np.array(exp_data["test_means"]) - np.array(exp_data["test_errors"]),
+                np.array(exp_data["test_means"]) + np.array(exp_data["test_errors"]),
+                alpha=0.15,
+                color=color
+            )
+    
+    ax3.set_xlabel(time_unit_label, fontsize=12)
+    ax3.set_ylabel("AUC", fontsize=12)
+    ax3.set_title("Validation & Test Performance Over Time", fontsize=14, fontweight="bold")
+    ax3.legend(fontsize=9, loc='lower right')
+    ax3.grid(True, alpha=0.3)
+    if time_unit == "hours":
+        ax3.set_xlim(left=1, right=24)
+        ax3.set_xticks(range(1, 25))
+    else:
+        ax3.set_xlim(left=0)
+    ax3.set_ylim(bottom=y_lim_min, top=y_lim_max)
+    
+    # Add suptitle
+    experiment_names = ", ".join([exp_data["name"] for exp_data in all_experiment_data])
+    fig.suptitle(f"Performance Over Time: {experiment_names}", fontsize=16, fontweight="bold", y=1.02)
+    
+    # Determine output path
+    if output_path is None:
+        output_dir = Path("experiments/Plots")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "performance_over_time_multi.png"
     else:
         output_path = Path(output_path)
     
@@ -1895,6 +2636,18 @@ def main():
         help="Total time budget in seconds (required for NePS experiments when using --over-time). "
              "Used to determine time unit (seconds/minutes/hours)."
     )
+    parser.add_argument(
+        "--y-min",
+        type=float,
+        default=None,
+        help="Minimum value for y-axis. If not specified, calculated from data."
+    )
+    parser.add_argument(
+        "--y-max",
+        type=float,
+        default=None,
+        help="Maximum value for y-axis. If not specified, calculated from data."
+    )
     
     args = parser.parse_args()
     
@@ -1912,6 +2665,22 @@ def main():
     
     # If --over-time is set, use time-based plotting
     if args.over_time:
+        # If multiple experiments, use combined plotting
+        if len(experiment_dirs) > 1:
+            if args.cost_to_spend is None:
+                raise ValueError("--cost-to-spend is required for NePS experiments when using --over-time with multiple experiments")
+            output_path = Path(args.output) if args.output else None
+            create_performance_over_time_plot_multi(
+                experiment_dirs,
+                cost_to_spend=args.cost_to_spend,
+                output_path=output_path,
+                y_min=args.y_min,
+                y_max=args.y_max
+            )
+            print("\nDone!")
+            return
+        
+        # Single experiment: use existing logic
         for experiment_dir in experiment_dirs:
             print(f"\nProcessing experiment: {experiment_dir.name}")
             

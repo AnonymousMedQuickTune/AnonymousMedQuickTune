@@ -227,7 +227,7 @@ class PortfolioCreator:
         # Only add model_type if there's no "model" hyperparameter
         # If "model" exists, it will be used directly; otherwise add model_type from config
         if "model" not in config_dict:
-            config_dict["model_type"] = self.hydra_config["model"]["type"]
+        config_dict["model_type"] = self.hydra_config["model"]["type"]
         config_dict["dataset"] = self.hydra_config["data"]["dataset"]
 
         # Add performance metrics
@@ -525,7 +525,7 @@ class PortfolioCreator:
             if total_num_samples is None:
                 if quicktune_meta and quicktune_meta.get("total_num_samples"):
                     total_num_samples = quicktune_meta["total_num_samples"]
-                else:
+            else:
                     total_num_samples = DEFAULT_META_FEATURES["total_num_samples"]
             
             # Extract input_size_h, input_size_w, input_size_d from spatial_size for 3D datasets
@@ -903,7 +903,7 @@ def merge_neps_runs_multi_dataset(
     # Process each dataset with its specific experiments
     for dataset, experiment_spec in dataset_experiment_pairs:
         base_path = experiments_base / dataset
-
+        
         # Parse experiment-seed pairs for this dataset
         experiment_seed_pairs = parse_experiment_seeds(experiment_spec)
         logging.info(f"Dataset {dataset}: parsed experiment-seed pairs: {experiment_seed_pairs}")
@@ -957,7 +957,7 @@ def merge_neps_runs_multi_dataset(
     # This ensures QuickTune can properly use the portfolio - empty values would become NaN
     # which could cause issues with the predictors (GPRegressionModel, FTPFN, etc.)
     merged_curves = merged_curves.fillna(0.0)
-    
+
     # Save merged files with index
     merged_config.to_csv(portfolio_dir / CONFIG_CSV, index=True)
     # Use na_rep='0.0' to ensure empty values are written as 0.0 in CSV (not empty strings)

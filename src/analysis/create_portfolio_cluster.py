@@ -228,7 +228,7 @@ class PortfolioCreator:
         # Only add model_type if there's no "model" hyperparameter
         # If "model" exists, it will be used directly; otherwise add model_type from config
         if "model" not in config_dict:
-            config_dict["model_type"] = self.hydra_config["model"]["type"]
+        config_dict["model_type"] = self.hydra_config["model"]["type"]
         config_dict["dataset"] = self.hydra_config["data"]["dataset"]
 
         # Add performance metrics

@@ -360,6 +360,53 @@ plot-performance-over-time EXPERIMENT_DIR OUTPUT_PATH="":
     python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIR}} --output {{OUTPUT_PATH}}
   fi
 
+# Update cost CSV files for NePS experiments (creates costs_in_sec.csv, costs_in_min.csv, costs_in_hours.csv)
+# Example: just update-neps-cost-csv experiments/NePS/lipo/test_full_final
+# Example with seed: just update-neps-cost-csv experiments/NePS/lipo/test_full_final/seed_42
+update-neps-cost-csv EXPERIMENT_PATH:
+  #!/usr/bin/env bash
+  # If path ends with seed_*, extract NePS_output directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    NEPS_OUTPUT_DIR="{{EXPERIMENT_PATH}}/NePS_output"
+  else
+    # Find first seed directory
+    SEED_DIRS=$(find "{{EXPERIMENT_PATH}}" -maxdepth 1 -type d -name "seed_*" | head -1)
+    if [ -z "$SEED_DIRS" ]; then
+      echo "Error: No seed directories found in {{EXPERIMENT_PATH}}"
+      exit 1
+    fi
+    NEPS_OUTPUT_DIR="${SEED_DIRS}/NePS_output"
+  fi
+  
+  if [ ! -d "$NEPS_OUTPUT_DIR" ]; then
+    echo "Error: NePS_output directory not found: $NEPS_OUTPUT_DIR"
+    exit 1
+  fi
+  
+  python -c "from src.utils.logging_utils import update_cost_csv_from_neps_output; update_cost_csv_from_neps_output('$NEPS_OUTPUT_DIR')"
+
+# Plot test and validation performance over time (wall-clock time) for NePS experiments
+# Requires cost_to_spend parameter (total time budget in seconds)
+# Automatically creates cost CSV files if they don't exist
+# Example: just plot-neps-over-time experiments/NePS/lipo/test_full_final 86400
+# Example with seed: just plot-neps-over-time experiments/NePS/lipo/test_full_final/seed_42 86400
+# Example with custom output: just plot-neps-over-time experiments/NePS/lipo/test_full_final 86400 output.png
+# Note: cost_to_spend is typically 86400 (24 hours) or 1800 (30 minutes) for developer mode
+plot-neps-over-time EXPERIMENT_PATH COST_TO_SPEND OUTPUT_PATH="":
+  #!/usr/bin/env bash
+  # If path ends with seed_*, go up one level to get experiment directory
+  if [[ "{{EXPERIMENT_PATH}}" == */seed_* ]]; then
+    EXPERIMENT_DIR=$(dirname "{{EXPERIMENT_PATH}}")
+  else
+    EXPERIMENT_DIR="{{EXPERIMENT_PATH}}"
+  fi
+  
+  if [ -z "{{OUTPUT_PATH}}" ]; then
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time --cost-to-spend {{COST_TO_SPEND}}
+  else
+    python src/analysis/plot_results_over_time.py "${EXPERIMENT_DIR}" --over-time --cost-to-spend {{COST_TO_SPEND}} --output {{OUTPUT_PATH}}
+  fi
+
 # Plot test and validation performance over time for QuickTune experiments
 # Automatically handles paths with or without seed_* directories
 # Example: just plot-quicktune experiments/Cluster/QuickTune/test_metalearning_from_desmoid-liver_1e1c0a9_12-17-25_no-ftpfn
@@ -409,6 +456,44 @@ plot-performance-over-time-multi PLOT_NAME *EXPERIMENT_DIRS:
   mkdir -p "${OUTPUT_DIR}"
   OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
   python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --output "${OUTPUT_PATH}"
+
+# Plot test and validation performance over time (wall-clock time) for multiple experiments together
+# Baseline experiments (1 config) will show the same performance for all 24 hours
+# NePS experiments will show the best validation performance at each hour
+# Example: just plot-neps-over-time-multi lipo_comparison 86400 experiments/Cluster/NePS/lipo/random-search_full-search-space_lipo_l40 experiments/Cluster/Baseline/lipo/densenet_baseline_lipo_l40 experiments/Cluster/Baseline/lipo/resnet_baseline_lipo_l40
+# This will save plots to experiments/Plots/lipo_comparison.png and experiments/Plots/lipo_comparison.pdf
+plot-neps-over-time-multi PLOT_NAME COST_TO_SPEND Y_MIN="" Y_MAX="" *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+  
+  # Extract values from Y_MIN and Y_MAX if they are in KEY=VALUE format
+  Y_MIN_VAL="{{Y_MIN}}"
+  Y_MAX_VAL="{{Y_MAX}}"
+  
+  # If Y_MIN is in format "Y_MIN=value", extract just the value
+  if [[ "${Y_MIN_VAL}" == Y_MIN=* ]]; then
+    Y_MIN_VAL="${Y_MIN_VAL#Y_MIN=}"
+  fi
+  
+  # If Y_MAX is in format "Y_MAX=value", extract just the value
+  if [[ "${Y_MAX_VAL}" == Y_MAX=* ]]; then
+    Y_MAX_VAL="${Y_MAX_VAL#Y_MAX=}"
+  fi
+  
+  # Build command with optional y-axis limits
+  CMD="python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --over-time --cost-to-spend {{COST_TO_SPEND}} --output \"${OUTPUT_PATH}\""
+  
+  if [ -n "${Y_MIN_VAL}" ]; then
+    CMD="${CMD} --y-min ${Y_MIN_VAL}"
+  fi
+  
+  if [ -n "${Y_MAX_VAL}" ]; then
+    CMD="${CMD} --y-max ${Y_MAX_VAL}"
+  fi
+  
+  eval "${CMD}"
 
 # Plot test and validation performance over time for multiple experiments together with extend flag
 # Extends shorter experiments to match the longest one by repeating the last performance value
