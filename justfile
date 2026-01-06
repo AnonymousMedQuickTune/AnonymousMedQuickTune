@@ -461,29 +461,32 @@ plot-performance-over-time-multi PLOT_NAME *EXPERIMENT_DIRS:
 # Baseline experiments (1 config) will show the same performance for all 24 hours
 # NePS experiments will show the best validation performance at each hour
 # Example: just plot-neps-over-time-multi lipo_comparison 86400 experiments/Cluster/NePS/lipo/random-search_full-search-space_lipo_l40 experiments/Cluster/Baseline/lipo/densenet_baseline_lipo_l40 experiments/Cluster/Baseline/lipo/resnet_baseline_lipo_l40
+# Example with y-axis limits: just plot-neps-over-time-multi lipo_zoom 86400 Y_MIN=60 Y_MAX=90 experiments/Cluster/NePS/lipo/random-search_full-search-space_lipo_l40
 # This will save plots to experiments/Plots/lipo_comparison.png and experiments/Plots/lipo_comparison.pdf
-plot-neps-over-time-multi PLOT_NAME COST_TO_SPEND Y_MIN="" Y_MAX="" *EXPERIMENT_DIRS:
+plot-runs-over-time-multi PLOT_NAME COST_TO_SPEND *EXPERIMENT_DIRS:
   #!/usr/bin/env bash
   OUTPUT_DIR="experiments/Plots"
   mkdir -p "${OUTPUT_DIR}"
   OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
   
-  # Extract values from Y_MIN and Y_MAX if they are in KEY=VALUE format
-  Y_MIN_VAL="{{Y_MIN}}"
-  Y_MAX_VAL="{{Y_MAX}}"
+  # Parse optional Y_MIN and Y_MAX from EXPERIMENT_DIRS
+  # They may appear as Y_MIN=value or Y_MAX=value in the arguments
+  Y_MIN_VAL=""
+  Y_MAX_VAL=""
+  EXPERIMENT_DIRS_CLEAN=""
   
-  # If Y_MIN is in format "Y_MIN=value", extract just the value
-  if [[ "${Y_MIN_VAL}" == Y_MIN=* ]]; then
-    Y_MIN_VAL="${Y_MIN_VAL#Y_MIN=}"
-  fi
-  
-  # If Y_MAX is in format "Y_MAX=value", extract just the value
-  if [[ "${Y_MAX_VAL}" == Y_MAX=* ]]; then
-    Y_MAX_VAL="${Y_MAX_VAL#Y_MAX=}"
-  fi
+  for ARG in {{EXPERIMENT_DIRS}}; do
+    if [[ "$ARG" == Y_MIN=* ]]; then
+      Y_MIN_VAL="${ARG#Y_MIN=}"
+    elif [[ "$ARG" == Y_MAX=* ]]; then
+      Y_MAX_VAL="${ARG#Y_MAX=}"
+    else
+      EXPERIMENT_DIRS_CLEAN="$EXPERIMENT_DIRS_CLEAN $ARG"
+    fi
+  done
   
   # Build command with optional y-axis limits
-  CMD="python src/analysis/plot_results_over_time.py {{EXPERIMENT_DIRS}} --over-time --cost-to-spend {{COST_TO_SPEND}} --output \"${OUTPUT_PATH}\""
+  CMD="python src/analysis/plot_results_over_time.py${EXPERIMENT_DIRS_CLEAN} --over-time --cost-to-spend {{COST_TO_SPEND}} --output \"${OUTPUT_PATH}\""
   
   if [ -n "${Y_MIN_VAL}" ]; then
     CMD="${CMD} --y-min ${Y_MIN_VAL}"
@@ -494,6 +497,7 @@ plot-neps-over-time-multi PLOT_NAME COST_TO_SPEND Y_MIN="" Y_MAX="" *EXPERIMENT_
   fi
   
   eval "${CMD}"
+
 
 # Plot test and validation performance over time for multiple experiments together with extend flag
 # Extends shorter experiments to match the longest one by repeating the last performance value
