@@ -264,6 +264,60 @@ def custom_extract_image_dataset_metafeat(
                 input_size_d = 96
                 modality = "CT"
                 total_num_samples = 245
+            elif dataset_name == "organmnist3d":
+                dataset = "organmnist3d"
+                num_classes = 11
+                input_channels = 1  # Grayscale for MedMNIST3D
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "CT"
+                total_num_samples = 1743
+            elif dataset_name == "nodulemnist3d":
+                dataset = "nodulemnist3d"
+                num_classes = 2
+                input_channels = 1
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "CT"
+                total_num_samples = 1633
+            elif dataset_name == "adrenalmnist3d":
+                dataset = "adrenalmnist3d"
+                num_classes = 2
+                input_channels = 1
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "CT"
+                total_num_samples = 1584
+            elif dataset_name == "fracturemnist3d":
+                dataset = "fracturemnist3d"
+                num_classes = 3
+                input_channels = 1
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "CT"
+                total_num_samples = 1370
+            elif dataset_name == "vesselmnist3d":
+                dataset = "vesselmnist3d"
+                num_classes = 2
+                input_channels = 1
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "MRA"
+                total_num_samples = 1909
+            elif dataset_name == "synapsemnist3d":
+                dataset = "synapsemnist3d"
+                num_classes = 2
+                input_channels = 1
+                input_size_h = 28
+                input_size_w = 28
+                input_size_d = 28
+                modality = "Electron Microscope"
+                total_num_samples = 1759
             else:
                 raise ValueError(f"Unsupported dataset: {dataset_name}")
 

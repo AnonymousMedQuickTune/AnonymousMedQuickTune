@@ -50,7 +50,9 @@ DEFAULT_META_FEATURES = {
 
 # Mapping of dataset names to modality
 MRI_DATASETS = ["lipo", "desmoid", "liver"]
-CT_DATASETS = ["brain_tumor"]  # Add other CT datasets as needed
+CT_DATASETS = ["brain_tumor", "gist", "organmnist3d", "nodulemnist3d", "adrenalmnist3d", "fracturemnist3d"]  # CT datasets
+MRA_DATASETS = ["vesselmnist3d"]  # MRA datasets
+ELECTRON_MICROSCOPE_DATASETS = ["synapsemnist3d"]  # Electron Microscope datasets
 
 # Integer parameter names that should be converted to int
 INT_PARAM_NAMES = {"epochs", "batch_size"}
@@ -427,15 +429,19 @@ class PortfolioCreator:
         return (default_h, default_w, default_d)
     
     def _get_modality(self, dataset_name: str) -> str:
-        """Determine modality (CT or MRI) based on dataset name."""
+        """Determine modality (CT, MRI, MRA, or Electron Microscope) based on dataset name."""
         dataset_lower = dataset_name.lower()
         if dataset_lower in MRI_DATASETS:
             return "MRI"
         elif dataset_lower in CT_DATASETS:
             return "CT"
+        elif dataset_lower in MRA_DATASETS:
+            return "MRA"
+        elif dataset_lower in ELECTRON_MICROSCOPE_DATASETS:
+            return "Electron Microscope"
         else:
             # Default to CT if unknown, but log a warning
-            logging.warning(f"Unknown dataset '{dataset_name}', defaulting to CT modality. Please add to MRI_DATASETS or CT_DATASETS if needed.")
+            logging.warning(f"Unknown dataset '{dataset_name}', defaulting to CT modality. Please add to appropriate modality list if needed.")
             return DEFAULT_META_FEATURES["modality"]
     
     def _get_dataset_meta_features_from_quicktune_utils(self, dataset_name: str) -> Dict[str, Any] | None:
