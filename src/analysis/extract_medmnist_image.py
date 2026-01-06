@@ -120,14 +120,14 @@ def extract_medmnist_3d_slice(dataset_name, sample_idx=0, slice_idx=None, axis=2
     
     # Grid of smaller samples only
     if grid_samples is None:
-        grid_samples = min(56, len(dataset))  # Show up to 56 samples (7 rows x 8 cols)
+        grid_samples = min(25, len(dataset))  # Show up to 25 samples (5 rows x 5 cols)
     
     # Calculate grid dimensions
-    n_cols = 8
+    n_cols = 5
     n_rows = (grid_samples + n_cols - 1) // n_cols  # Ceiling division
     
     # Limit to reasonable size
-    n_rows = min(n_rows, 10)
+    n_rows = min(n_rows, 5)
     grid_samples = min(grid_samples, n_rows * n_cols)
     
     print(f"Creating grid with {grid_samples} samples ({n_rows} rows x {n_cols} cols)")
@@ -136,7 +136,7 @@ def extract_medmnist_3d_slice(dataset_name, sample_idx=0, slice_idx=None, axis=2
     fig = plt.figure(figsize=(12, 1.5 * n_rows), dpi=dpi)
     
     # Create grid layout
-    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.05, wspace=0.05)
+    gs = fig.add_gridspec(n_rows, n_cols, hspace=0.1, wspace=-0.75)
     
     # Sample indices for grid (diverse selection)
     grid_indices = np.linspace(0, len(dataset) - 1, grid_samples, dtype=int)
@@ -260,7 +260,7 @@ def main():
         '--grid-samples',
         type=int,
         default=None,
-        help='Number of samples to show in grid. If None, shows 80 samples (default: None)'
+        help='Number of samples to show in grid. If None, shows 25 samples (5 rows x 5 cols) (default: None)'
     )
     
     args = parser.parse_args()
@@ -279,5 +279,13 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # example: python src/analysis/extract_medmnist_image.py --dataset synapsemnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/synapsemnist3d_example.pdf 
+    """
+    # example:
+    python src/analysis/extract_medmnist_image.py --dataset synapsemnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/synapsemnist3d_example.pdf
+    python src/analysis/extract_medmnist_image.py --dataset vesselmnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/vesselmnist3d_example.pdf
+    python src/analysis/extract_medmnist_image.py --dataset fracturemnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/fracturemnist3d_example.pdf
+    python src/analysis/extract_medmnist_image.py --dataset nodulemnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/nodulemnist3d_example.pdf
+    python src/analysis/extract_medmnist_image.py --dataset adrenalmnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/adrenalmnist3d_example.pdf
+    python src/analysis/extract_medmnist_image.py --dataset organmnist3d --format pdf --output reports/thesis/figures/datasets/medmnist3d/organmnist3d_example.pdf
+    """
 
