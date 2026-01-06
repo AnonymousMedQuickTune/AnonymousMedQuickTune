@@ -228,7 +228,7 @@ class PortfolioCreator:
         # Only add model_type if there's no "model" hyperparameter
         # If "model" exists, it will be used directly; otherwise add model_type from config
         if "model" not in config_dict:
-        config_dict["model_type"] = self.hydra_config["model"]["type"]
+            config_dict["model_type"] = self.hydra_config["model"]["type"]
         config_dict["dataset"] = self.hydra_config["data"]["dataset"]
 
         # Add performance metrics
@@ -651,13 +651,26 @@ class PortfolioCreator:
                         all_fold_curves.extend(fold_curves)
 
             if all_fold_curves:
-                # Ensure all folds have same number of epochs
-                min_epochs = min(len(curve) for curve in all_fold_curves)
-                all_fold_curves = [curve[:min_epochs] for curve in all_fold_curves]
+                # Pad all curves to the same length (max epochs) before averaging
+                # This is critical when early stopping causes different fold lengths
+                # We pad with the last best-so-far value (which represents the best model found)
+                max_epochs = max(len(curve) for curve in all_fold_curves)
+                
+                # Pad shorter curves with their last best-so-far value
+                # This represents: "if we stopped here, we'd use the best model found so far"
+                padded_curves = []
+                for curve in all_fold_curves:
+                    if len(curve) < max_epochs:
+                        last_best_so_far_value = curve[-1] if len(curve) > 0 else 0.0
+                        padding = np.full(max_epochs - len(curve), last_best_so_far_value)
+                        padded_curve = np.concatenate([curve, padding])
+                    else:
+                        padded_curve = curve
+                    padded_curves.append(padded_curve)
 
                 # Average over all folds (outer and inner) for each epoch
-                all_fold_curves = np.array(all_fold_curves)
-                avg_curve = np.mean(all_fold_curves, axis=0)
+                padded_curves = np.array(padded_curves)
+                avg_curve = np.mean(padded_curves, axis=0)
                 
                 # Ensure avg_curve is a numpy array with float dtype for NaN checking
                 avg_curve = np.asarray(avg_curve, dtype=np.float64)
@@ -733,8 +746,53 @@ class PortfolioCreator:
         return sum(1 for d in config_dir.iterdir() 
                   if d.is_dir() and d.name.startswith(FOLD_DIR_PREFIX))
 
+    def _transform_to_best_so_far(self, metrics_df: pd.DataFrame, target_metric: str) -> np.ndarray:
+        """Transform metrics to best-so-far curve based on loss.
+        
+        For each epoch, returns the metric value from the epoch with the best (lowest) loss
+        seen so far. This matches how early stopping works (based on loss) and what model
+        would be used for evaluation.
+        
+        Args:
+            metrics_df: DataFrame with metrics (must have 'phase', 'loss', and target_metric columns)
+            target_metric: Name of the metric to extract (e.g., 'auc')
+            
+        Returns:
+            numpy array with best-so-far metric values per epoch
+        """
+        val_df = metrics_df[metrics_df["phase"] == "val"].copy()
+        
+        if len(val_df) == 0:
+            return np.array([])
+        
+        # Ensure loss and target_metric columns exist
+        if "loss" not in val_df.columns or target_metric not in val_df.columns:
+            logging.warning(f"Missing required columns in metrics. Available: {val_df.columns}")
+            return np.array([])
+        
+        # Sort by epoch to ensure correct order
+        val_df = val_df.sort_values("epoch")
+        
+        best_loss_so_far = float('inf')
+        best_metric_so_far = None
+        best_so_far_curve = []
+        
+        for _, row in val_df.iterrows():
+            current_loss = float(row["loss"])
+            current_metric = float(row[target_metric])
+            
+            # Update best if we found a better loss
+            if current_loss < best_loss_so_far:
+                best_loss_so_far = current_loss
+                best_metric_so_far = current_metric
+            
+            # Append the best-so-far metric value for this epoch
+            best_so_far_curve.append(best_metric_so_far)
+        
+        return np.array(best_so_far_curve)
+    
     def get_fold_metrics(self, config_idx: int, cv_inner_folds: int, config_dir: str = None) -> List[np.ndarray]:
-        """Helper function to read metrics from each fold."""
+        """Helper function to read metrics from each fold and transform to best-so-far curves."""
         fold_curves = []
         
         # Use provided config_dir or construct it
@@ -747,13 +805,32 @@ class PortfolioCreator:
             if not metrics_path.exists():
                 logging.warning(f"Metrics file not found for config {config_idx}, fold {fold}")
                 continue
-                
-            metrics_df = pd.read_csv(metrics_path)
+            
+            # Try to read best-so-far version first (for future runs)
+            best_so_far_path = metrics_path.parent / "metrics_best-so-far.csv"  # TODO @Diane: Implement this for NePS runs!
+            has_best_so_far_file = best_so_far_path.exists()
+            
+            if has_best_so_far_file:
+                # Use pre-computed best-so-far file (already transformed)
+                metrics_df = pd.read_csv(best_so_far_path)
+                logging.debug(f"Using pre-computed best-so-far metrics for config {config_idx}, fold {fold}")
+                # Extract metric values directly (already in best-so-far format)
+                val_metrics = metrics_df[metrics_df["phase"] == "val"][self.target_metric].values
+            else:
+                # Fallback: Transform on-the-fly from regular metrics.csv
+                metrics_df = pd.read_csv(metrics_path)
+                logging.debug(f"Transforming metrics to best-so-far for config {config_idx}, fold {fold}")
+                # Transform to best-so-far curve
+                val_metrics = self._transform_to_best_so_far(metrics_df, self.target_metric)
+            
             if self.target_metric not in metrics_df.columns:
                 logging.error(f"Metric '{self.target_metric}' not found in columns: {metrics_df.columns}")
                 continue
-                
-            val_metrics = metrics_df[metrics_df["phase"] == "val"][self.target_metric].values
+            
+            # Convert from [0, 1] range to percentage [0, 100] if needed
+            if len(val_metrics) > 0 and val_metrics.max() <= 1.0:
+                val_metrics = val_metrics * 100
+            
             fold_curves.append(val_metrics)
             
         return fold_curves
@@ -1005,3 +1082,4 @@ def main(config: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()  # pylint: disable=no-value-for-parameter
+
