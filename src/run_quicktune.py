@@ -130,7 +130,9 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             raise ValueError(f"Unsupported 2D dataset: {experimental_setting.data.dataset}")
 
     elif dimensionality == "3d":
-        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist"]:
+        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", 
+                                                  "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
+                                                  "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
 
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
@@ -579,15 +581,16 @@ def main(experimental_setting: DictConfig) -> None:
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
-    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist"]:  # TODO @Diane: Fix placeholder values!
-        # Use portfolio meta-features for 3D datasets
+    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist",
+                                                "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
+                                                "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
+        # Use portfolio meta-features for 3D datasets (WORC and MedMNIST3D)
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
             path_root=Path(experimental_setting.data.path) / experimental_setting.data.dataset,
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
     else:
-        # TODO @Diane: Update custom_extract_image_dataset_metafeat() to work for all our 3D datasets
         raise NotImplementedError(f"Unknown dataset: {experimental_setting.data.dataset}")
 
     # Add output directory to trial info
