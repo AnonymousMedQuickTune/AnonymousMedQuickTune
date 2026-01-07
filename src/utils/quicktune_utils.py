@@ -186,20 +186,33 @@ def custom_extract_image_dataset_metafeat(
     path_root = Path(path_root)
     path_root = path_root.expanduser()  # expands ~ to home directory
     path_root = path_root.resolve()  # convert to an absolute path
-    if not path_root.exists():
-        raise ValueError(f"The specified path does not exist: {path_root}")
-    if not path_root.is_dir():
-        raise ValueError(f"The specified path is not a directory: {path_root}")
+    
+    # Extract dataset name from path
+    dataset_name = path_root.name
+    
+    # Check if this is a MedMNIST3D dataset (these don't have a separate directory)
+    medmnist3d_datasets = ['organmnist3d', 'nodulemnist3d', 'adrenalmnist3d', 
+                           'fracturemnist3d', 'vesselmnist3d', 'synapsemnist3d']
+    is_medmnist3d = dataset_name.lower() in medmnist3d_datasets
+    
+    # For MedMNIST3D datasets, skip path validation and use hardcoded meta-features
+    if not is_medmnist3d:
+        if not path_root.exists():
+            raise ValueError(f"The specified path does not exist: {path_root}")
+        if not path_root.is_dir():
+            raise ValueError(f"The specified path is not a directory: {path_root}")
 
     num_samples = 0
     num_classes = 0
     num_features = 224
     num_channels = 3
 
-    # Check if dataset is pre-split
-    train_path = path_root / train_split
-    val_path = path_root / val_split
-    is_presplit = train_path.exists() or val_path.exists()
+    # Check if dataset is pre-split (only for non-MedMNIST3D datasets)
+    is_presplit = False
+    if not is_medmnist3d:
+        train_path = path_root / train_split
+        val_path = path_root / val_split
+        is_presplit = train_path.exists() or val_path.exists()
 
     if is_presplit:
         # QuickTune's default extract_image_dataset_metafeat() implementation
@@ -337,8 +350,15 @@ def custom_extract_image_dataset_metafeat(
         "total_num_samples": total_num_samples,
     }
 
+    # For MedMNIST3D datasets, data-dir should point to the parent directory (data.path)
+    # since the dataset files are stored directly in data.path, not in a subdirectory
+    if is_medmnist3d:
+        data_dir = str(path_root.parent)  # Use parent directory (e.g., datasets/)
+    else:
+        data_dir = str(path_root)  # Use the dataset directory (e.g., datasets/lipo)
+    
     trial_info = {
-        "data-dir": str(path_root),
+        "data-dir": data_dir,
         "train-split": train_split,
         "val-split": val_split,
         "num-classes": num_classes,
