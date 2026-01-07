@@ -585,8 +585,20 @@ def main(experimental_setting: DictConfig) -> None:
                                                 "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
                                                 "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
         # Use portfolio meta-features for 3D datasets (WORC and MedMNIST3D)
+        # For MedMNIST3D datasets, use data.path directly (they don't have separate subdirectories)
+        # For WORC datasets, use data.path / dataset_name (they have separate subdirectories)
+        medmnist3d_datasets = ["organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
+                              "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]
+        if experimental_setting.data.dataset in medmnist3d_datasets:
+            # MedMNIST3D: use data.path directly, dataset name is extracted from path_root.name
+            # We create a dummy path with the dataset name so custom_extract_image_dataset_metafeat can identify it
+            path_root = Path(experimental_setting.data.path) / experimental_setting.data.dataset
+        else:
+            # WORC datasets: use data.path / dataset_name
+            path_root = Path(experimental_setting.data.path) / experimental_setting.data.dataset
+        
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
-            path_root=Path(experimental_setting.data.path) / experimental_setting.data.dataset,
+            path_root=path_root,
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
