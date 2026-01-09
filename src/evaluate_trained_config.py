@@ -497,7 +497,12 @@ def evaluate_config_on_validation_set_ensemble(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if framework == "quicktune":
-        model_type = hyperparameters["model"]
+        # For QuickTune, check if model is in hyperparameters (some portfolios only have training hyperparameters)
+        if "model" in hyperparameters:
+            model_type = hyperparameters["model"]
+        else:
+            # Use model from experimental_setting if not in hyperparameters
+            model_type = experimental_setting.model.type
     elif framework == "neps":
         model_type = experimental_setting.model.type
     else:
@@ -846,8 +851,14 @@ def evaluate_config_on_test_set(
         
         # Get model type from hyperparameters or experimental_setting
         if framework == "quicktune":
-            model_type = hyperparameters["model"]  # For QuickTune
-            print(f"\nQuickTune selected model: {model_type}\n")
+            # For QuickTune, check if model is in hyperparameters (some portfolios only have training hyperparameters)
+            if "model" in hyperparameters:
+                model_type = hyperparameters["model"]
+                print(f"\nQuickTune selected model: {model_type}\n")
+            else:
+                # Use model from experimental_setting if not in hyperparameters
+                model_type = experimental_setting.model.type
+                print(f"\nQuickTune using model from experimental_setting: {model_type}\n")
         elif framework == "neps":
             model_type = experimental_setting.model.type  # For NePS
             print(f"\nNePS selected model: {model_type}\n")

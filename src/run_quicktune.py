@@ -248,14 +248,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         # Update experimental_setting to match the selected model type
         experimental_setting.model.type = hyperparameters["model"]
         print(f"\n[Model Type Sync] Updated experimental_setting.model.type to: {hyperparameters['model']}\n")
-    elif experimental_setting.qt.use_medical_portfolio:
-        # If using portfolio, model should always be in hyperparameters
-        raise ValueError(
-            "Model type not found in hyperparameters when using medical portfolio. "
-            "This indicates a configuration error. Please check portfolio setup."
-        )
     else:
-        # For non-portfolio configs, use the default from experimental_setting
+        # For portfolios without model hyperparameter or non-portfolio configs, use the default from experimental_setting
         print(f"\n[Model Type Sync] Using default model type from config: {experimental_setting.model.type}\n")
 
     # Calculate total inner folds (repeats * splits) for repeated stratified K-fold cross-validation
@@ -690,15 +684,21 @@ def main(experimental_setting: DictConfig) -> None:
             # Load portfolio data
             portfolio = PortfolioManager.load(experimental_setting.portfolio_dir)
             
-            # Extract unique model types from the portfolio
-            model_types = portfolio.pipeline_df['model'].unique().tolist()
-            print(f"\nAvailable models in portfolio: {model_types}\n")
+            # Extract unique model types from the portfolio if model column exists
+            # Some portfolios only contain training hyperparameters without model selection
+            has_model_in_portfolio = "model" in portfolio.pipeline_df.columns
+            if has_model_in_portfolio:
+                model_types = portfolio.pipeline_df['model'].unique().tolist()
+                print(f"\nAvailable models in portfolio: {model_types}\n")
+            else:
+                print(f"\nPortfolio does not contain 'model' hyperparameter - will use model from experimental_setting\n")
             
             # Create a fresh configspace for this CV fold
             cv_configspace = ConfigSpaceBuilder.from_yaml(pipeline_space)
             
             # Add model as a categorical hyperparameter to the configspace if it's not already there
-            if "model" not in cv_configspace:
+            # Only add if model exists in portfolio
+            if has_model_in_portfolio and "model" not in cv_configspace:
                 model_param = CategoricalHyperparameter(
                     name="model",
                     choices=model_types
