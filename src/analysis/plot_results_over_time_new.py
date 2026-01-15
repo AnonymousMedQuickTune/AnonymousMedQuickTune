@@ -1982,7 +1982,8 @@ def create_performance_over_time_plot_multi(
     
     # Determine time intervals
     if time_unit == "hours":
-        time_intervals = list(range(1, 25))  # 1, 2, ..., 24 hours
+        max_time_hours = int(cost_to_spend / 3600)
+        time_intervals = list(range(1, max_time_hours + 1))  # 1, 2, ..., max_time_hours
     elif time_unit == "min":
         max_time_minutes = int(cost_to_spend / 60) + 1
         time_intervals = list(range(0, max_time_minutes + 1, 5))
@@ -2451,6 +2452,8 @@ def create_performance_over_time_plot_multi(
     dark_blue = tab10_colors[0]
     green = tab10_colors[2]
     light_blue = tab10_colors[9]
+    purple = tab10_colors[4]
+    brown = tab10_colors[5]
     
     def get_color_for_experiment(exp_name):
         """Get color based on experiment type and name."""
@@ -2462,7 +2465,12 @@ def create_performance_over_time_plot_multi(
                 return pink
         elif "neps_" in exp_name_lower:
             if "bo_" in exp_name_lower:
-                return dark_blue
+                if "autonorm" in exp_name_lower:
+                    return purple
+                elif "learning-rate" in exp_name_lower:
+                    return brown
+                else:
+                    return dark_blue
             elif "random-search_" in exp_name_lower:
                 return green
             else:
@@ -2549,8 +2557,9 @@ def create_performance_over_time_plot_multi(
     ax2.legend(fontsize=10, loc='lower right')
     ax2.grid(True, alpha=0.3)
     if time_unit == "hours":
-        ax2.set_xlim(left=1, right=24)
-        ax2.set_xticks(range(1, 25))
+        max_time_hours = int(cost_to_spend / 3600)
+        ax2.set_xlim(left=1, right=max_time_hours)
+        ax2.set_xticks(range(1, max_time_hours + 1))
     else:
         ax2.set_xlim(left=0)
     ax2.set_ylim(bottom=y_lim_min, top=y_lim_max)
