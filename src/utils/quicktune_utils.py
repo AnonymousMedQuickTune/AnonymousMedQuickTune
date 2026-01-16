@@ -368,11 +368,14 @@ def custom_extract_image_dataset_metafeat(
 
 
 class CustomCostPredictor(CostPredictor):
-    """Custom CostPredictor with modified default parameters"""
+    """Custom CostPredictor with modified default parameters and active flag support"""
     
-    def __init__(self, path: str | None = None, seed: int | None = None):
+    def __init__(self, path: str | None = None, seed: int | None = None, pipeline_space_path: str | None = None):
         # Initialize Predictor first with our name
         Predictor.__init__(self, name="medical_cost_predictor", path=path)
+        
+        # Store pipeline space path for active flag preprocessing during prediction
+        self.pipeline_space_path = pipeline_space_path
         
         # Override default parameters
         # Batch size needs to be reduced to avoid division by zero for small datasets
@@ -392,14 +395,38 @@ class CustomCostPredictor(CostPredictor):
         self.seed = seed
         self.verbosity = verbosity
         set_logger_verbosity(verbosity, logger)
+    
+    def _preprocess_predict_data(self, df: pd.DataFrame, fill_missing=True):
+        """Override to add active flags before preprocessing"""
+        from src.utils.portfolio_preprocessing import preprocess_portfolio_for_quicktune
+        
+        # Convert to DataFrame if needed
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+        
+        # Add active flags if pipeline_space_path is available
+        if self.pipeline_space_path is not None:
+            df = preprocess_portfolio_for_quicktune(
+                df=df,
+                pipeline_space_path=self.pipeline_space_path,
+                add_active_flags=True,
+                handle_inactive_categorical=True,
+                inactive_categorical_value="__inactive__"
+            )
+        
+        # Call parent method
+        return super()._preprocess_predict_data(df, fill_missing=fill_missing)
 
 
 class CustomPerfPredictor(PerfPredictor):
-    """Custom PerfPredictor with modified default parameters"""
+    """Custom PerfPredictor with modified default parameters and active flag support"""
     
-    def __init__(self, path: str | None = None, seed: int | None = None):
+    def __init__(self, path: str | None = None, seed: int | None = None, pipeline_space_path: str | None = None):
         # Initialize Predictor first with our name
         Predictor.__init__(self, name="medical_perf_predictor", path=path)
+        
+        # Store pipeline space path for active flag preprocessing during prediction
+        self.pipeline_space_path = pipeline_space_path
         
         # Override default parameters
         custom_fit_params = {
@@ -427,14 +454,38 @@ class CustomPerfPredictor(PerfPredictor):
         self.seed = seed
         self.verbosity = verbosity
         set_logger_verbosity(verbosity, logger)
+    
+    def _preprocess_predict_data(self, df: pd.DataFrame, fill_missing=True):
+        """Override to add active flags before preprocessing"""
+        from src.utils.portfolio_preprocessing import preprocess_portfolio_for_quicktune
+        
+        # Convert to DataFrame if needed
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+        
+        # Add active flags if pipeline_space_path is available
+        if self.pipeline_space_path is not None:
+            df = preprocess_portfolio_for_quicktune(
+                df=df,
+                pipeline_space_path=self.pipeline_space_path,
+                add_active_flags=True,
+                handle_inactive_categorical=True,
+                inactive_categorical_value="__inactive__"
+            )
+        
+        # Call parent method
+        return super()._preprocess_predict_data(df, fill_missing=fill_missing)
 
 
 class FTPFNPerfPredictor(PerfPredictor):
     """Performance predictor using FT-PFN (like in IfBO) instead of Gaussian Process regression."""
 
-    def __init__(self, path: str | None = None, seed: int | None = None):
+    def __init__(self, path: str | None = None, seed: int | None = None, pipeline_space_path: str | None = None):
         # Initialize Predictor first with our name
         Predictor.__init__(self, name="ft_pfn_medical_perf_predictor", path=path)
+        
+        # Store pipeline space path for active flag preprocessing during prediction
+        self.pipeline_space_path = pipeline_space_path
 
         # Override default parameters
         custom_fit_params = {
@@ -462,6 +513,27 @@ class FTPFNPerfPredictor(PerfPredictor):
         self.seed = seed
         self.verbosity = verbosity
         set_logger_verbosity(verbosity, logger)
+    
+    def _preprocess_predict_data(self, df: pd.DataFrame, fill_missing=True):
+        """Override to add active flags before preprocessing"""
+        from src.utils.portfolio_preprocessing import preprocess_portfolio_for_quicktune
+        
+        # Convert to DataFrame if needed
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame(df)
+        
+        # Add active flags if pipeline_space_path is available
+        if self.pipeline_space_path is not None:
+            df = preprocess_portfolio_for_quicktune(
+                df=df,
+                pipeline_space_path=self.pipeline_space_path,
+                add_active_flags=True,
+                handle_inactive_categorical=True,
+                inactive_categorical_value="__inactive__"
+            )
+        
+        # Call parent method
+        return super()._preprocess_predict_data(df, fill_missing=fill_missing)
 
     def _get_model(self):
         """Override _get_model to return FTPFNSurrogateModel instead of default GP model"""    

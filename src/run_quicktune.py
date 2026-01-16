@@ -33,6 +33,7 @@ from src.utils.quicktune_utils import (
     extract_and_pad_learning_curve,
     convert_numpy_to_python,
 )
+from src.utils.portfolio_preprocessing import preprocess_portfolio_for_quicktune
 from src.utils.experiment_status_logger import ExperimentStatusLogger, InnerFoldProgressLogger
 from src.evaluate_trained_config import evaluate_config_on_test_set
 from src.utils.common_utils import cleanup_training_artifacts
@@ -726,6 +727,16 @@ def main(experimental_setting: DictConfig) -> None:
             if "number_of_epochs" in merged_df.columns:  # TODO @Diane: double check this
                 merged_df = merged_df.drop(columns=["number_of_epochs"])
 
+            # Preprocess portfolio DataFrame for QuickTune: add active flags and handle inactive categorical parameters
+            # This is done dynamically without modifying the portfolio format
+            merged_df = preprocess_portfolio_for_quicktune(
+                df=merged_df,
+                pipeline_space_path=experimental_setting.pipeline_space,
+                add_active_flags=True,  # Add binary flags for conditional parameters
+                handle_inactive_categorical=True,  # Replace None/NaN with "__inactive__" for categorical conditional params
+                inactive_categorical_value="__inactive__"
+            )
+
             # Convert learning curves and cost data to numpy arrays for model training
             curve = portfolio.curve_df.values
             cost = portfolio.cost_df.values
@@ -778,19 +789,22 @@ def main(experimental_setting: DictConfig) -> None:
                 print("\nUse FT-PFN performance predictor\n")
                 perf_predictor = FTPFNPerfPredictor(
                     path=str(predictor_path / "ftpfn_medical_perf_predictor"),
-                    seed=experimental_setting.seed
+                    seed=experimental_setting.seed,
+                    pipeline_space_path=experimental_setting.pipeline_space
                 ).fit(X=merged_df, y=curve)
             else:
                 # Use Quicktune's default SurrogateModel that contains GPRegressionModel
                 print("\nUse Quicktune's default SurrogateModel that contains GPRegressionModel\n")
                 perf_predictor = CustomPerfPredictor(
                     path=str(predictor_path / "medical_perf_predictor"),
-                    seed=experimental_setting.seed
+                    seed=experimental_setting.seed,
+                    pipeline_space_path=experimental_setting.pipeline_space
                 ).fit(X=merged_df, y=curve)
 
             cost_predictor = CustomCostPredictor(
                 path=str(predictor_path / "medical_cost_predictor"),
-                seed=experimental_setting.seed
+                seed=experimental_setting.seed,
+                pipeline_space_path=experimental_setting.pipeline_space
             ).fit(X=merged_df, y=cost)
 
             # Save predictors
@@ -956,3 +970,4 @@ def main(experimental_setting: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()  # pylint: disable=no-value-for-parameter
+
