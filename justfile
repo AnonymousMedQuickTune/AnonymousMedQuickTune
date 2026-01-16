@@ -590,3 +590,44 @@ plot-runs-over-time-multi_new TITLE PLOT_NAME COST_TO_SPEND *EXPERIMENT_DIRS:
   fi
 
   eval "${CMD}"
+
+# Plot test and validation performance over time (wall-clock time) for multiple experiments together
+# Baseline experiments (1 config) will show the same performance for all 24 hours
+# NePS experiments will show the best validation performance at each hour
+# Example: just plot-neps-over-time-multi lipo_comparison 86400 experiments/Cluster/NePS/lipo/random-search_full-search-space_lipo_l40 experiments/Cluster/Baseline/lipo/densenet_baseline_lipo_l40 experiments/Cluster/Baseline/lipo/resnet_baseline_lipo_l40
+# Example with y-axis limits: just plot-neps-over-time-multi lipo_zoom 86400 Y_MIN=60 Y_MAX=90 experiments/Cluster/NePS/lipo/random-search_full-search-space_lipo_l40
+# This will save plots to experiments/Plots/lipo_comparison.png and experiments/Plots/lipo_comparison.pdf
+plot-runs-over-time-multi_norm-baseline TITLE PLOT_NAME COST_TO_SPEND *EXPERIMENT_DIRS:
+  #!/usr/bin/env bash
+  OUTPUT_DIR="experiments/Plots"
+  mkdir -p "${OUTPUT_DIR}"
+  OUTPUT_PATH="${OUTPUT_DIR}/{{PLOT_NAME}}.png"
+
+  # Parse optional Y_MIN and Y_MAX from EXPERIMENT_DIRS
+  # They may appear as Y_MIN=value or Y_MAX=value in the arguments
+  Y_MIN_VAL=""
+  Y_MAX_VAL=""
+  EXPERIMENT_DIRS_CLEAN=""
+
+  for ARG in {{EXPERIMENT_DIRS}}; do
+    if [[ "$ARG" == Y_MIN=* ]]; then
+      Y_MIN_VAL="${ARG#Y_MIN=}"
+    elif [[ "$ARG" == Y_MAX=* ]]; then
+      Y_MAX_VAL="${ARG#Y_MAX=}"
+    else
+      EXPERIMENT_DIRS_CLEAN="$EXPERIMENT_DIRS_CLEAN $ARG"
+    fi
+  done
+
+  # Build command with optional y-axis limits
+  TITLE_VAL="{{TITLE}}"
+  CMD="python src/analysis/plot_results_over_time_norm-baseline.py${EXPERIMENT_DIRS_CLEAN} --title \"${TITLE_VAL}\" --over-time --cost-to-spend {{COST_TO_SPEND}} --normalize-to-baseline --output \"${OUTPUT_PATH}\""
+  if [ -n "${Y_MIN_VAL}" ]; then
+    CMD="${CMD} --y-min ${Y_MIN_VAL}"
+  fi
+
+  if [ -n "${Y_MAX_VAL}" ]; then
+    CMD="${CMD} --y-max ${Y_MAX_VAL}"
+  fi
+
+  eval "${CMD}"
