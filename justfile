@@ -241,6 +241,28 @@ create-multi-dataset-portfolio-cluster DATASET_SPEC PORTFOLIO_NAME:
     run_mode=Portfolio \
     hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
 
+# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio on the cluster
+create-multi-dataset-portfolio-cluster-new DATASET_SPEC PORTFOLIO_NAME:
+  python -m src.analysis.create_portfolio_cluster_new \
+    +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
+    portfolio_dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio \
+    merge_runs=true \
+    +multi_dataset=true \
+    run_mode=Portfolio \
+    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
+
+# Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio on the cluster
+create-multi-dataset-portfolio-cluster-mix DATASET_SPEC PORTFOLIO_NAME:
+  python -m src.analysis.create_portfolio_cluster_mix \
+    +dataset_spec="'{{DATASET_SPEC}}'" \
+    +portfolio_name="{{PORTFOLIO_NAME}}" \
+    portfolio_dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio \
+    merge_runs=true \
+    +multi_dataset=true \
+    run_mode=Portfolio \
+    hydra.run.dir=/work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}}/logs
+
 # example: just create-multi-dataset-portfolio-cluster "lipo:test_portfolio_1(42,43),test_portfolio_2(43,44);desmoid:test_portfolio_1(42,43),test_portfolio_2(43,44)"
 # Merge multiple NePS runs from multiple datasets into a single QuickTune portfolio (cluster)
 create-multi-dataset-portfolio-cluster-submission DATASET_SPEC:
@@ -291,7 +313,7 @@ run-3d-quicktune-cluster DATASET EXPERIMENT_NAME PORTFOLIO_DIR USE_MEDICAL_PORTF
   PORTFOLIO_DIR=/work/dlclarge1/wagnerd-medquicktune/code/MedQuickTune/experiments/Portfolio
   USE_MEDICAL_PORTFOLIO="true"
   mkdir -p /work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/
-  sbatch --exclude=dlcgpu19 \
+  sbatch --exclude=dlc2gpu10 \
     --output=/work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
     --error=/work/dlclarge1/wagnerd-medquicktune/experiments/QuickTune/{{DATASET}}/{{EXPERIMENT_NAME}}/seed_${SEED}/cluster_oe/%x.%A.%a.%N.err_out \
     --export=DATASET={{DATASET}},EXPERIMENT_NAME={{EXPERIMENT_NAME}},SEED=${SEED},PORTFOLIO_DIR={{PORTFOLIO_DIR}},USE_MEDICAL_PORTFOLIO={{USE_MEDICAL_PORTFOLIO}} \
@@ -631,3 +653,22 @@ plot-runs-over-time-multi_norm-baseline TITLE PLOT_NAME COST_TO_SPEND *EXPERIMEN
   fi
 
   eval "${CMD}"
+
+# Evaluate Surrogate Model performance on portfolio using Cross-Validation
+# Example: just evaluate-surrogate-model experiments/Cluster/Portfolio/full-portfolio_worc configs/pipeline_spaces/full_search_space.yaml
+# Example with FT-PFN (faster): just evaluate-surrogate-model experiments/Cluster/Portfolio/full-portfolio_worc configs/pipeline_spaces/full_search_space.yaml --model-type ftpfn
+# Example with GP (slower but accurate): just evaluate-surrogate-model experiments/Cluster/Portfolio/full-portfolio_worc configs/pipeline_spaces/full_search_space.yaml --model-type gp
+# Example with custom folds: just evaluate-surrogate-model experiments/Cluster/Portfolio/full-portfolio_worc configs/pipeline_spaces/full_search_space.yaml --n-folds 3
+evaluate-surrogate-model PORTFOLIO_DIR PIPELINE_SPACE *ARGS:
+  #!/usr/bin/env bash
+  PYTHONPATH=. python src/analysis/evaluate_surrogate_model.py {{PORTFOLIO_DIR}} --pipeline-space {{PIPELINE_SPACE}} {{ARGS}}
+
+# Evaluate Surrogate Model performance on portfolio using Cross-Validation (Cluster)
+# Example: just evaluate-surrogate-model-cluster full-portfolio_worc full_search_space.yaml
+# Example with FT-PFN: just evaluate-surrogate-model-cluster full-portfolio_worc full_search_space.yaml --model-type ftpfn
+# Example with custom folds: just evaluate-surrogate-model-cluster full-portfolio_worc full_search_space.yaml --n-folds 3
+evaluate-surrogate-model-cluster PORTFOLIO_NAME PIPELINE_SPACE_NAME *ARGS:
+  PYTHONPATH=. python src/analysis/evaluate_surrogate_model.py \
+    /work/dlclarge1/wagnerd-medquicktune/experiments/Portfolio/{{PORTFOLIO_NAME}} \
+    --pipeline-space configs/pipeline_spaces/{{PIPELINE_SPACE_NAME}} \
+    {{ARGS}}
