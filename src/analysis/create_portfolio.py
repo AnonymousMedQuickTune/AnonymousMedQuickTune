@@ -49,7 +49,7 @@ DEFAULT_META_FEATURES = {
 }
 
 # Mapping of dataset names to modality
-MRI_DATASETS = ["lipo", "desmoid", "liver"]
+MRI_DATASETS = ["lipo", "desmoid", "liver", "hcc", "bflair"]
 CT_DATASETS = ["brain_tumor", "gist"]  # Add other CT datasets as needed
 
 # Integer parameter names that should be converted to int

@@ -30,7 +30,7 @@ from src.classification_3d.models_3d import get_3d_model
 
 
 # Configuration
-DATASETS = ["gist", "lipo", "melanoma", "liver", "desmoid", "crlm"]
+DATASETS = ["gist", "lipo", "melanoma", "liver", "desmoid", "crlm", "hcc", "bflair"]
 MODELS = ["densenet", "resnet", "efficientnet", "swin_unetr", "vit"]
 SEARCH_SPACES = {
     "densenet": "configs/pipeline_spaces/densenet.yaml",
@@ -412,6 +412,8 @@ def get_dataset_num_samples(dataset_name: str, voxel_calculation: str, data_path
             "liver": 186,
             "desmoid": 203,
             "crlm": 150,
+            "hcc" : 500,
+            "bflair": 360
         }
         num_samples = estimates.get(dataset_name, 100)
         print(f"    Warning: Using estimate for num_samples: {num_samples}")

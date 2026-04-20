@@ -49,6 +49,8 @@ def extract_worc_3d_slice(dataset_name, sample_name=None, slice_idx=None, axis=0
     dataset_map = {
         'lipo': 'lipo_cleaned',
         'gist': 'gist_cleaned',
+        'hcc': 'hcc_cleaned',
+        'bflair': 'bflair_cleaned',
         'desmoid': 'desmoid_cleaned',
         'liver': 'liver_cleaned',
         'crlm': 'crlm_cleaned',
@@ -245,7 +247,7 @@ def main():
         '--dataset',
         type=str,
         required=True,
-        choices=['lipo', 'gist', 'desmoid', 'liver', 'crlm'],
+        choices=['lipo', 'gist', 'desmoid', 'liver', 'crlm', 'hcc', 'bflair'],
         help='Name of the WORC dataset'
     )
     parser.add_argument(

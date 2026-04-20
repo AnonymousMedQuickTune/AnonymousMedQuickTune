@@ -250,6 +250,24 @@ def custom_extract_image_dataset_metafeat(
                 input_size_d = 32
                 modality = "MRI"
                 total_num_samples = 114
+            elif dataset_name == "hcc":
+                dataset = "hcc"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 32
+                modality = "MRI"
+                total_num_samples = 497
+            elif dataset_name == "bflair":
+                dataset = "bflair"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 32
+                modality = "MRI"
+                total_num_samples = 497
             elif dataset_name == "liver":
                 dataset = "liver"
                 num_classes = 2

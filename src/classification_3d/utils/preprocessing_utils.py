@@ -725,7 +725,7 @@ def resize_worcdatabase_images(image, segmentation, dataset_name):
     # Get SimpleITK size for consistent printing (x, y, z format)
     sitk_size_before = image.GetSize()  # (x, y, z)
     
-    if dataset_name == "lipo" or dataset_name == "desmoid" or dataset_name == "liver":
+    if dataset_name == "lipo" or dataset_name == "desmoid" or dataset_name == "liver" or dataset_name == "hcc" or dataset_name == "bflair":
         # Calculate target size:
         # Note: img_array.shape is (z, y, x), so:
         #   - Index 0 = z (depth) - resize to 32

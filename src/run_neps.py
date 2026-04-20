@@ -676,7 +676,9 @@ def main(experimental_setting: DictConfig) -> None:
         else:
             run(
                 pipeline_space=pipeline_space,  # Hyperparameter search space
-                evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, **kwargs: run_pipeline(
+                evaluate_pipeline=lambda pipeline_directory, previous_pipeline_directory, 
+                **kwargs: run_pipeline
+                (
                     pipeline_directory=pipeline_directory,
                     previous_pipeline_directory=previous_pipeline_directory,
                     experimental_setting=experimental_setting,

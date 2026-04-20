@@ -1,0 +1,205 @@
+# Full search space with conditional hyperparameters
+# All training parameters are always optimized
+# Model-specific parameters are only optimized when the corresponding model is selected
+
+# ============================================================================
+# Training parameters (always optimized)
+# ============================================================================
+# voxel_calculation:
+#   type: categorical
+#   choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
+#   # prior: "median"
+#   # prior_confidence: "low"
+
+model:
+  type: categorical
+  choices: ["densenet", "resnet"]
+  # prior: "densenet"
+  # prior_confidence: "low"
+
+learning_rate:
+  type: float
+  log: true
+  lower: 1e-5
+  upper: 1e-2
+  # prior: 1e-4
+  # prior_confidence: "low"
+
+gradient_accumulation_steps: 
+  type: int
+  lower: 1
+  upper: 2  # limit to max effective batch size (batch_size × gradient_accumulation_steps ≤ 8)
+  # prior: 1
+  # prior_confidence: "low"
+  
+optimizer_type:
+  type: categorical
+  choices: ["adam", "adamw", "sgd"]
+  # prior: "adam"
+  # prior_confidence: "low"
+
+weight_decay:
+  type: float
+  log: true
+  lower: 1e-6
+  upper: 1e-3
+  # prior: 1e-6
+  # prior_confidence: "low"
+
+scheduler_type:
+  type: categorical
+  choices: ["warmup", "cosine_warmup"]
+  # prior: "warmup"
+  # prior_confidence: "low"
+
+warmup_epochs:
+  type: int
+  lower: 0
+  upper: 5
+  # prior: 0
+  # prior_confidence: "low"
+
+label_smoothing:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.2
+  # prior: 0.0
+  # prior_confidence: "low"
+
+mixup_alpha:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.4
+  # prior: 0.0
+  # prior_confidence: "low"
+
+batch_size:
+  type: int
+  lower: 1
+  upper: 4
+  # prior: 1
+  # prior_confidence: "low"
+
+# ============================================================================
+# DenseNet-specific parameters (only optimized when model == "densenet")
+# ============================================================================
+densenet_type:
+  type: categorical
+  choices: ["densenet121", "densenet169", "densenet201"]
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: "densenet121"
+  # prior_confidence: "low"
+
+remove_last_block:
+  type: categorical
+  choices: [True, False]
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: "False"
+  # prior_confidence: "low"
+
+init_features:
+  type: int
+  lower: 16
+  upper: 64
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 64
+  # prior_confidence: "low"
+
+growth_rate:
+  type: int
+  lower: 12
+  upper: 32
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 32
+  # prior_confidence: "low"
+
+bn_size:
+  type: int
+  lower: 1
+  upper: 4
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 4
+  # prior_confidence: "low"
+
+# Note: act is shared between both models, so we keep it as a common parameter
+# dropout_prob is only for DenseNet (ResNet doesn't have it in the original config)
+dropout_prob:
+  type: float
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 0.0
+  # prior_confidence: "low"
+
+# ============================================================================
+# ResNet-specific parameters (only optimized when model == "resnet")
+# ============================================================================
+resnet_type:
+  type: categorical
+  choices: ["resnet18", "resnet34", "resnet50"]
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: "resnet18"
+  # prior_confidence: "low"
+
+conv1_t_size:
+  type: int
+  lower: 3
+  upper: 7
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 7
+  # prior_confidence: "low"
+
+conv1_t_stride:
+  type: int
+  lower: 1
+  upper: 2
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 1
+  # prior_confidence: "low"
+
+no_max_pool:
+  type: categorical
+  choices: [True, False]
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: False
+  # prior_confidence: "low"
+
+widen_factor:
+  type: float
+  lower: 1.0
+  upper: 2.0
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 1.0
+  # prior_confidence: "low"
+
+# Note: act is shared between both models, so we define it as a common parameter
+# that is always optimized (not conditional)
+act:
+  type: categorical
+  choices: ["relu", "leakyrelu", "gelu"]
+  # prior: "relu"
+  # prior_confidence: "low"

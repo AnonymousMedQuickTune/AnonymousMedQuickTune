@@ -2,6 +2,7 @@ import os
 import random
 import hashlib
 import warnings
+from monai.utils.misc import set_determinism
 
 # CRITICAL: Set environment variables BEFORE importing PyTorch
 # These must be set before CUDA is initialized (which happens on first torch import)
@@ -364,6 +365,7 @@ def set_seed(seed):
     random.seed(seed)  # Python's random
     np.random.seed(seed)  # NumPy
     torch.manual_seed(seed)  # PyTorch (CPU)
+    # set_determinism(seed=seed) # MONAI
     
     # Set CUDA seeds (must be done after environment variables are set)
     if torch.cuda.is_available():

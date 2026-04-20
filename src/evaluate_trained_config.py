@@ -585,7 +585,7 @@ def evaluate_config_on_validation_set_ensemble(
         # normalization is done per image/patient in preprocessing. This is expected.
         # For CT datasets, normalization_stats should be available from the saved file.
         dataset_name = experimental_setting.data.dataset.lower()
-        is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver"]
+        is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver", "hcc", "bflair"]
         
         if normalization_stats is None:
             if is_mri_dataset:
@@ -901,7 +901,7 @@ def evaluate_config_on_test_set(
             # For MRI datasets (lipo, desmoid, liver), normalization_stats is None because
             # normalization is done per image/patient in preprocessing. This is expected.
             dataset_name = experimental_setting.data.dataset.lower()
-            is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver"]
+            is_mri_dataset = dataset_name in ["lipo", "desmoid", "liver", "hcc", "bflair"]
             
             if normalization_stats is None:
                 if is_mri_dataset:

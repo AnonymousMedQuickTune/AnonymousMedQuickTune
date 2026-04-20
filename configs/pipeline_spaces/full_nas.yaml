@@ -1,0 +1,412 @@
+# Full search space with conditional hyperparameters
+# All training parameters are always optimized
+# Model-specific parameters are only optimized when the corresponding model is selected
+
+# ============================================================================
+# Training parameters (always optimized)
+# ============================================================================
+# voxel_calculation:
+#   type: categorical
+#   choices: ["mean", "median", "isotropic", "volumetric_isotropic"]
+#   # prior: "median"
+#   # prior_confidence: "low"
+
+model:
+  type: categorical
+  choices: ["densenet", "resnet", "efficientnet", "vit", "swin_unetr"]
+  # prior: "densenet"
+  # prior_confidence: "low"
+
+learning_rate:
+  type: float
+  log: true
+  lower: 1e-5
+  upper: 1e-2
+  # prior: 1e-4
+  # prior_confidence: "low"
+
+gradient_accumulation_steps: 
+  type: int
+  lower: 1
+  upper: 2  # limit to max effective batch size (batch_size × gradient_accumulation_steps ≤ 8)
+  # prior: 1
+  # prior_confidence: "low"
+  
+optimizer_type:
+  type: categorical
+  choices: ["adam", "adamw", "sgd"]
+  # prior: "adam"
+  # prior_confidence: "low"
+
+weight_decay:
+  type: float
+  log: true
+  lower: 1e-6
+  upper: 1e-3
+  # prior: 1e-6
+  # prior_confidence: "low"
+
+scheduler_type:
+  type: categorical
+  choices: ["warmup", "cosine_warmup"]
+  # prior: "warmup"
+  # prior_confidence: "low"
+
+warmup_epochs:
+  type: int
+  lower: 0
+  upper: 5
+  # prior: 0
+  # prior_confidence: "low"
+
+label_smoothing:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.2
+  # prior: 0.0
+  # prior_confidence: "low"
+
+mixup_alpha:
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.4
+  # prior: 0.0
+  # prior_confidence: "low"
+
+batch_size:
+  type: int
+  lower: 1
+  upper: 4
+  # prior: 1
+  # prior_confidence: "low"
+
+# ============================================================================
+# DenseNet-specific parameters (only optimized when model == "densenet")
+# ============================================================================
+densenet_type:
+  type: categorical
+  choices: ["densenet121", "densenet169", "densenet201"]
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: "densenet121"
+  # prior_confidence: "low"
+
+remove_last_block:
+  type: categorical
+  choices: [True, False]
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: "False"
+  # prior_confidence: "low"
+
+init_features:
+  type: int
+  lower: 16
+  upper: 64
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 64
+  # prior_confidence: "low"
+
+growth_rate:
+  type: int
+  lower: 12
+  upper: 32
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 32
+  # prior_confidence: "low"
+
+bn_size:
+  type: int
+  lower: 1
+  upper: 4
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 4
+  # prior_confidence: "low"
+
+# Note: act is shared between both models, so we keep it as a common parameter
+# dropout_prob is only for DenseNet (ResNet doesn't have it in the original config)
+dropout_prob:
+  type: float
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "densenet"
+  # prior: 0.0
+  # prior_confidence: "low"
+
+# ============================================================================
+# ResNet-specific parameters (only optimized when model == "resnet")
+# ============================================================================
+resnet_type:
+  type: categorical
+  choices: ["resnet18", "resnet34", "resnet50"]
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: "resnet18"
+  # prior_confidence: "low"
+
+conv1_t_size:
+  type: int
+  lower: 3
+  upper: 7
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 7
+  # prior_confidence: "low"
+
+conv1_t_stride:
+  type: int
+  lower: 1
+  upper: 2
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 1
+  # prior_confidence: "low"
+
+no_max_pool:
+  type: categorical
+  choices: [True, False]
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: False
+  # prior_confidence: "low"
+
+widen_factor:
+  type: float
+  lower: 1.0
+  upper: 2.0
+  condition:
+    parent: "model"
+    value: "resnet"
+  # prior: 1.0
+  # prior_confidence: "low"
+
+# Note: act is shared between both models, so we define it as a common parameter
+# that is always optimized (not conditional)
+act:
+  type: categorical
+  choices: ["relu", "leakyrelu", "gelu"]
+  # prior: "relu"
+  # prior_confidence: "low"
+
+# ============================================================================
+# ViT-specific parameters (only optimized when model == "vit")
+# ============================================================================
+# lower values > more tokens > more VRAM
+patch_size_0:  # default = 16 for patch_size=(16, 16, 16/2)= (16, 16, 8)
+  type: int
+  lower: 16
+  upper: 32
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 16
+  # prior_confidence: "low"
+
+hidden_size_multiplier:  # default = 64 > hidden_size = 64 * 12 = 768
+  type: int
+  lower: 32
+  upper: 64
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 64
+  # prior_confidence: "low"
+
+# mlp_dim = hidden_size * mlp_dim_multiplier
+mlp_dim_multiplier:  # default = 4
+  type: categorical
+  choices: [2, 4]
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 4
+  # prior_confidence: "low"
+
+num_layers:  # default = 12
+  type: int
+  lower: 4
+  upper: 12
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 12
+  # prior_confidence: "low"
+
+# hidden_size % num_heads == 0; We'll make hidden_size % 12 = 0
+num_heads:  # default = 6 (Decreased from 12 to 6 due to memory reasons)
+  type: categorical
+  choices: [3, 4, 6]  # 12 > CUDA error
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 6
+  # prior_confidence: "low"
+
+pos_embed_type:  # default = "learnable"
+  type: categorical
+  choices: ['none', 'sincos', 'learnable']
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: "learnable"
+  # prior_confidence: "low"
+
+dropout_prob:  # default = 0.0
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "vit"
+  # prior: 0.0
+  # prior_confidence: "low"
+  
+qkv_bias:  # default = False
+  type: categorical
+  choices: [True, False]
+  condition:
+    parent: "model"
+    value: "vit"
+  #  prior: False
+  # prior_confidence: "low"
+
+# ============================================================================
+# EfficientNet-specific parameters (only optimized when model == "efficientnet")
+# ============================================================================
+efficientnet_type:  # default = "efficientnet-b0"
+  type: categorical
+  choices: ["efficientnet-b0", "efficientnet-b1", "efficientnet-b2"]
+  condition:
+    parent: "model"
+    value: "efficientnet"
+  # prior: "efficientnet-b0"
+  # prior_confidence: "low"
+
+# ============================================================================
+# SwinUnetr-specific parameters (only optimized when model == "swin_unetr")
+# ============================================================================
+# lower values > more tokens > more VRAM
+patch_size:  # default = 2
+  type: categorical
+  choices: [2, 4]
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 2
+  # prior_confidence: "low"
+
+depths_0:  # default = 2 -> depths = (2, 2, 2, 2)
+  type: int
+  lower: 2
+  upper: 4
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 2
+  # prior_confidence: "low"
+
+# num_heads per stage: must satisfy (feature_size * 2^s) % num_heads[s] == 0
+# Stage channels: (f, 2f, 4f, 8f) for feature_size f
+# Common divisors: 1, 2, 3, 4, 6, 8, 12, 24 work well for f=24
+num_heads_0:  # Stage 0: feature_size channels, default = 3
+  type: categorical
+  choices: [3, 4, 6, 8, 12]
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 3
+  # prior_confidence: "low"
+
+num_heads_1:  # Stage 1: 2*feature_size channels, default = 6
+  type: categorical
+  choices: [4, 6, 8, 12, 16]
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 6
+  # prior_confidence: "low"
+
+num_heads_2:  # Stage 2: 4*feature_size channels, default = 12
+  type: categorical
+  choices: [6, 8, 12, 16, 24]
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 12
+  # prior_confidence: "low"
+
+num_heads_3:  # Stage 3: 8*feature_size channels, default = 24
+  type: categorical
+  choices: [8, 12, 16, 24, 32]
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 24
+  # prior_confidence: "low"
+
+# window_size is fixed to (4, 4, 1) to minimize Z padding across stages
+# This works well for anisotropic medical 3D volumes (Z << X, Y)
+# Parametrization is NOT recommended due to complex constraints:
+# - window_size must be <= token_resolution at each stage
+# - Token resolution depends on spatial_size and patch_size (dataset-dependent)
+# - (4, 4, 1) minimizes padding/masking and matches stage 3 where Z often = 1
+
+mlp_ratio:  # default = 4.0
+  type: float
+  lower: 2.0
+  upper: 4.0
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 4.0
+  # prior_confidence: "low"
+
+dropout_prob:  # default = 0.0
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 0.0
+  # prior_confidence: "low"
+
+attn_drop_rate:  # default = 0.0
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 0.0
+  # prior_confidence: "low"
+
+dropout_path_rate:  # default = 0.0
+  type: float
+  log: false
+  lower: 0.0
+  upper: 0.3
+  condition:
+    parent: "model"
+    value: "swin_unetr"
+  # prior: 0.0
+  # prior_confidence: "low"

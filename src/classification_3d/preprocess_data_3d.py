@@ -407,7 +407,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         images_list = images  # List of numpy arrays
         
     elif use_smart_preprocessing:
-        if dataset_name in ["lipo", "desmoid", "liver"]:
+        if dataset_name in ["lipo", "desmoid", "liver", "hcc", "bflair"]:
             is_mri = True
         elif dataset_name in ["gist", "crlm", "melanoma"]:
             is_mri = False  # CT dataset
@@ -1013,7 +1013,7 @@ def get_kfold_dataloaders(
                     f.write(f"Percentiles (for clipping): None (no clipping)\n")
                 f.write(f"\nSource: {stats_source}\n")
             print(f"Normalization stats saved to: {normalization_stats_file}")
-    elif dataset_name in ["lipo", "desmoid", "liver"]:  # MRI datasets
+    elif dataset_name in ["lipo", "desmoid", "liver", "hcc", "bflair"]:  # MRI datasets
         # Normalization is done in the preprocessing per image/patient individually
         normalization_stats = None
     else:

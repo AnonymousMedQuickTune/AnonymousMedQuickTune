@@ -131,7 +131,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             raise ValueError(f"Unsupported 2D dataset: {experimental_setting.data.dataset}")
 
     elif dimensionality == "3d":
-        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", 
+        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair" 
                                                   "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
                                                   "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
 
@@ -576,7 +576,7 @@ def main(experimental_setting: DictConfig) -> None:
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
-    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist",
+    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair"
                                                 "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
                                                 "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
         # Use portfolio meta-features for 3D datasets (WORC and MedMNIST3D)
