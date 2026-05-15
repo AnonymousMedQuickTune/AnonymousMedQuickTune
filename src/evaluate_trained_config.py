@@ -430,7 +430,7 @@ def evaluate_fold(fold, test_loader, model, experimental_setting, hyperparameter
     
     return fold_probabilities, fold_targets
 
-# TODO @Diane: double-check this function
+
 def evaluate_config_on_validation_set_ensemble(
     pipeline_directory,
     experimental_setting,

@@ -87,7 +87,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             - config-id (int): Trial identifier
             - status (str): Trial status ('SUCCESS' or 'FAILED')
             - score (float): Performance score (scaled to 0-100 if <= 1.0)
-            - cost (float): Evaluation time in seconds  # TODO @Diane: Checkout whether to take time in sec or #epochs (early stopping)
+            - cost (float): Evaluation time in seconds  
             - fidelity (int): Fidelity level used
             - config (dict): Hyperparameter configuration
     
@@ -400,7 +400,7 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
                         create_plots([experiment_dir], all_validation_performances, all_test_performances)
                         
                         print(f"Performance plots generated successfully!\n")
-                    else:  # TODO @Diane: del, as probably not needed
+                    else:  
                         # NePS structure - use existing plotting function
                         print(f"\n{'='*100}")
                         print(f"GENERATING PERFORMANCE PLOTS (NePS)")
@@ -422,10 +422,8 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
         info_dict = result.get("extra", {})
         final_metrics = info_dict.get("all_folds_final_metrics", {})
 
-        # TODO @Diane: check if QuickTune is minimizing or maximizing its objective function
+       
         score = final_metrics.get(experimental_setting.metric, 0.0)
-
-        # TODO @Diane: Also log other metrics for QuickTune
 
         if isinstance(score, (int, float)) and score <= 1.0:
             score = score * 100
@@ -530,9 +528,9 @@ def main(experimental_setting: DictConfig) -> None:
         experimental_setting.max_evaluations = 2
         experimental_setting.cv_inner_folds_repeats = 1
         experimental_setting.cv_inner_folds_splits = 2
-        experimental_setting.pipeline_space = "configs/pipeline_spaces/full_search_space.yaml"  # TODO @Diane: Update this
+        experimental_setting.pipeline_space = "configs/pipeline_spaces/full_search_space.yaml"  
         experimental_setting.training.number_of_epochs = 2
-        # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  # TODO @Diane: Update this!
+        # Set number of outer CV folds for developer mode: 2 repeats * 2 splits per repeat = 4 total outer folds  
         experimental_setting.cv_outer_folds_repeats = 1  # 2 repeats
         experimental_setting.cv_outer_folds_splits = 2   # 3 splits per repeat
 
@@ -569,8 +567,7 @@ def main(experimental_setting: DictConfig) -> None:
     # NOTE: QuickTune's default extract_image_dataset_metafeat() not working for all datasets:
     # https://github.com/automl/quicktunetool/blob/main/src/qtt/finetune/image/classification/utils.py
     # Therefore we use our custom implementation.
-    # TODO @Diane: update custom_extract_image_dataset_metafeat() to work for all datasets
-    # TODO @Diane: think about adding more metafeatures such as modality, class distribution
+    
     if experimental_setting.data.dataset == "brain_tumor":
         trial_info, metafeat = custom_extract_image_dataset_metafeat( 
             path_root=Path(experimental_setting.data.path) / "brain_tumor",
@@ -671,7 +668,6 @@ def main(experimental_setting: DictConfig) -> None:
         cv_experiment_dir = Path(experimental_setting.experiment_base_dir) / f"cv_outer_fold_{cv_outer_fold}"
         cv_experiment_dir.mkdir(parents=True, exist_ok=True)
         
-        # TODO @Diane: double check this!
         # Mark outer fold as in progress
         status_logger.main_status['outer_folds_progress'][cv_outer_fold + 1] = {
             'status': 'in_progress',
@@ -726,7 +722,7 @@ def main(experimental_setting: DictConfig) -> None:
 
             # Only drop number_of_epochs if it exists in the dataframe as it's not a hyperparameter and will be set later
             # Number_of_epochs is a fidelity parameter that was needed in the configspace for NePS
-            if "number_of_epochs" in merged_df.columns:  # TODO @Diane: double check this
+            if "number_of_epochs" in merged_df.columns:  
                 merged_df = merged_df.drop(columns=["number_of_epochs"])
 
             # Preprocess portfolio DataFrame for QuickTune: add active flags and handle inactive categorical parameters
@@ -779,9 +775,6 @@ def main(experimental_setting: DictConfig) -> None:
             if actual_curve_length == expected_epochs:
                 print(f"[Portfolio Validation] Learning curve length matches expected epochs\n")
 
-            # TODO @Diane: check parameters like learning_rate_init, batchsize for predictors
-            # TODO @Diane: Update batchsize parameter in @CustomCostPredictor and @CustomPerfPredictor when portfolio is ready
-            # NOTE: batchsize is set to 1 for now to avoid division by zero for small portfolio
             # Create predictors with proper paths in experiment_base_dir
             predictor_path = cv_experiment_dir / "predictors"
             predictor_path.mkdir(parents=True, exist_ok=True)
@@ -831,7 +824,7 @@ def main(experimental_setting: DictConfig) -> None:
         print("\nOptimizer created\n")
         
         # STEP 3: Setup optimizer with target dataset
-        n_of_configs_to_create = 128  # TODO @Diane: Check this out!
+        n_of_configs_to_create = 128  
         optimizer.setup(n=n_of_configs_to_create, metafeat=metafeat)
         # TODO: check deeper how metafeat is used in optimizer.setup() + maybe add class distribution?
         
@@ -860,7 +853,6 @@ def main(experimental_setting: DictConfig) -> None:
                     config_id = trial.get("config-id", 0)
                     print(f"\nSampling configuration {config_id} from optimizer")
 
-                    # TODO @Diane: check if this is needed
                     optimizer.ante()
 
                     # Get configuration from optimizer

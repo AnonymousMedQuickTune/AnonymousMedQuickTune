@@ -374,7 +374,7 @@ def custom_extract_image_dataset_metafeat(
             raise ValueError(f"Could not process dataset directory: {str(e)}")
 
     # Output as needed for QuickTune
-    # TODO @Diane: for medical datasets might be good to add class distribution?: brain_tumor: {0: 98, 1: 155}
+    
     metafeat = {
         "dataset": dataset,
         "num_classes": num_classes,
@@ -476,7 +476,7 @@ class CustomPerfPredictor(PerfPredictor):
         }
         custom_refit_params = {
             "learning_rate_init": 0.001,
-            "batch_size": 2048,  # TODO: check if this works
+            "batch_size": 2048,  
             "max_iter": 50,
             "early_stop": True,
             "patience": 5,
@@ -535,7 +535,7 @@ class FTPFNPerfPredictor(PerfPredictor):
         }
         custom_refit_params = {
             "learning_rate_init": 0.001,
-            "batch_size": 2048,  # TODO: check if this works
+            "batch_size": 2048, 
             "max_iter": 50,
             "early_stop": True,
             "patience": 5,
@@ -594,7 +594,7 @@ class FTPFNPerfPredictor(PerfPredictor):
         print("\nActual FTPFN parameters:")
         print(ftpfn_params)
         
-        return FTPFN(**ftpfn_params)  # Use the correct parameters for FTPFN  # TODO @Diane: Double check this implementation
+        return FTPFN(**ftpfn_params) 
         # return FTPFNSurrogateModel(**params)
     
 

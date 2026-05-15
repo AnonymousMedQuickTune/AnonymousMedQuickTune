@@ -6,7 +6,6 @@ import torch
 from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, roc_auc_score
 from torch import nn
 
-# TODO: Use MONAI Metrics + clean & refactor
 
 
 class CheckpointManager:

@@ -124,7 +124,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         segmentation = sitk.DICOMOrient(segmentation, "RAS")
 
         # Resample image to target voxel size
-        # NOTE @Natalia: Updated this from resample_image_old to resample_image with correct interpolation mode.
+
         print("Resampling image to target voxel size...")
         image = resample_image(image, voxel_size, interpolator=sitk.sitkLinear)
         segmentation = resample_image(segmentation, voxel_size, interpolator=sitk.sitkNearestNeighbor)
@@ -139,8 +139,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         # print(f"  Pixel Type: {image.GetPixelIDTypeAsString()}")
 
         # Crop/pad tumor region of the image and segmentation if needed
-        # NOTE @Natalia:
-        # - Updated this whole part from Step 2 and Step 3 and integrated it here before normalization is applied!
+       
         print("Crop/pad image if needed...")
         size_before_cropping = image.GetSize()  # (x, y, z) format
         size_x, size_y, size_z = image.GetSize()
@@ -155,13 +154,6 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         image, segmentation = resize_worcdatabase_images(image, segmentation, dataset_name)
 
         # Only normalize if is_mri is True
-        # NOTE @Natalia:
-        # - No normalization for segmentation masks!
-        # - Cast to back to float32 to save ~50% of disk space by normalization
-        # - For CT datasets, normalization is done in the run pipeline based on training data statistics
-        #   depending on the cross-validation folds following the nnU-Net approach.
-        # - Calculate mean and standard deviation from non-zero voxels only
-        # - Avoid division by zero: If standard deviation is 0, set it to 1e-6.
         if is_mri:
             print("Normalizing MRI images according to nnU-Net's approach...")
             use_masked = should_use_masked_normalization(size_before_cropping, size_after_cropping)
@@ -171,8 +163,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
 
         # Extract the original directory name from the file path
         # and save the processed images and segmentations
-        # NOTE @Natalia:
-        # - Preprocessed data got saved to some hardcoded directory (new_path = './gist_final') and not used as assumed
+    
         original_dir_name = os.path.basename(file)
         save_preprocessed_images_and_segmentations_to_nifti(image, image_file_name, segmentation, segmentation_file_name, output_path, original_dir_name)
     
@@ -181,7 +172,7 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
 
 def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_method, is_mri, dataset_name, model_task):
     """
-    Apply Natalia's smart preprocessing pipeline to the dataset.
+    Apply Natalia smart preprocessing pipeline to the dataset.
     
     Args:
         cleaned_dataset_path (str): Path to the cleaned dataset
@@ -198,7 +189,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
 
     # Get image paths for the cleaned dataset
     images_path, segmentations_path, csv_path = get_paths(cleaned_dataset_path, dataset_name)
-    
+
     # Extract directory names from image paths
     # Example: img_path = "datasets/lipo_cleaned/Lipo-001/image.nii.gz"
     #          os.path.dirname(img_path) → "datasets/lipo_cleaned/Lipo-001"
@@ -220,7 +211,7 @@ def apply_smart_preprocessing(cleaned_dataset_path, voxel_size, calculation_meth
     # Determine dataset name for dataset-specific preprocessing
     dataset_name = os.path.basename(cleaned_dataset_path).replace('_cleaned', '')
     
-    # Run the preprocessing pipeline from Natalia's preprocessing code base
+    # Run the preprocessing pipeline from Natalia preprocessing code base
     smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_name, model_task)
 
     # Analyze preprocessed dataset statistics
@@ -394,7 +385,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
             - MedMNIST 3D: 'organmnist3d', 'nodulemnist3d', 'adrenalmnist3d', 'fracturemnist3d', 'vesselmnist3d', 'synapsemnist3d'
         data_path (str): Base path to the datasets directory. Defaults to 'datasets'
         seed (int): Random seed for reproducibility
-        use_smart_preprocessing (bool): Whether to apply Natalia's smart preprocessing (only for WORC datasets)
+        use_smart_preprocessing (bool): Whether to apply Natalia smart preprocessing (only for WORC datasets)
         voxel_calculation (str): Method to calculate voxel size for preprocessing (only for WORC datasets)
         cv_outer_fold (int): Cross-validation fold number (0, 1, 2, ...) for different train+val/test splits
         mode (str): Mode of the experiment ('train' or 'test')
@@ -426,7 +417,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
         print(f"\nClass distribution: {dict(zip(unique_labels, counts))}")
         
         # MedMNIST datasets are CT-like (need normalization)
-        # Use dummy voxel_size for MedMNIST (not used for preprocessing)  # TODO @Diane: check what to do with the voxel_size here
+        # Use dummy voxel_size for MedMNIST (not used for preprocessing) 
         voxel_size = (1.0, 1.0, 1.0)
         
         # Convert images to list format compatible with existing pipeline
@@ -681,8 +672,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
             # Ensure channels are first (for MONAI compatibility):
             # (H, W, D) -> (C, H, W, D) or (H, W, D, C) -> (C, H, W, D) depending on the dataset.
             EnsureChannelFirstd(keys="image"),
-            # NOTE @Natalia:
-            # Removed Spacingd because resampling to a target voxel size is already performed during preprocessing to ensure consistent spacing.
+           
         ]
 
     # Add data normalization for CT images only.
@@ -733,17 +723,12 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
             transforms.extend([
                 # Flip the image along a random spatial axis (H, W, or D).
                 # Note: spatial_axis refers to spatial dims only — not the channel dim (C in (C, H, W, D)).
-                # NOTE @Natalia:
-                # Updated this from spatial_axis=0 to spatial_axis=[0, 1, 2] to flip the image along a random spatial axis.
+               
                 RandFlipd(keys="image", prob=0.2, spatial_axis=[0, 1, 2]),
                 #
                 # Randomly rotate the image around the depth (z) axis by ±25°.
                 # IMPORTANT: ranges are in radians, not degrees
-                # NOTE @Natalia:
-                # Changed from (-25, 25) to np.deg2rad(25) for correct units.
-                # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
-                # fill empty regions created by rotation using border values (to avoid black edges),
-                # and keep the original spatial size after transformation for consistent batching.
+        
                 RandRotated(
                     keys="image",
                     range_x=0.0,
@@ -755,10 +740,7 @@ def DataTransform(normalization_stats, developer_mode, spatial_size=None, is_tra
                     keep_size=True,
                 ),
                 # Randomly zoom the image by a factor between 0.8 and 1.2.
-                # NOTE @Natalia:
-                # Use trilinear interpolation for smooth intensity transitions (continuous medical images),
-                # fill empty regions created by zooming using edge values (to avoid black edges),
-                # and keep the original spatial size after transformation for consistent batching.
+               
                 RandZoomd(
                     keys="image",
                     prob=0.2,

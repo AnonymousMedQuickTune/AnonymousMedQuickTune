@@ -813,7 +813,7 @@ class PortfolioCreator:
                 continue
             
             # Try to read best-so-far version first (for future runs)
-            best_so_far_path = metrics_path.parent / "metrics_best-so-far.csv"  # TODO @Diane: Implement this for NePS runs!
+            best_so_far_path = metrics_path.parent / "metrics_best-so-far.csv" 
             has_best_so_far_file = best_so_far_path.exists()
             
             if has_best_so_far_file:

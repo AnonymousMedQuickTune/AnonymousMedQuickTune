@@ -168,7 +168,7 @@ def run_pipeline(
             outer_fold_dir = pipeline_dir_path.parent.parent  # .../cv_outer_fold_X
             update_performances_csv_from_neps_output(str(outer_fold_dir), cv_outer_fold)
     
-    # Delete model checkpoints to save disk space  # TODO @Diane: Keep incumbent model checkpoint?
+    # Delete model checkpoints to save disk space  
     # NOTE: After test evaluation, model checkpoints are no longer needed
     # Calculate total inner folds (repeats * splits)
     cv_inner_folds_splits = experimental_setting.cv_inner_folds_splits if hasattr(experimental_setting, "cv_inner_folds_splits") else 5
@@ -272,10 +272,6 @@ def main(experimental_setting: DictConfig) -> None:
         if experimental_setting.run_mode != "Baseline":
             raise ValueError("No validation set mode is not supported for non-baseline runs.")
 
-    # TODO @Diane: Double check training search space!
-    # TODO @Diane: Implement SwinUNETR search space!
-    # TODO @Diane: Test all search spaces for the different datasets!
-    # TODO @Diane: Implement Baseline integration to Portfolio!
     # Combine model and training space into a single search space
     if experimental_setting.combine_model_and_training_space and not any(x in experimental_setting.pipeline_space for x in ["baseline", "training"]):
         print(f"\n\nCombining model and training spaces!\n\n")
@@ -608,7 +604,7 @@ def main(experimental_setting: DictConfig) -> None:
         logging.basicConfig(level=logging.INFO)
 
         # Create optimizer
-        if experimental_setting.searcher == "random_search":  # TODO @Diane: Use user priors or not?
+        if experimental_setting.searcher == "random_search":  
             # For using Random Search with user priors:
             # https://github.com/automl/neps/blob/master/docs/reference/optimizers.md
             # https://automl.github.io/neps/master/api/neps/optimizers/algorithms/?h=true#neps.optimizers.algorithms.random_search

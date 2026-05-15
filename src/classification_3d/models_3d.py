@@ -55,7 +55,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             out_channels=num_classes,
             layers=(3, 4, 6, 3),  # ResNet50
             norm="instance",
-            pretrained=True  # NOTE @Diane:See https://github.com/Tencent/MedicalNet
+            pretrained=True  
         )
     
     elif model_type == "resnet101":
@@ -65,7 +65,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             out_channels=num_classes,
             layers=(3, 4, 23, 3),  # ResNet101
             norm="instance",
-            pretrained=True  # NOTE @Diane: See https://github.com/Tencent/MedicalNet
+            pretrained=True  
         )
 
     elif model_type == "swin_unetr":
@@ -83,7 +83,7 @@ def get_pretrained_3d_model(model_config, hyperparameters=None, developer_mode=F
             in_channels=1,
             out_channels=num_classes,
             norm_name="instance",
-            pretrained=True  # MedicalNet pretrained weights available  NOTE @Diane: check this out
+            pretrained=True  
         )
 
     else:
@@ -110,7 +110,7 @@ def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=Non
                 * 'swin_unetr': Parametrized SwinUNETR - Efficient hierarchical transformer with windowed attention
                 * 'efficientnet': Parametrized EfficientNet-B0 - Efficient architecture
                 * 'vit': Parametrized Vision Transformer - Classic transformer for images
-                * 'densenet_natalia': Custom DenseNet implementation by Natalia
+                * 'densenet_custom': Custom DenseNet implementation by Natalia
             - task (str): Type of task ('classification', etc.)
             - num_classes (int): Number of output classes
         hyperparameters (dict): Hyperparameter configuration for NePS optimization. 
@@ -191,7 +191,7 @@ def get_3d_model(model_config, hyperparameters, developer_mode, spatial_size=Non
     elif model_type == "vit":
         model = ParameterizedViT(hyperparameters, num_classes, developer_mode, spatial_size)
     
-    elif model_type == "densenet_natalia":
+    elif model_type == "densenet_custom":
         model = DenseModel(hyperparameters, num_classes)
 
     else:

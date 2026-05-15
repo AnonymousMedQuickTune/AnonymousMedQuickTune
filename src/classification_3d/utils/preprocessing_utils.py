@@ -186,9 +186,7 @@ def resample_image(image, voxel_size, interpolator=sitk.sitkLinear, default_valu
     original_size = np.array(image.GetSize(), dtype=int)
     
     # Compute new image size to preserve FOV (Field of View) when changing voxel spacing.
-    # NOTE @Natalia:
-    # Use np.round() instead of np.ceil() to avoid artificially enlarging the FOV.
-    # Added np.maximum(1, ...) to prevent zero-sized dimensions due to rounding errors (caused by np.round()).
+    
     new_size = np.maximum(1, np.round(original_size * (original_spacing / np.array(voxel_size))).astype(int))
 
 
@@ -538,10 +536,7 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
     direction = image.GetDirection()
     
     # Extract the largest connected component from the segmentation mask
-    # NOTE @Natalia:
-    # - Updated this from extract_liver 
-    # - The largest component is now extracted instead of the first one (bug solved)
-    # - Liver dataset has no extra class for the liver itself, so we don't need to handle it here.
+    
     if model_task == "classification":
         mask_region_of_interest = extract_largest_component(seg_array)
         if mask_region_of_interest is None:
@@ -578,8 +573,7 @@ def crop_and_pad_tumor_region(image, segmentation, x_75, y_75, z_75, x_median, y
             temp_seg = nib.Nifti1Image(cropped_seg_data, np.eye(4))
             
             # Apply padding
-            # NOTE @Natalia:
-            # - Fixed bug in padding the width
+          
             final_img_data = pad_3d_image(temp_img)
             final_seg_data = pad_3d_image(temp_seg)
         else:

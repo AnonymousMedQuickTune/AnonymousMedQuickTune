@@ -1,41 +1,16 @@
 {
   "todo-tree.general.tags": [
-    "TODO @Diane:",
-    "TODO @Natalia:",
-    "TODO @Both:",
     "# NOTE:",
-    "# NOTE @Diane:",
-    "# NOTE @Natalia:",
     "# FIXME:",
     "# BUG:"
   ],
   "todo-tree.highlights.customHighlight": {
-    "TODO @Diane:": {
-      "foreground": "#007acc",
-      "background": "#007acc20",
-      "iconColour": "#007acc"
-    },
-    "TODO @Natalia:": {
-      "foreground": "#ff6b6b",
-      "background": "#ff6b6b20",
-      "iconColour": "#ff6b6b"
-    },
     "TODO @Both:": {
       "foreground": "#8a56b7",
       "background": "#ff6b6b20",
       "iconColour": "#8a56b7"
     },
     "# NOTE:": {
-      "foreground": "#bfb3b3",
-      "background": "#66666620",
-      "iconColour": "#bfb3b3"
-    },
-    "# NOTE @Diane:": {
-      "foreground": "#bfb3b3",
-      "background": "#66666620",
-      "iconColour": "#bfb3b3"
-    },
-    "# NOTE @Natalia:": {
       "foreground": "#bfb3b3",
       "background": "#66666620",
       "iconColour": "#bfb3b3"
