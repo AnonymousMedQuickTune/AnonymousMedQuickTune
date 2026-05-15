@@ -1,5 +1,5 @@
 # Experiments directory
-experiments/*
+
 !experiments/.gitkeep
 
 # Datasets directory
