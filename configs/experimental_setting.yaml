@@ -52,7 +52,7 @@ qt:
   use_custom_metafeat_extraction: true  # TODO: delete this, but keep it for now as a reference
   use_quick_image_cls_tuner: true
   use_custom_objective: true
-  use_ftpfn_perf_predictor: true
+  use_ftpfn_perf_predictor: false
 
 #------------------------------------------------------------------------------
 # NePS Optimization Settings

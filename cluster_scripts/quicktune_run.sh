@@ -1,26 +1,36 @@
 #!/bin/bash
-#SBATCH -p alldlc_gpu-rtx2080
-##SBATCH -p mldlc2_gpu-l40s
-##SBATCH -p mlhiwidlc_gpu-rtx2080
-##SBATCH -p testdlc_gpu-rtx2080
-##SBATCH --mem-per-gpu=32G
-##SBATCH --cpus-per-task=8
+#SBATCH -J lipoMQ
+#SBATCH -p gpu_a100
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=90G
+#SBATCH -t 23:59:59
+#SBATCH --array 0-2 # number of outer folds
 #SBATCH --export=ALL
 #SBATCH --requeue
 #SBATCH --propagate=NONE
-##SBATCH -q dlc-wagnerd
-#SBATCH --gres=gpu:1
-#SBATCH -J medquicktune
-##SBATCH -t 23:59:59
-#SBATCH --array 1-3%3  # number of outer folds
+#SBATCH --output=/projects/prjs1598/logs/%x-%j.out
 
-source activate medquicktune
+source medquicktune/bin/activate
 
-BASE_DIR="/work/dlclarge1/wagnerd-medquicktune"
-EXP_DIR="$BASE_DIR/experiments/NePS/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
-DATA_DIR="$BASE_DIR/datasets/"
-# PIPELINE_SPACE="configs/pipeline_spaces/pipeline_space_without_user_priors.yaml"
-PIPELINE_SPACE="configs/pipeline_spaces/densenet.yaml"
+which python
+python --version
+
+DATASET=lipo
+SEED=42
+EXPERIMENT_NAME=medquicktune
+USE_MEDICAL_PORTFOLIO=True
+
+BASE_DIR="/projects/code/MedQuickTune"
+PORTFOLIO_DIR="/projects/code/MedQuickTuneexperiments/Portfolio_crlm"
+EXP_DIR="$BASE_DIR/experiments/QuickTune/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
+DATA_DIR="$BASE_DIR/data/worc"
+
+PIPELINE_SPACE="configs/pipeline_spaces/full.yaml"
+
+
+echo "Starting"
+
 
 python -m src.run_quicktune \
     data.dataset=$DATASET \
@@ -46,3 +56,7 @@ python -m src.run_quicktune \
     validation_evaluation=ensemble \
     data.num_workers=4 \
     cost_to_spend=85800  # 24 hours - 10 min
+
+echo "Finished"
+
+

@@ -1,35 +1,57 @@
-[tool.poetry]
+[project]
 name = "medquicktune"
 version = "0.1.0"
-description = "This project is dedicated to training multiple models on diverse medical datasets, exploring relevant configuration spaces, and integrating multifidelity optimization techniques. It features functionalities such as saving learning curves in CSV format along with their corresponding configuration IDs. The goal is to advance hyperparameter optimization and model tuning workflows in the medical domain."
-authors = ["diane-wagner <wagnerd@informatik.uni-freiburg.de>"]
-license = "MIT"
-readme = "README.md"
-packages = [
-    { include = "src" }
+description = "Portfolio-based Meta-learning for Efficient HPO in 3D Oncological Imaging"
+
+authors = [
+    {name = "Diane Wagner"},
+    {name = "Natalia Oviedo Acosta"}
 ]
-package-mode = false
 
-[tool.poetry.dependencies]
-python = ">=3.11,<3.12"
-numpy = ">=2.0,<2.3"
-hydra-core = "^1.3.2"
-neural-pipeline-search = { git = "https://github.com/automl/neps.git", tag = "v0.14.0" }
-ifbo = { git = "https://github.com/automl/ifbo.git" }
-nibabel = ">=5.0.0"
-black = "^24.10.0"
-isort = "^5.13.2"
-pylint = "^3.3.3"
-# quicktunetool = { git = "https://github.com/automl/quicktunetool.git" }  # Will be installed manually due to numpy conflict
-monai = "^1.5.0"
-simpleitk = "^2.5.2"
-scikit-image = "^0.24.0"
-flask = "^3.1.2"
-gunicorn = "^23.0.0"
-einops = "^0.8.1"
-medmnist = "^3.0.2"
+license = {text = "MIT"}
 
+readme = "README.md"
+
+requires-python = ">=3.11"
+
+dependencies = [
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+
+    "numpy==1.26.4",
+    "pandas",
+    "scipy",
+    "scikit-learn==1.5.0",
+    "scikit-image==0.24.0",
+
+    "matplotlib",
+    "seaborn",
+    "tqdm",
+
+    "monai==1.5.2",
+    "nibabel==5.4.2",
+    "simpleitk==2.5.3",
+
+    "hydra-core==1.3.2",
+    "omegaconf==2.3.0",
+
+    "ConfigSpace==1.2.2",
+    "botorch==0.12.0",
+    "gpytorch==1.13",
+
+    "einops==0.8.2",
+    "timm==1.0.26",
+
+    "tensorboard",
+
+    "submitit==1.5.4",
+
+    # quicktunetool = { git = "https://github.com/automl/quicktunetool.git" }  # Will be installed manually due to numpy conflict
+
+    "neural-pipeline-search @ git+https://github.com/automl/neps.git@v0.14.0", 
+    "ifBO @ git+https://github.com/automl/ifbo.git@8ddcef0ed1ca88f2992108d39876e926aa58b0f2"
+]
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
