@@ -156,26 +156,22 @@ def handle_inactive_categorical_parameters(
             # All values are NaN, skip
             continue
         
-        # Check if column contains booleans
-        has_bool = non_null_values.apply(lambda x: isinstance(x, bool)).any()
+        # Convert column to object dtype BEFORE assigning inactive values
+        # This is necessary to avoid type conflicts when assigning strings to numeric columns
+        if df[param_name].dtype != 'object':
+            df[param_name] = df[param_name].astype('object')
         
-        # If column contains booleans, convert everything to string first
-        # This ensures type consistency for OneHotEncoder
-        if has_bool:
-            # Convert all non-null values to strings
-            df[param_name] = col.apply(lambda x: str(x) if pd.notna(x) else x)
-            logger.debug(f"Converted boolean values in '{param_name}' to strings for type consistency")
+        # Convert ALL values to strings to ensure type consistency for OneHotEncoder
+        # This is necessary because sklearn's Encoder requires uniform types (all strings or all numbers)
+        # Since we're adding '__inactive__' as a string, we need all values to be strings
+        df[param_name] = df[param_name].apply(lambda x: str(x) if pd.notna(x) else x)
+        logger.debug(f"Converted all values in '{param_name}' to strings for type consistency")
         
         # Replace None/NaN with inactive marker
         mask = df[param_name].isna()
         if mask.any():
             df.loc[mask, param_name] = inactive_value
             logger.debug(f"Replaced {mask.sum()} inactive values in '{param_name}' with '{inactive_value}'")
-        
-        # Ensure the column is object dtype (for categorical handling)
-        # This is important if we converted booleans to strings
-        if df[param_name].dtype != 'object':
-            df[param_name] = df[param_name].astype('object')
     
     return df
 
@@ -240,5 +236,3 @@ def preprocess_portfolio_for_quicktune(
             logger.debug("No categorical conditional parameters found")
     
     return df
-
-
