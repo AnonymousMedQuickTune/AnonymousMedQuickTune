@@ -418,6 +418,8 @@ def evaluate_fold(fold, test_loader, model, experimental_setting, hyperparameter
                 # Batch is a tuple for 2D datasets
                 inputs, targets = batch
             inputs, targets = inputs.to(device), targets.to(device)
+            # Necessary for HECKTOR dataset
+            targets = targets.long()
             outputs = model(inputs)
             loss = criterion(outputs, targets)
             

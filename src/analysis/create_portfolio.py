@@ -50,7 +50,7 @@ DEFAULT_META_FEATURES = {
 
 # Mapping of dataset names to modality
 MRI_DATASETS = ["lipo", "desmoid", "liver", "hcc", "bflair"]
-CT_DATASETS = ["brain_tumor", "gist"]  # Add other CT datasets as needed
+CT_DATASETS = ["brain_tumor", "gist", "crlm", "hecktor"]  # Add other CT datasets as needed
 
 # Integer parameter names that should be converted to int
 INT_PARAM_NAMES = {"epochs", "batch_size"}
@@ -67,7 +67,7 @@ DATASET_EXPERIMENT_SEPARATOR = ':'
 EPOCH_KEYS = ["number_of_epochs", "epochs", "num_epochs", "training_epochs"]
 
 # Base paths
-EXPERIMENTS_BASE_PATH = "experiments/NePS"
+EXPERIMENTS_BASE_PATH = "/projects/prjs1598/experiments/NePS"
 
 # Directory structure patterns
 SUMMARY_SUBDIR = "summary"
@@ -227,7 +227,8 @@ class PortfolioCreator:
         # Only add model_type if there's no "model" hyperparameter
         # If "model" exists, it will be used directly; otherwise add model_type from config
         if "model" not in config_dict:
-        config_dict["model_type"] = self.hydra_config["model"]["type"]
+            config_dict["model_type"] = self.hydra_config["model"]["type"]
+        # Dataset name necessary for the portolfio making 
         config_dict["dataset"] = self.hydra_config["data"]["dataset"]
 
         # Add performance metrics

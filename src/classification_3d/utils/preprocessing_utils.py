@@ -307,7 +307,11 @@ def extract_largest_component(mask):
     has_label_2 = 2 in unique_values
     
     if has_label_2:
-        raise NotImplementedError("Multi-class mask detected. This is not supported yet.")
+        # HECKTOR:
+        # 1 = primary tumor
+        # 2 = lymph nodes
+        # Merge all tumor-related labels into one binary mask
+        mask = (mask > 0).astype(int)
         
     # Find connected components in the mask (separate regions get different labels: 1, 2, 3, ...)
     # connectivity=2 means 2D connectivity (only within slices, not between slices)
@@ -737,7 +741,7 @@ def resize_worcdatabase_images(image, segmentation, dataset_name):
             256,  # y (height) - resize to 256
             256   # x (width) - resize to 256
         )
-    elif dataset_name == "gist" or dataset_name == "melanoma" or dataset_name == "crlm":
+    elif dataset_name == "gist" or dataset_name == "melanoma" or dataset_name == "crlm" or dataset_name == "hecktor":
         # Calculate target size:
         # Note: img_array.shape is (z, y, x), so:
         #   - Index 0 = z (depth) - resize to 96
@@ -835,6 +839,7 @@ def save_preprocessed_images_and_segmentations_to_nifti(image, image_file_name, 
 
     # Validate geometry consistency (same voxel grid)
     if image.GetSize() != segmentation.GetSize():
+        print(f"Patient id that doesn't work: {patient_id}")
         raise ValueError(f"Image and segmentation sizes differ: {image.GetSize()} vs {segmentation.GetSize()}")
 
     # Build file paths

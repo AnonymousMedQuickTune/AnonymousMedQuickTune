@@ -131,9 +131,10 @@ def quicktune_wrapper(trial: dict, trial_info: dict, experimental_setting: DictC
             raise ValueError(f"Unsupported 2D dataset: {experimental_setting.data.dataset}")
 
     elif dimensionality == "3d":
-        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair" 
+        if experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair", 
                                                   "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
-                                                  "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
+                                                  "fracturemnist3d", "vesselmnist3d", "synapsemnist3d",
+                                                  "crlm", "hecktor"]:
 
             voxel_calculation = experimental_setting.data.voxel_calculation
             if voxel_calculation == "all":
@@ -576,9 +577,10 @@ def main(experimental_setting: DictConfig) -> None:
             train_split="train",  # NOTE: overwrite if train / val split is provided   
             val_split="val",  # NOTE: overwrite if train / val split is provided
         )
-    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair"
+    elif experimental_setting.data.dataset in ["lipo", "desmoid", "liver", "gist", "hcc", "bflair",
                                                 "organmnist3d", "nodulemnist3d", "adrenalmnist3d", 
-                                                "fracturemnist3d", "vesselmnist3d", "synapsemnist3d"]:
+                                                "fracturemnist3d", "vesselmnist3d", "synapsemnist3d",
+                                                "crlm", "hecktor"]:
         # Use portfolio meta-features for 3D datasets (WORC and MedMNIST3D)
         # For MedMNIST3D datasets, use data.path directly (they don't have separate subdirectories)
         # For WORC datasets, use data.path / dataset_name (they have separate subdirectories)

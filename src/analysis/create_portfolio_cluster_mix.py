@@ -50,7 +50,7 @@ DEFAULT_META_FEATURES = {
 
 # Mapping of dataset names to modality
 MRI_DATASETS = ["lipo", "desmoid", "liver", "hcc", "bflair"]
-CT_DATASETS = ["brain_tumor", "gist", "organmnist3d", "nodulemnist3d", "adrenalmnist3d", "fracturemnist3d"]  # CT datasets
+CT_DATASETS = ["brain_tumor", "gist", "crlm", "organmnist3d", "nodulemnist3d", "adrenalmnist3d", "fracturemnist3d", "hecktor"]  # CT datasets
 MRA_DATASETS = ["vesselmnist3d"]  # MRA datasets
 ELECTRON_MICROSCOPE_DATASETS = ["synapsemnist3d"]  # Electron Microscope datasets
 

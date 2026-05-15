@@ -188,6 +188,8 @@ def train_epoch(
             inputs, targets = batch
         # Move data to device
         inputs, targets = inputs.to(device), targets.to(device)
+        # HECKTOR data
+        targets = targets.long()
 
         # Apply mixup if configured
         if mixup_alpha > 0:  #  is not None and mixup_alpha > 0:
@@ -324,6 +326,9 @@ def evaluate_model(model, data_loader, criterion, device):
                 inputs, targets = batch
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model(inputs)
+
+            # For HECKTOR
+            targets = targets.long()
             loss = criterion(outputs, targets)
 
             total_loss += loss.item()

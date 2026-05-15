@@ -295,6 +295,24 @@ def custom_extract_image_dataset_metafeat(
                 input_size_d = 96
                 modality = "CT"
                 total_num_samples = 245
+            elif dataset_name == "crlm":
+                dataset = "crlm"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 96
+                modality = "CT"
+                total_num_samples = 77
+            elif dataset_name == "hecktor":  
+                dataset = "hecktor"
+                num_classes = 2
+                input_channels = 1  # Grayscale for medical images
+                input_size_h = 256
+                input_size_w = 256
+                input_size_d = 96
+                modality = "CT"
+                total_num_samples = 597
             elif dataset_name == "organmnist3d":
                 dataset = "organmnist3d"
                 num_classes = 11
