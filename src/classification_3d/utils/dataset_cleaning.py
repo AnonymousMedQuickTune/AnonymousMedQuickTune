@@ -9,6 +9,7 @@ import shutil
 import re
 import pandas as pd
 from tqdm import tqdm
+import SimpleITK as sitk
 
 from src.classification_3d.utils.dataset_info import analyze_dataset_statistics, save_statistics_to_file
 
@@ -314,6 +315,14 @@ def copy_and_convert_files(original_path, cleaned_path, valid_directories, datas
         
         if len(lesion_seg_paths) > 1:
             # Multiple lesion files found - combine them into one segmentation
+            print(f"\nCase: {old_dir}")
+            img = nib.load(old_img_path)
+            print("IMAGE:", img.shape)
+
+            for p in lesion_seg_paths:
+                seg = nib.load(p)
+                print("SEG:", p, seg.shape)
+                
             if not combine_lesion_segmentations(lesion_seg_paths, new_seg_path, segmentation_type):
                 # Fallback: if combination fails, use the first lesion file
                 print(f"Warning: Failed to combine lesion segmentations for {old_dir}, using first lesion file")

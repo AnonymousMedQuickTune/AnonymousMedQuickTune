@@ -79,6 +79,33 @@ def smart_preprocessing(file_paths, output_path, voxel_size, is_mri, dataset_nam
         # Load image and segmentation from file path
         img_file = os.path.join(file, image_file_name)
         seg_file = os.path.join(file, segmentation_file_name)
+        print(f"\nImage file: {img_file}")
+        print(f"Seg file  : {seg_file}")
+
+        # Load images
+        image = sitk.ReadImage(img_file)
+        segmentation = sitk.ReadImage(seg_file)
+
+        # Get info
+        img_size = image.GetSize()
+        seg_size = segmentation.GetSize()
+
+        img_spacing = image.GetSpacing()
+        seg_spacing = segmentation.GetSpacing()
+
+        # ---- CHECK ----
+        if img_size != seg_size:
+            print("⚠️ WARNING! Sizes are NOT the same")
+            print(f"   Image size       : {img_size}")
+            print(f"   Segmentation size: {seg_size}")
+            print(f"   → Problematic case: {file}")
+
+        # Optional (VERY useful)
+        if img_spacing != seg_spacing:
+            print("⚠️ WARNING! Spacing is NOT the same")
+            print(f"   Image spacing       : {img_spacing}")
+            print(f"   Segmentation spacing: {seg_spacing}")
+            print(f"   → Problematic case: {file}")
             
         # Check if files exist
         if not os.path.exists(img_file) or not os.path.exists(seg_file):
@@ -409,7 +436,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
     elif use_smart_preprocessing:
         if dataset_name in ["lipo", "desmoid", "liver", "hcc", "bflair"]:
             is_mri = True
-        elif dataset_name in ["gist", "crlm", "melanoma"]:
+        elif dataset_name in ["gist", "crlm", "melanoma", "hecktor"]:
             is_mri = False  # CT dataset
         else:
             raise ValueError(f"Unknown dataset: {dataset_name}. If you want to add a new dataset, please add it to the list of MRI datasets or CT datasets.")
@@ -443,7 +470,7 @@ def load_3d_dataset_with_outer_cv_splits(experiment_base_dir, dataset_name, data
 
         # Filter out all samples with label -1 or NaN (e.g., invalid or insufficient class samples)
         # NOTE: When adding a new dataset, pls verify if -1 is not a valid label!
-        if dataset_name in ["lipo", "desmoid", "gist", "melanoma", "crlm", "liver"]:
+        if dataset_name in ["lipo", "desmoid", "gist", "melanoma", "crlm", "liver", "hecktor"]:
             # Create a list of indices for which the label is not -1 and not NaN
             filtered_indices = [i for i, label in enumerate(labels) if label != -1 and not pd.isna(label)]
             # Keep only the images corresponding to valid indices
@@ -972,7 +999,7 @@ def get_kfold_dataloaders(
         valid_data = [train_data_images[i] for i in val_idx]
 
     # Calculate normalization stats from preprocessed CT training data if not provided by NePS (AutoNorm)
-    if is_medmnist or dataset_name in ["gist", "crlm", "melanoma"]:  # CT datasets (WORC or MedMNIST)
+    if is_medmnist or dataset_name in ["gist", "crlm", "melanoma", "hecktor"]:  # CT datasets (WORC or MedMNIST)
         if normalization_stats is None:
             # Calculate normalization stats from preprocessed training data if not provided by NePS (AutoNorm)
             # The training data is dependent on the cross-validation fold.
