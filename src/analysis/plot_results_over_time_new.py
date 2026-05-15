@@ -32,29 +32,41 @@ def extract_config_number(config_name: str) -> int:
 
 def get_experiment_name_with_prefix(experiment_dir: Path) -> str:
     """
-    Get experiment name with appropriate prefix (Baseline_, NePS_, or QuickTune_) based on path.
-    
-    Args:
-        experiment_dir: Path to experiment directory
-        
-    Returns:
-        Experiment name with prefix (e.g., "Baseline_test_liver_33", "NePS_test_plotting_script_7", or "QuickTune_test_experiment")
+    Return experiment names in format:
+    Baseline_densenet_<dataset>
+    NePS_BO_<dataset>
+    MedQuickTune_<dataset>
     """
-    experiment_name = experiment_dir.name
-    experiment_path_str = str(experiment_dir)
-    
-    # Check if it's a Baseline experiment (path contains "experiments/Baseline/")
+
+    experiment_path = Path(experiment_dir)
+
+    # Dataset name
+    dataset_name = experiment_path.parent.name
+
+    experiment_name = experiment_path.name.lower()
+    experiment_path_str = str(experiment_path)
+
+    # Baseline
     if "/Baseline/" in experiment_path_str or "\\Baseline\\" in experiment_path_str:
-        return f"Baseline_{experiment_name}"
-    # Check if it's a QuickTune experiment (path contains "experiments/QuickTune/" or "experiments/Cluster/QuickTune/")
+        prefix = "Baseline_densenet"
+
+    # MedQuickTune
     elif "/QuickTune/" in experiment_path_str or "\\QuickTune\\" in experiment_path_str:
-        return f"QuickTune_{experiment_name}"
-    # Check if it's a NePS experiment (path contains "experiments/NePS/")
+        prefix = "MedQuickTune"
+
+    # NePS
     elif "/NePS/" in experiment_path_str or "\\NePS\\" in experiment_path_str:
-        return f"NePS_{experiment_name}"
+        if "bo" in experiment_name:
+            prefix = "NePS_BO"
+        elif "random" in experiment_name:
+            prefix = "NePS_RandomSearch"
+        else:
+            prefix = "NePS"
+
     else:
-        # Fallback: return name without prefix if path doesn't match expected pattern
-        return experiment_name
+        prefix = "Experiment"
+
+    return f"{prefix}_{dataset_name}"
 
 
 def load_validation_performance(report_path: Path) -> float:
@@ -2463,7 +2475,7 @@ def create_performance_over_time_plot_multi(
                 return red
             elif "resnet" in exp_name_lower:
                 return pink
-        elif "neps_" in exp_name_lower:
+        elif "NePS_" in exp_name_lower:
             if "bo_" in exp_name_lower:
                 if "autonorm" in exp_name_lower:
                     return purple
@@ -2475,7 +2487,7 @@ def create_performance_over_time_plot_multi(
                 return green
             else:
                 return orange
-        elif "quicktune_" in exp_name_lower:
+        elif "medquicktune_" in exp_name_lower:
             return light_blue
         # Fallback: use index-based color
         return tab10_colors[0]

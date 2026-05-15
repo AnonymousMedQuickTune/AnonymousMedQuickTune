@@ -59,7 +59,7 @@ def find_evaluation_file(experiment_path):
             return str(eval_file)
     
     # Alternative: look for any evaluation files
-    eval_files = list(experiment_dir.rglob('*evaluation*'))
+    eval_files = list(experiment_dir.rglob('test_evaluation_results.json'))
     if eval_files:
         return str(eval_files[0])
     
@@ -190,104 +190,39 @@ def parse_log_file(log_file_path):
 
 def parse_evaluation_file(evaluation_file_path):
     """
-    Parse the evaluation results file to extract performance metrics.
-    
+    Parse test_evaluation_results.json file.
+
     Args:
-        evaluation_file_path (str): Path to the evaluation file
-        
+        evaluation_file_path (str): Path to evaluation JSON file
+
     Returns:
         dict: Dictionary containing parsed evaluation data
     """
+
+    import json
+
     with open(evaluation_file_path, 'r') as f:
-        content = f.read()
-    
+        data = json.load(f)
+
     evaluation_data = {
         'outer_folds': {},
         'overall_summary': {}
     }
-    
-    # Split content by outer CV fold sections
-    outer_fold_pattern = r"----- Outer CV Fold (\d+)/5 -----"
-    outer_fold_matches = list(re.finditer(outer_fold_pattern, content))
-    
-    for i, match in enumerate(outer_fold_matches):
-        fold_num = int(match.group(1))
-        start_pos = match.start()
-        
-        # Determine end position (next fold or end of file)
-        if i + 1 < len(outer_fold_matches):
-            end_pos = outer_fold_matches[i + 1].start()
-        else:
-            end_pos = len(content)
-        
-        fold_content = content[start_pos:end_pos]
-        
-        # Extract inner fold results
-        inner_fold_pattern = r"=== Evaluating Fold (\d+)/5 ===\nLoss: ([\d.]+)\nAccuracy: ([\d.]+)%\nPrecision: ([\d.]+)%\nRecall: ([\d.]+)%\nF1: ([\d.]+)%\nAuc: ([\d.]+)%"
-        inner_fold_matches = re.findall(inner_fold_pattern, fold_content)
-        
-        fold_data = {
-            'inner_folds': {},
-            'average_results': {}
-        }
-        
-        # Parse inner fold results
-        for inner_match in inner_fold_matches:
-            inner_fold_num = int(inner_match[0])
-            loss = float(inner_match[1])
-            accuracy = float(inner_match[2])
-            precision = float(inner_match[3])
-            recall = float(inner_match[4])
-            f1 = float(inner_match[5])
-            auc = float(inner_match[6])
-            
-            fold_data['inner_folds'][inner_fold_num] = {
-                'loss': loss,
-                'accuracy': accuracy,
-                'precision': precision,
-                'recall': recall,
-                'f1': f1,
-                'auc': auc
-            }
-        
-        # Extract average results for this outer fold
-        avg_pattern = r"=== Average Results Across All Folds ===\nLoss: ([\d.]+)\nAccuracy: ([\d.]+)%\nPrecision: ([\d.]+)%\nRecall: ([\d.]+)%\nF1: ([\d.]+)%\nAuc: ([\d.]+)%"
-        avg_match = re.search(avg_pattern, fold_content)
-        if avg_match:
-            fold_data['average_results'] = {
-                'loss': float(avg_match.group(1)),
-                'accuracy': float(avg_match.group(2)),
-                'precision': float(avg_match.group(3)),
-                'recall': float(avg_match.group(4)),
-                'f1': float(avg_match.group(5)),
-                'auc': float(avg_match.group(6))
-            }
-        
-        evaluation_data['outer_folds'][fold_num] = fold_data
-    
-    # Extract overall summary - use a more flexible approach
-    # First try the exact pattern
-    overall_pattern = r"=== Average Results Across All Outer CV Folds \(mean\) ===\n\nLoss: ([\d.]+)\nAccuracy: ([\d.]+)%\nPrecision: ([\d.]+)%\nRecall: ([\d.]+)%\nF1: ([\d.]+)%\nAuc: ([\d.]+)%"
-    overall_match = re.search(overall_pattern, content)
-    
-    if not overall_match:
-        # Try a more flexible pattern that allows for variations in whitespace
-        overall_pattern_flexible = r"=== Average Results Across All Outer CV Folds \(mean\) ===\s*\n\s*Loss:\s*([\d.]+)\s*\n\s*Accuracy:\s*([\d.]+)%\s*\n\s*Precision:\s*([\d.]+)%\s*\n\s*Recall:\s*([\d.]+)%\s*\n\s*F1:\s*([\d.]+)%\s*\n\s*Auc:\s*([\d.]+)%"
-        overall_match = re.search(overall_pattern_flexible, content)
-    
-    if overall_match:
-        evaluation_data['overall_summary'] = {
-            'loss': float(overall_match.group(1)),
-            'accuracy': float(overall_match.group(2)),
-            'precision': float(overall_match.group(3)),
-            'recall': float(overall_match.group(4)),
-            'f1': float(overall_match.group(5)),
-            'auc': float(overall_match.group(6))
-        }
-        print("Successfully extracted overall summary data")
-    else:
-        print("Warning: Could not extract overall summary data")
-    
+
+    # Extract ensemble metrics
+    ensemble = data.get("ensemble", {})
+
+    evaluation_data['overall_summary'] = {
+        'loss': ensemble.get('loss', 0),
+        'accuracy': ensemble.get('accuracy', ensemble.get('accuracy_macro', 0)),
+        'precision': ensemble.get('precision', ensemble.get('precision_macro', 0)),
+        'recall': ensemble.get('recall', ensemble.get('recall_macro', 0)),
+        'f1': ensemble.get('f1', ensemble.get('f1_macro', 0)),
+        'auc': ensemble.get('auc', ensemble.get('auc_macro', 0))
+    }
+
+    print("Successfully extracted overall summary data")
+
     return evaluation_data
 
 def create_experiment_folder_structure(experiment_path, base_output_dir):

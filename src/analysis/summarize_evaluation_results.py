@@ -63,35 +63,79 @@ def load_test_results(experiment_path: str, seed: str = "42") -> Dict[str, List[
         Dictionary with metric names as keys and lists of values across folds
     """
     neps_output_path = Path(experiment_path) / f"seed_{seed}" / "NePS_output"
-    
-    if not neps_output_path.exists():
-        raise FileNotFoundError(f"NePS output directory not found: {neps_output_path}")
-    
+    base_path = Path(experiment_path) / f"seed_{seed}"
+    framework = "neps"
+
+    # Determine which structure exists
+    if neps_output_path.exists():
+        print(f"Using NePS structure: {neps_output_path}")
+        search_path = neps_output_path
+
+    elif base_path.exists():
+        print(f"Using MedQuickTune/QuickTune structure: {base_path}")
+        search_path = base_path
+        framework = "medquicktune"
+
+    else:
+        raise FileNotFoundError(
+            f"Neither NePS nor QuickTune structure found.\n"
+            f"Checked:\n"
+            f"  - {neps_output_path}\n"
+            f"  - {base_path}"
+        )
+
     # Find all cv_outer_fold directories
-    cv_fold_dirs = sorted([d for d in neps_output_path.iterdir() 
-                          if d.is_dir() and d.name.startswith("cv_outer_fold_")])
-    
+    cv_fold_dirs = sorted([
+        d for d in search_path.iterdir()
+        if d.is_dir() and d.name.startswith("cv_outer_fold_")
+    ])
+
     if not cv_fold_dirs:
-        raise FileNotFoundError(f"No cv_outer_fold directories found in {neps_output_path}")
-    
+        raise FileNotFoundError(
+            f"No cv_outer_fold directories found in {search_path}"
+        )
+
     print(f"Found {len(cv_fold_dirs)} cross-validation folds: {[d.name for d in cv_fold_dirs]}")
     
     # Load results from each fold
     all_metrics = {}
     
     for fold_dir in cv_fold_dirs:
-        # Get the best config ID for this fold
-        best_config_id = get_best_config_id(fold_dir)
-        config_name = f"config_{best_config_id}"
-        
-        results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
-        
+        if framework =="medquicktune":
+            tuner_dir = fold_dir / "tuner"
+
+            config_dirs = [d for d in tuner_dir.iterdir() if d.is_dir()]
+
+            best_val_auc = -1
+            results_file = None
+
+            for config_dir in config_dirs:
+
+                candidate_file = config_dir / "test_evaluation_results.json"
+
+                if not candidate_file.exists():
+                    continue
+
+                with open(candidate_file, "r") as f:
+                    candidate_results = json.load(f)
+
+                val_auc = candidate_results["validation"]["auc"]
+
+                if val_auc > best_val_auc:
+                    best_val_auc = val_auc
+                    results_file = candidate_file
+        else:
+           # Get the best config ID for this fold
+            best_config_id = get_best_config_id(fold_dir)
+            config_name = f"config_{best_config_id}"
+            
+            results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
+
         if not results_file.exists():
             print(f"Warning: Results file not found: {results_file}")
             continue
         
-        print(f"Loading results from: {results_file} (best config: {config_name})")
-        
+        print(f"Loading results from: {results_file}")
         with open(results_file, 'r') as f:
             fold_results = json.load(f)
         
@@ -132,27 +176,75 @@ def load_validation_results(experiment_path: str, seed: str = "42") -> Dict[str,
         Dictionary with metric names as keys and lists of values across folds
     """
     neps_output_path = Path(experiment_path) / f"seed_{seed}" / "NePS_output"
-    
-    if not neps_output_path.exists():
-        raise FileNotFoundError(f"NePS output directory not found: {neps_output_path}")
-    
+    base_path = Path(experiment_path) / f"seed_{seed}"
+    framework = "neps"
+
+    # Determine which structure exists
+    if neps_output_path.exists():
+        print(f"Using NePS structure: {neps_output_path}")
+        search_path = neps_output_path
+
+    elif base_path.exists():
+        print(f"Using MedQuickTune/QuickTune structure: {base_path}")
+        search_path = base_path
+        framework = "medquicktune"
+
+    else:
+        raise FileNotFoundError(
+            f"Neither NePS nor QuickTune structure found.\n"
+            f"Checked:\n"
+            f"  - {neps_output_path}\n"
+            f"  - {base_path}"
+        )
+
     # Find all cv_outer_fold directories
-    cv_fold_dirs = sorted([d for d in neps_output_path.iterdir() 
-                          if d.is_dir() and d.name.startswith("cv_outer_fold_")])
-    
+    cv_fold_dirs = sorted([
+        d for d in search_path.iterdir()
+        if d.is_dir() and d.name.startswith("cv_outer_fold_")
+    ])
+
     if not cv_fold_dirs:
-        raise FileNotFoundError(f"No cv_outer_fold directories found in {neps_output_path}")
+        raise FileNotFoundError(
+            f"No cv_outer_fold directories found in {search_path}"
+        )
+
+    print(f"Found {len(cv_fold_dirs)} cross-validation folds: {[d.name for d in cv_fold_dirs]}")
     
     # Load validation results from each fold
     all_metrics = {}
     
     for fold_dir in cv_fold_dirs:
-        # Get the best config ID for this fold
-        best_config_id = get_best_config_id(fold_dir)
-        config_name = f"config_{best_config_id}"
-        
-        results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
-        
+        if framework == "medquicktune":
+            
+            tuner_dir = fold_dir / "tuner"
+
+            config_dirs = [d for d in tuner_dir.iterdir() if d.is_dir()]
+
+            best_val_auc = -1
+            results_file = None
+
+            for config_dir in config_dirs:
+
+                candidate_file = config_dir / "test_evaluation_results.json"
+
+                if not candidate_file.exists():
+                    continue
+
+                with open(candidate_file, "r") as f:
+                    candidate_results = json.load(f)
+
+                val_auc = candidate_results["validation"]["auc"]
+
+                if val_auc > best_val_auc:
+                    best_val_auc = val_auc
+                    results_file = candidate_file
+        else:
+            # Get the best config ID for this fold
+            best_config_id = get_best_config_id(fold_dir)
+            config_name = f"config_{best_config_id}"
+            
+            results_file = fold_dir / "configs" / config_name / "test_evaluation_results.json"
+
         if not results_file.exists():
             print(f"Warning: Results file not found: {results_file}")
             continue
@@ -189,37 +281,85 @@ def load_predictions_for_outer_ensemble(experiment_path: str, seed: str = "42") 
         Dictionary containing predictions data from all outer folds
     """
     neps_output_path = Path(experiment_path) / f"seed_{seed}" / "NePS_output"
-    
-    if not neps_output_path.exists():
-        raise FileNotFoundError(f"NePS output directory not found: {neps_output_path}")
-    
+    base_path = Path(experiment_path) / f"seed_{seed}"
+    framework = "neps"
+
+    # Determine which structure exists
+    if neps_output_path.exists():
+        print(f"Using NePS structure: {neps_output_path}")
+        search_path = neps_output_path
+
+    elif base_path.exists():
+        framework = "medquicktune"
+        print(f"Using MedQuickTune/QuickTune structure: {base_path}")
+        search_path = base_path
+
+    else:
+        raise FileNotFoundError(
+            f"Neither NePS nor QuickTune structure found.\n"
+            f"Checked:\n"
+            f"  - {neps_output_path}\n"
+            f"  - {base_path}"
+        )
+
     # Find all cv_outer_fold directories
-    cv_fold_dirs = sorted([d for d in neps_output_path.iterdir() 
-                          if d.is_dir() and d.name.startswith("cv_outer_fold_")])
-    
+    cv_fold_dirs = sorted([
+        d for d in search_path.iterdir()
+        if d.is_dir() and d.name.startswith("cv_outer_fold_")
+    ])
+
     if not cv_fold_dirs:
-        raise FileNotFoundError(f"No cv_outer_fold directories found in {neps_output_path}")
-    
-    print(f"Found {len(cv_fold_dirs)} cross-validation folds for outer ensemble: {[d.name for d in cv_fold_dirs]}")
-    
+        raise FileNotFoundError(
+            f"No cv_outer_fold directories found in {search_path}"
+        )
+
+    print(f"Found {len(cv_fold_dirs)} cross-validation folds: {[d.name for d in cv_fold_dirs]}")
+        
     # Load predictions from each fold
     all_predictions = []
     ground_truth = None
     num_classes = None
-    framework = None
+    #framework = None
     
     for fold_dir in cv_fold_dirs:
-        # Get the best config ID for this fold
-        best_config_id = get_best_config_id(fold_dir)
-        config_name = f"config_{best_config_id}"
-        
-        predictions_file = fold_dir / "configs" / config_name / "test_predictions_for_outer_ensemble.json"
+        if framework == "medquicktune":
+            print("Entra aqui para las predictions")
+            tuner_dir = fold_dir / "tuner"
+
+            config_dirs = [d for d in tuner_dir.iterdir() if d.is_dir()]
+
+            best_val_auc = -1
+            predictions_file = None
+
+            for config_dir in config_dirs:
+
+                candidate_results = config_dir / "test_evaluation_results.json"
+
+                if not candidate_results.exists():
+                    continue
+
+                with open(candidate_results, "r") as f:
+                    candidate_data = json.load(f)
+
+                val_auc = candidate_data["validation"]["auc"]
+
+                if val_auc > best_val_auc:
+                    best_val_auc = val_auc
+                    predictions_file = (
+                        config_dir / "test_predictions_for_outer_ensemble.json"
+                    )
+        else:
+            # Get the best config ID for this fold
+            best_config_id = get_best_config_id(fold_dir)
+            config_name = f"config_{best_config_id}"
+            
+            predictions_file = fold_dir / "configs" / config_name / "test_predictions_for_outer_ensemble.json"
         
         if not predictions_file.exists():
             print(f"Warning: Predictions file not found: {predictions_file}")
             continue
         
-        print(f"Loading predictions from: {predictions_file} (best config: {config_name})")
+        print(f"Loading predictions from: {predictions_file}")
         
         with open(predictions_file, 'r') as f:
             fold_predictions = json.load(f)
