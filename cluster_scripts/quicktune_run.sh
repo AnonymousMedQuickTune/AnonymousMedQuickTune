@@ -1,36 +1,71 @@
 #!/bin/bash
+
+# ======================================================
+# MedQuickTune experiment script for 3D medical image
+# classification on the WORC Lipo dataset.
+#
+# This script reproduces the MedQuickTune experiments
+# presented in the Results section of the paper.
+#
+# The experiment performs:
+#   - Portfolio-based meta-learning
+#   - Compute-bounded hyperparameter optimization
+#   - 3D model selection and training
+#   - Nested cross-validation evaluation
+#
+# The generated outputs are later used to create the
+# AUC vs wall-clock time comparison figures between:
+#   1. Baseline
+#   2. Bayesian Optimization (BO)
+#   3. MedQuickTune
+# ======================================================
+
 #SBATCH -J lipoMQ
 #SBATCH -p gpu_a100
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=90G
 #SBATCH -t 23:59:59
-#SBATCH --array 0-2 # number of outer folds
+#SBATCH --array 0-2 # Number of outer folds
 #SBATCH --export=ALL
 #SBATCH --requeue
 #SBATCH --propagate=NONE
-#SBATCH --output=/projects/prjs1598/logs/%x-%j.out
+#SBATCH --output=/projects/code/MedQuickTune/logs/%x-%j.out
 
+# Activate MedQuickTune environment
 source medquicktune/bin/activate
 
 which python
 python --version
 
+# Dataset configuration
 DATASET=lipo
 SEED=42
 EXPERIMENT_NAME=medquicktune
+
+# Enable portfolio-based meta-learning
 USE_MEDICAL_PORTFOLIO=True
 
+# Base directories
 BASE_DIR="/projects/code/MedQuickTune"
+
+# Portfolio containing previous optimization runs
 PORTFOLIO_DIR="/projects/code/MedQuickTuneexperiments/Portfolio_crlm"
+
+# Output experiment directory
 EXP_DIR="$BASE_DIR/experiments/QuickTune/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
+
+# Dataset directory
 DATA_DIR="$BASE_DIR/data/worc"
 
+# Hyperparameter search space configuration
 PIPELINE_SPACE="configs/pipeline_spaces/full.yaml"
 
-
-echo "Starting"
-
+echo "======================================================"
+echo "Starting MedQuickTune experiment"
+echo "Dataset: $DATASET"
+echo "Generating results for the paper"
+echo "======================================================"
 
 python -m src.run_quicktune \
     data.dataset=$DATASET \
@@ -55,8 +90,9 @@ python -m src.run_quicktune \
     training.scheduler_type=warmup \
     validation_evaluation=ensemble \
     data.num_workers=4 \
-    cost_to_spend=85800  # 24 hours - 10 min
+    cost_to_spend=85800  # 24 hours - 10 minutes
 
-echo "Finished"
-
-
+echo "======================================================"
+echo "Finished MedQuickTune experiment"
+echo "Results successfully generated"
+echo "======================================================"

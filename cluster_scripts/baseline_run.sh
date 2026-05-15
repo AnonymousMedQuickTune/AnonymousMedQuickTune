@@ -6,7 +6,7 @@
 #SBATCH --mem=75G
 #SBATCH -t 10:59:99
 ##SBATCH --array=0-2
-#SBATCH --output=/projects/prjs1598/logs/%x-%j.out
+#SBATCH --output=/projects/code/MedQuickTune/logs/%x-%j.out
 
 source medquicktune/bin/activate
 
@@ -15,7 +15,7 @@ SEED=42
 EXPERIMENT_NAME=densenet
 MODEL=densenet
 
-BASE_DIR="/projects/prjs1598"
+BASE_DIR="/projects/code/MedQuickTune"
 EXP_DIR="$BASE_DIR/experiments/Baseline/$DATASET/$EXPERIMENT_NAME/seed_$SEED"
 DATA_DIR="$BASE_DIR/data/worc"
 #PIPELINE_SPACE="configs/pipeline_spaces/pipeline_space_without_user_priors.yaml"
