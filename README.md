@@ -267,7 +267,13 @@ Example execution:
 ```bash
 sbatch cluster_scripts/plot_graphs.sh
 ```
+## *Example Portfolio for WORC Lipo MedQuickTune runs*
 
+https://mega.nz/file/97czGC4D#sOaanr8sqbB6I99AbeblvcWaQd0TZ_dUS6vrJ7LoUww
+
+## *Example WORC Lipo run with results*
+
+https://mega.nz/file/Vm8nCQLJ#nwAWvG3po2g17OG5LWNfTdN4CWAYmx6CzecScnOrJQU
 
 ## **Project Structure**
 ```
