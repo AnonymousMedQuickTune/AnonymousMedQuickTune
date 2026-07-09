@@ -52,6 +52,9 @@ dependencies = [
     "ifBO @ git+https://github.com/automl/ifbo.git@8ddcef0ed1ca88f2992108d39876e926aa58b0f2"
 ]
 
+[tool.poetry]
+package-mode = false
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
