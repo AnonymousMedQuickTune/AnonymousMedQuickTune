@@ -8,8 +8,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 from pathlib import Path
 
-from src.classification_2d.models_2d import get_2d_model
-from src.classification_2d.preprocess_data_2d import BrainTumorDataset, get_max_batch_size, load_brain_tumor_dataset
+
 from src.classification_3d.models_3d import get_3d_model
 from src.classification_3d.preprocess_data_3d import calculate_voxel_size_from_images
 from src.classification_3d.preprocess_data_3d import DataTransform
