@@ -16,9 +16,7 @@ from ConfigSpace import (CategoricalHyperparameter, ConfigurationSpace,
 from omegaconf import DictConfig, OmegaConf
 from qtt import QuickOptimizer, QuickTuner, QuickImageCLSTuner, get_pretrained_optimizer
 
-from src.classification_2d.objective_function_2d import run_2d_pipeline
 from src.classification_3d.objective_function_3d import run_3d_pipeline
-from src.classification_2d.preprocess_data_2d import load_brain_tumor_dataset
 from src.classification_3d.preprocess_data_3d import load_3d_dataset_with_outer_cv_splits
 from src.utils.common_utils import set_seed, set_reproducibility_env_vars, print_reproducibility_info
 from src.utils.quicktune_utils import (
